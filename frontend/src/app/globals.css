@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+/* Official Proman Group Brand Guidelines v1.3 — proman-docs/BRAND_GUIDELINES.md */
+:root {
+  --background: #f7f7f9; /* Navy Soft */
+  --foreground: #2a2f69; /* Text primary = Navy */
+  --navy: #2a2f69;
+  --navy-deep: #242859;
+  --navy-mid: #3b4280;
+  --navy-tint: #eaeaf0;
+  --navy-soft: #f7f7f9;
+  --orange: #ff7604;
+  --muted: #5f638f; /* Text secondary */
+  --text-disabled: #8f92b5;
+  --line: #dddde8; /* Border */
+  --green: #1a6b3a; /* Success */
+  --green-bg: #dcfce7;
+  --amber: #b45309; /* Warning */
+  --amber-bg: #fef3c7;
+  --red: #a32d2d; /* Error */
+  --red-bg: #fef2f2;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 99px;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-navy: var(--navy);
+  --color-navy-deep: var(--navy-deep);
+  --color-navy-mid: var(--navy-mid);
+  --color-navy-tint: var(--navy-tint);
+  --color-navy-soft: var(--navy-soft);
+  --color-orange: var(--orange);
+  --color-muted: var(--muted);
+  --color-text-disabled: var(--text-disabled);
+  --color-line: var(--line);
+  --color-brand-green: var(--green);
+  --color-brand-green-bg: var(--green-bg);
+  --color-brand-amber: var(--amber);
+  --color-brand-amber-bg: var(--amber-bg);
+  --color-brand-red: var(--red);
+  --color-brand-red-bg: var(--red-bg);
+  --font-sans: var(--font);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  /* Brand guideline 3.1: Arial family only, no exceptions. */
+  font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+}
