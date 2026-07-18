@@ -23,6 +23,22 @@ const PASSWORD_POLICY_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9])
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_MS = 30 * 60 * 1000;
 
+// All business-facing times in this app are IST (matches business-hours.util.ts's
+// 08:00-18:00 IST convention) — raw ISO/UTC would confuse users on lockout messages.
+function formatIst(date: Date): string {
+  return (
+    date.toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    }) + ' IST'
+  );
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -36,7 +52,7 @@ export class AuthService {
 
     if (user.lockedUntil && user.lockedUntil > new Date()) {
       throw new UnauthorizedException(
-        `Account locked until ${user.lockedUntil.toISOString()} after too many failed attempts`,
+        `Account locked until ${formatIst(user.lockedUntil)} after too many failed attempts`,
       );
     }
 

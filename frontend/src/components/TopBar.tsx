@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { AuthUser, getCurrentUser, logout } from "@/lib/auth";
 
 const ROLE_LABEL: Record<string, string> = {
@@ -49,6 +50,13 @@ export default function TopBar({ title }: { title: string }) {
 
           {menuOpen && (
             <div className="absolute right-0 top-12 w-40 rounded-lg border border-line bg-white py-1 shadow-lg">
+              <Link
+                href="/account"
+                onClick={() => setMenuOpen(false)}
+                className="block w-full px-4 py-2 text-left text-sm text-foreground hover:bg-zinc-50"
+              >
+                My Account
+              </Link>
               <button
                 onClick={logout}
                 className="w-full px-4 py-2 text-left text-sm text-brand-red hover:bg-zinc-50"

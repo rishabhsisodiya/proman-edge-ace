@@ -1,4 +1,5 @@
 import Sidebar from "@/components/Sidebar";
+import TopBar from "@/components/TopBar";
 
 export default function DashboardLayout({
   children,
@@ -8,7 +9,10 @@ export default function DashboardLayout({
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      <div className="flex-1 bg-background">{children}</div>
+      <div className="flex-1 bg-background">
+        <TopBar title="PROMAN EDGE" />
+        {children}
+      </div>
     </div>
   );
 }

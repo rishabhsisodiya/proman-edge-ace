@@ -68,16 +68,49 @@ export function getCurrentUser(): AuthUser | null {
   }
 }
 
-/** Where each role lands after login. Admin lands on Service by default (has access to all). */
+/**
+ * Changes the current user's password. Backend bumps tokenVersion on success
+ * (§8.2 — invalidates every outstanding token, including this session's own),
+ * so the caller must send the user back to /login afterwards.
+ */
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  await apiFetch("/auth/change-password", {
+    method: "POST",
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+}
+
+export interface LockableUser {
+  id: string;
+  fullName: string;
+  email: string;
+  role: Role;
+  isActive: boolean;
+  lockedUntil: string | null;
+  failedLoginAttempts: number;
+}
+
+/** Admin-only — accounts currently locked out from too many failed logins (§8.2). */
+export function getLockedUsers(): Promise<LockableUser[]> {
+  return apiFetch<LockableUser[]>("/users?lockedOnly=true");
+}
+
+/** Admin-only early unlock, before the 30-minute lock expires naturally. */
+export function unlockUser(userId: string): Promise<void> {
+  return apiFetch(`/auth/users/${userId}/unlock`, { method: "POST" }).then(() => undefined);
+}
+
+/** Where each role lands after login. */
 export function dashboardPathForRole(role: Role): string {
   switch (role) {
+    case "ADMIN":
+      return "/dashboard/admin";
     case "MANUFACTURING_HEAD":
       return "/dashboard/manufacturing";
     case "CALL_CENTER":
     case "ASM":
     case "ENGINEER":
     case "MANAGER":
-    case "ADMIN":
     case "SERVICE_AFTERSALES_HEAD":
       return "/dashboard/service";
     default:

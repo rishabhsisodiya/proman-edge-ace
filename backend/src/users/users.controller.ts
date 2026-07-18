@@ -10,9 +10,10 @@ import { UsersService } from './users.service';
 export class UsersController {
   constructor(private readonly users: UsersService) {}
 
+  @Roles('ADMIN')
   @Get()
-  list(@Query('role') role?: Role) {
-    return this.users.list(role);
+  list(@Query('role') role?: Role, @Query('lockedOnly') lockedOnly?: string) {
+    return this.users.list(role, lockedOnly === 'true');
   }
 
   @Roles('ASM', 'MANAGER')

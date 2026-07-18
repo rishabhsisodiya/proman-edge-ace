@@ -1,21 +1,49 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { AuthUser, Role, getCurrentUser } from "@/lib/auth";
 
-const NAV_ITEMS = [
-  { label: "Service (Tickets)", href: "/dashboard/service" },
-  { label: "Manufacturing", href: "/dashboard/manufacturing" },
-  { label: "Sales", href: null },
-  { label: "Finance", href: null },
-  { label: "Procurement", href: null },
-  { label: "Dispatch", href: null },
-  { label: "Stores", href: null },
-  { label: "Admin", href: null },
+interface NavItem {
+  label: string;
+  href: string | null;
+  /** Roles that can see this item. Admin always sees everything (universal
+   * bypass, matches the backend's RolesGuard convention) — no need to list
+   * ADMIN in every entry. */
+  roles: Role[];
+}
+
+const NAV_ITEMS: NavItem[] = [
+  {
+    label: "Service (Tickets)",
+    href: "/dashboard/service",
+    roles: ["CALL_CENTER", "ASM", "ENGINEER", "MANAGER", "SERVICE_AFTERSALES_HEAD"],
+  },
+  { label: "Manufacturing", href: "/dashboard/manufacturing", roles: ["MANUFACTURING_HEAD"] },
+  { label: "Sales", href: null, roles: ["SALES_HEAD_AGGREGATE", "SALES_HEAD_IM_BMH"] },
+  { label: "Finance", href: null, roles: ["FINANCE_HEAD"] },
+  { label: "Procurement", href: null, roles: ["PROCUREMENT_HEAD"] },
+  { label: "Dispatch", href: null, roles: ["DISPATCH_HEAD"] },
+  { label: "Stores", href: null, roles: ["STORES_HEAD"] },
+  { label: "Admin", href: "/dashboard/admin", roles: [] }, // Admin-only, via the bypass below
 ];
+
+function visibleTo(item: NavItem, user: AuthUser | null): boolean {
+  if (!user) return false;
+  if (user.role === "ADMIN") return true; // universal bypass, same as backend RolesGuard
+  return item.roles.includes(user.role);
+}
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const [user, setUser] = useState<AuthUser | null>(null);
+
+  useEffect(() => {
+    setUser(getCurrentUser());
+  }, []);
+
+  const items = NAV_ITEMS.filter((item) => visibleTo(item, user));
 
   return (
     <aside className="flex h-screen w-[220px] shrink-0 flex-col bg-navy text-white/80">
@@ -26,7 +54,7 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex-1 px-2">
-        {NAV_ITEMS.map((item) => {
+        {items.map((item) => {
           const active = item.href && pathname === item.href;
           if (!item.href) {
             return (

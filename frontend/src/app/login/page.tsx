@@ -18,15 +18,21 @@ function LoginForm() {
     setError(null);
     setLoading(true);
     try {
-      const { user } = await login(email, password);
-      // TODO (Days 17-19, frontend): route to a forced password-change screen
-      // when mustChangePassword is true — no such screen exists yet, so for
-      // now every login lands on the dashboard regardless.
+      const { user, mustChangePassword } = await login(email, password);
+      if (mustChangePassword) {
+        router.push("/change-password");
+        return;
+      }
       const next = params.get("next");
       router.push(next ?? dashboardPathForRole(user.role));
     } catch (err) {
       if (err instanceof ApiError) {
-        setError("Invalid email or password.");
+        // Surface the backend's actual message — "Invalid credentials" for a
+        // wrong password, but also the lockout/locked-until text (§8.2),
+        // which a hardcoded generic message was previously swallowing.
+        const body = err.body as { message?: string | string[] } | null;
+        const msg = Array.isArray(body?.message) ? body!.message.join(", ") : body?.message;
+        setError(msg ?? "Invalid email or password.");
       } else {
         setError("Could not reach the server. Is the backend running?");
       }

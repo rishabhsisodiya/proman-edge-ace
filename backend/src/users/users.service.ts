@@ -42,7 +42,25 @@ export class UsersService {
       .sort((a, b) => a.openLoad - b.openLoad);
   }
 
-  list(role?: Role) {
-    return this.prisma.user.findMany({ where: role ? { role } : undefined, include: { regions: true } });
+  list(role?: Role, lockedOnly?: boolean) {
+    return this.prisma.user.findMany({
+      where: {
+        ...(role ? { role } : {}),
+        ...(lockedOnly ? { lockedUntil: { gt: new Date() } } : {}),
+      },
+      // Explicit select, not `include` on the full model — passwordHash must
+      // never leave this service, not even to an Admin-only screen.
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        mobile: true,
+        role: true,
+        isActive: true,
+        lockedUntil: true,
+        failedLoginAttempts: true,
+        regions: true,
+      },
+    });
   }
 }
