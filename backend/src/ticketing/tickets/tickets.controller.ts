@@ -5,6 +5,10 @@ import { Roles } from '../../auth/roles.decorator';
 import { TicketsService } from './tickets.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { AssignTicketDto } from './dto/assign-ticket.dto';
+import { RejectTicketDto } from './dto/reject-ticket.dto';
+import { MarkPendingDto } from './dto/mark-pending.dto';
+import { ResolveTicketDto } from './dto/resolve-ticket.dto';
+import { RegularizeTicketDto } from './dto/regularize-ticket.dto';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('tickets')
@@ -36,5 +40,77 @@ export class TicketsController {
   @Post(':id/assign')
   assign(@Param('id') id: string, @Body() dto: AssignTicketDto, @Req() req: any) {
     return this.tickets.assign(id, dto.engineerId, { userId: req.user.userId, role: req.user.role });
+  }
+
+  @Roles('ENGINEER')
+  @Post(':id/accept')
+  accept(@Param('id') id: string, @Req() req: any) {
+    return this.tickets.accept(id, { userId: req.user.userId, role: req.user.role });
+  }
+
+  @Roles('ENGINEER')
+  @Post(':id/reject')
+  reject(@Param('id') id: string, @Body() dto: RejectTicketDto, @Req() req: any) {
+    return this.tickets.reject(id, dto.reason, { userId: req.user.userId, role: req.user.role });
+  }
+
+  @Roles('ENGINEER')
+  @Post(':id/reached-site')
+  reachedSite(@Param('id') id: string, @Req() req: any) {
+    return this.tickets.reachedSite(id, { userId: req.user.userId, role: req.user.role });
+  }
+
+  @Roles('ENGINEER')
+  @Post(':id/start-working')
+  startWorking(@Param('id') id: string, @Req() req: any) {
+    return this.tickets.startWorking(id, { userId: req.user.userId, role: req.user.role });
+  }
+
+  @Roles('ENGINEER')
+  @Post(':id/pending')
+  markPending(@Param('id') id: string, @Body() dto: MarkPendingDto, @Req() req: any) {
+    return this.tickets.markPending(id, dto.pendingReason, dto.pendingNotes, {
+      userId: req.user.userId,
+      role: req.user.role,
+    });
+  }
+
+  @Roles('ENGINEER')
+  @Post(':id/resume')
+  resume(@Param('id') id: string, @Req() req: any) {
+    return this.tickets.resume(id, { userId: req.user.userId, role: req.user.role });
+  }
+
+  @Roles('ENGINEER')
+  @Post(':id/resolve')
+  resolve(@Param('id') id: string, @Body() dto: ResolveTicketDto, @Req() req: any) {
+    return this.tickets.resolve(id, dto.resolutionSummary, { userId: req.user.userId, role: req.user.role });
+  }
+
+  @Roles('ASM', 'MANAGER')
+  @Post(':id/asm-resolve')
+  asmResolve(@Param('id') id: string, @Req() req: any) {
+    return this.tickets.asmResolve(id, { userId: req.user.userId, role: req.user.role });
+  }
+
+  @Roles('CALL_CENTER', 'MANAGER')
+  @Post(':id/close')
+  close(@Param('id') id: string, @Req() req: any) {
+    return this.tickets.close(id, { userId: req.user.userId, role: req.user.role });
+  }
+
+  @Roles('ADMIN')
+  @Post(':id/reopen')
+  reopen(@Param('id') id: string, @Req() req: any) {
+    return this.tickets.reopen(id, { userId: req.user.userId, role: req.user.role });
+  }
+
+  @Roles('ADMIN', 'CALL_CENTER')
+  @Post(':id/regularize')
+  regularize(@Param('id') id: string, @Body() dto: RegularizeTicketDto, @Req() req: any) {
+    return this.tickets.regularize(id, dto.targetStatus, dto.reason, {
+      userId: req.user.userId,
+      role: req.user.role,
+    });
   }
 }

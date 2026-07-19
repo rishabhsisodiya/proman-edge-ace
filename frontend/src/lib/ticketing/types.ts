@@ -5,12 +5,55 @@ export type TicketStatus =
   | "ACCEPTED"
   | "REACHED_SITE"
   | "WORKING"
+  | "PENDING"
   | "ENGINEER_RESOLVED"
   | "ASM_RESOLVED"
   | "CLOSED";
 
+export type PendingReason = "AWAITING_PARTS" | "AWAITING_CUSTOMER" | "AWAITING_APPROVAL" | "OTHER";
+
+export const PENDING_REASON_LABEL: Record<PendingReason, string> = {
+  AWAITING_PARTS: "Awaiting Parts",
+  AWAITING_CUSTOMER: "Awaiting Customer",
+  AWAITING_APPROVAL: "Awaiting Approval",
+  OTHER: "Other",
+};
+
 export type Priority = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
 export type Region = "NORTH" | "SOUTH" | "EAST" | "WEST" | "CENTRAL" | "BANGLADESH";
+
+// §5.3 — 8 sources total; bulk_import/api_partner/amc_scheduled/warranty_triggered/
+// predictive aren't reachable from the manual New Ticket form (auto-sources only).
+export type Source = "CUSTOMER_CALL" | "CUSTOMER_WHATSAPP" | "INTERNAL" | "BULK_IMPORT" | "API_PARTNER";
+export const SOURCE_LABEL: Record<Source, string> = {
+  CUSTOMER_CALL: "Customer Call",
+  CUSTOMER_WHATSAPP: "Customer WhatsApp",
+  INTERNAL: "Internal",
+  BULK_IMPORT: "Bulk Import",
+  API_PARTNER: "Partner API",
+};
+// Manual-creation sources only (§7.1 — the rest are auto/system sources).
+export const MANUAL_SOURCES: Source[] = ["CUSTOMER_CALL", "CUSTOMER_WHATSAPP", "INTERNAL"];
+
+// §2.2 — 5 of 7 FSD service types exist in the schema today (AMC and Spares
+// Supply are enum-only, not yet exercised by ticket creation validation).
+export type ServiceType =
+  | "WARRANTY_REPAIR"
+  | "BREAKDOWN_CHARGEABLE"
+  | "SCHEDULED_PM"
+  | "TECHNICAL_AUDIT"
+  | "RETROFIT_UPGRADE"
+  | "AMC"
+  | "SPARES_SUPPLY_INSTALLATION";
+export const SERVICE_TYPE_LABEL: Record<ServiceType, string> = {
+  WARRANTY_REPAIR: "Warranty Repair",
+  BREAKDOWN_CHARGEABLE: "Breakdown (Chargeable)",
+  SCHEDULED_PM: "Scheduled PM",
+  TECHNICAL_AUDIT: "Technical Audit",
+  RETROFIT_UPGRADE: "Retrofit / Upgrade",
+  AMC: "AMC",
+  SPARES_SUPPLY_INSTALLATION: "Spares Supply (with installation)",
+};
 
 export interface Customer {
   id: string;
@@ -40,10 +83,15 @@ export interface Ticket {
   subject: string;
   status: TicketStatus;
   priority: Priority;
+  source: Source;
   serviceType: string;
   warrantyEligible: boolean;
   slaResolutionDue: string | null;
   slaResolutionMet: boolean;
+  pendingReason?: PendingReason | null;
+  pendingNotes?: string | null;
+  resolutionSummary?: string | null;
+  rejectionCount?: number;
   createdAt: string;
   customer: Customer;
   site?: CustomerSite | null;
@@ -59,6 +107,7 @@ export const STATUS_LABEL: Record<TicketStatus, string> = {
   ACCEPTED: "Accepted",
   REACHED_SITE: "Reached Site",
   WORKING: "Working",
+  PENDING: "Pending",
   ENGINEER_RESOLVED: "Engineer Resolved",
   ASM_RESOLVED: "ASM Resolved",
   CLOSED: "Closed",
@@ -85,6 +134,7 @@ export const STATUS_STYLE: Record<TicketStatus, string> = {
   ACCEPTED: "bg-navy-tint text-navy",
   REACHED_SITE: "bg-navy-tint text-navy",
   WORKING: "bg-brand-amber-bg text-brand-amber",
+  PENDING: "bg-brand-amber-bg text-brand-amber",
   ENGINEER_RESOLVED: "bg-navy-tint text-navy",
   ASM_RESOLVED: "bg-navy-tint text-navy",
   CLOSED: "bg-brand-green-bg text-brand-green",

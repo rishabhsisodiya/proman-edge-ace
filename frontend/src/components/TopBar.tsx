@@ -21,7 +21,7 @@ function initials(name: string) {
     .toUpperCase();
 }
 
-export default function TopBar({ title }: { title: string }) {
+export default function TopBar({ title, onMenuClick }: { title: string; onMenuClick?: () => void }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -30,20 +30,30 @@ export default function TopBar({ title }: { title: string }) {
   }, []);
 
   return (
-    <div className="flex items-center justify-between border-b border-line bg-white px-8 py-4">
-      <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+    <div className="flex items-center justify-between border-b border-line bg-white px-4 py-4 sm:px-8">
+      <div className="flex items-center gap-3">
+        {onMenuClick && (
+          <button
+            onClick={onMenuClick}
+            aria-label="Open menu"
+            className="-ml-1 flex h-9 w-9 items-center justify-center rounded-md text-navy md:hidden"
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" />
+            </svg>
+          </button>
+        )}
+        <h2 className="text-base font-semibold text-foreground sm:text-lg">{title}</h2>
+      </div>
 
       {user && (
         <div className="relative">
-          <button
-            onClick={() => setMenuOpen((v) => !v)}
-            className="flex items-center gap-3"
-          >
-            <div className="text-right">
+          <button onClick={() => setMenuOpen((v) => !v)} className="flex items-center gap-3">
+            <div className="hidden text-right sm:block">
               <p className="text-sm font-medium text-foreground">{user.fullName}</p>
               <p className="text-xs text-muted">{ROLE_LABEL[user.role] ?? user.role}</p>
             </div>
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-navy text-xs font-semibold text-white">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-navy text-xs font-semibold text-white">
               {initials(user.fullName)}
             </div>
           </button>

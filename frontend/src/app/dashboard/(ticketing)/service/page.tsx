@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
+import { AuthUser, getCurrentUser } from "@/lib/auth";
 import { PRIORITY_STYLE, STATUS_LABEL, STATUS_STYLE, Ticket, TicketStatus, Priority, Region } from "@/lib/ticketing/types";
 
 const REGIONS: Region[] = ["NORTH", "SOUTH", "EAST", "WEST", "CENTRAL", "BANGLADESH"];
@@ -18,9 +20,15 @@ function Tile({ label, value, accent }: { label: string; value: string | number;
 }
 
 export default function ManagerDashboardPage() {
+  const router = useRouter();
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setUser(getCurrentUser());
+  }, []);
 
   const [region, setRegion] = useState("");
   const [priority, setPriority] = useState("");
@@ -58,9 +66,19 @@ export default function ManagerDashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-[22px] font-black text-navy">Manager Dashboard</h2>
-        <p className="text-sm text-muted">Regional ticket overview and SLA status</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-[22px] font-black text-navy">Manager Dashboard</h2>
+          <p className="text-sm text-muted">Regional ticket overview and SLA status</p>
+        </div>
+        {user && ["CALL_CENTER", "ASM", "MANAGER", "ADMIN"].includes(user.role) && (
+          <button
+            onClick={() => router.push("/dashboard/tickets/new")}
+            className="h-10 rounded-md bg-orange px-4 text-sm font-bold text-navy"
+          >
+            + New Ticket
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -149,7 +167,8 @@ export default function ManagerDashboardPage() {
               tickets.map((t, i) => (
                 <tr
                   key={t.id}
-                  className={`h-11 border-b border-line last:border-0 hover:bg-navy-tint ${i % 2 === 1 ? "bg-navy-soft" : "bg-white"}`}
+                  onClick={() => router.push(`/dashboard/tickets/${t.id}`)}
+                  className={`h-11 cursor-pointer border-b border-line last:border-0 hover:bg-navy-tint ${i % 2 === 1 ? "bg-navy-soft" : "bg-white"}`}
                 >
                   <td className="px-4 font-mono text-xs text-muted">{t.ticketNo}</td>
                   <td className="px-4">{t.customer.customerName}</td>

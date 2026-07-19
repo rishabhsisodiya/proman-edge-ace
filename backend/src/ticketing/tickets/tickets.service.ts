@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, Role, ServiceType, Priority, Source } from '@prisma/client';
+import { Prisma, Role, ServiceType, Priority, Source, PendingReason, TicketStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { nextTicketNo } from './ticket-number.util';
@@ -14,6 +14,18 @@ function autoClassify(source: Source): { serviceType?: ServiceType; priority?: P
   // so Sprint 3+ work adds cases, not a second creation path.
   return {};
 }
+
+// Human-readable labels for the auto-generated subject (§5.3) — using the raw
+// enum value there leaks "BREAKDOWN_CHARGEABLE" straight into a user-facing field.
+const SERVICE_TYPE_LABEL: Record<ServiceType, string> = {
+  WARRANTY_REPAIR: 'Warranty Repair',
+  BREAKDOWN_CHARGEABLE: 'Breakdown (Chargeable)',
+  SCHEDULED_PM: 'Scheduled PM',
+  TECHNICAL_AUDIT: 'Technical Audit',
+  RETROFIT_UPGRADE: 'Retrofit / Upgrade',
+  AMC: 'AMC',
+  SPARES_SUPPLY_INSTALLATION: 'Spares Supply (with installation)',
+};
 
 export interface RequestUser {
   userId: string;
@@ -67,7 +79,7 @@ export class TicketsService {
     const ticketNo = await nextTicketNo(this.prisma);
     const subject =
       dto.subject ??
-      `${equipment?.itemName ?? 'General'} — ${serviceType} — ${customer.customerName}`;
+      `${equipment?.itemName ?? 'General'} — ${SERVICE_TYPE_LABEL[serviceType]} — ${customer.customerName}`;
 
     return this.prisma.ticket.create({
       data: {
@@ -91,16 +103,20 @@ export class TicketsService {
     });
   }
 
-  /** Region/assignment-scoped list — FSD §15.2: enforced at the query layer, not the UI. */
-  async list(actor: RequestUser & { regions?: string[] }, filters: Record<string, string | undefined>) {
+  /** Region/assignment-scoped list — enforced at the query layer, not the UI. */
+  async list(actor: RequestUser, filters: Record<string, string | undefined>) {
     const where: Prisma.TicketWhereInput = {};
 
     if (actor.role === 'ENGINEER') {
       where.assignedEngineerId = actor.userId;
     } else if (actor.role === 'ASM') {
-      where.customer = { region: { in: (actor.regions ?? []) as any } };
+      // Looked up here (not passed in by the caller) so no controller can
+      // forget to scope an ASM's regions and silently return everything —
+      // or, as previously happened, nothing at all (empty regions -> empty result).
+      const asmRegions = await this.prisma.userRegion.findMany({ where: { userId: actor.userId } });
+      where.customer = { region: { in: asmRegions.map((r) => r.region) } };
     }
-    // CALL_CENTER, MANAGER, ADMIN: unscoped (full visibility per §15.1)
+    // CALL_CENTER, MANAGER, ADMIN: unscoped (full visibility)
 
     if (filters.status) where.status = filters.status as any;
     if (filters.priority) where.priority = filters.priority as any;
@@ -116,7 +132,7 @@ export class TicketsService {
   async findOne(id: string, actor: RequestUser) {
     const ticket = await this.prisma.ticket.findUnique({
       where: { id },
-      include: { customer: true, equipment: true, site: true, visits: true },
+      include: { customer: true, equipment: true, site: true, visits: true, assignedEngineer: true, assignedAsm: true },
     });
     if (!ticket) throw new NotFoundException('Ticket not found');
     if (actor.role === 'ENGINEER' && ticket.assignedEngineerId !== actor.userId) {
@@ -158,6 +174,158 @@ export class TicketsService {
       targetStatus: 'ENGINEER_ASSIGNED',
       actorUserId: actor.userId,
       actorRole: actor.role,
+    });
+  }
+
+  /** Engineer accepts an assignment. */
+  accept(id: string, actor: RequestUser) {
+    return this.workflow.transition({
+      ticketId: id,
+      targetStatus: 'ACCEPTED',
+      actorUserId: actor.userId,
+      actorRole: actor.role,
+    });
+  }
+
+  /**
+   * Engineer rejects an assignment (§5.4 Rejection Rule). Ticket returns to
+   * Assigned (engineer unassigned) for ASM to manually reassign. Tracks
+   * rejectionCount/rejectionReasons for the 3-tier escalation (1st: ASM
+   * notified, 2nd: +Manager alert, 3rd: escalates) — actual notification
+   * dispatch is a separate track (T4, not built yet), so this just returns
+   * the tier for the caller to act on/display.
+   */
+  async reject(id: string, reason: string, actor: RequestUser) {
+    const ticket = await this.prisma.ticket.findUniqueOrThrow({ where: { id } });
+    const existingReasons = Array.isArray(ticket.rejectionReasons) ? ticket.rejectionReasons : [];
+    const rejectionCount = ticket.rejectionCount + 1;
+
+    await this.prisma.ticket.update({
+      where: { id },
+      data: {
+        rejectionCount,
+        rejectionReasons: [
+          ...existingReasons,
+          { engineerId: actor.userId, reason, timestamp: new Date().toISOString() },
+        ] as any,
+        assignedEngineerId: null,
+      },
+    });
+
+    const updated = await this.workflow.transition({
+      ticketId: id,
+      targetStatus: 'ASSIGNED',
+      actorUserId: actor.userId,
+      actorRole: actor.role,
+    });
+
+    const escalationTier =
+      rejectionCount >= 3 ? 'ESCALATED_TO_MANAGER' : rejectionCount === 2 ? 'MANAGER_ALERTED' : 'ASM_NOTIFIED';
+
+    return { ...updated, escalationTier };
+  }
+
+  /** Engineer marks arrival at the customer site. */
+  reachedSite(id: string, actor: RequestUser) {
+    return this.workflow.transition({
+      ticketId: id,
+      targetStatus: 'REACHED_SITE',
+      actorUserId: actor.userId,
+      actorRole: actor.role,
+    });
+  }
+
+  /** Engineer begins on-site work. */
+  startWorking(id: string, actor: RequestUser) {
+    return this.workflow.transition({
+      ticketId: id,
+      targetStatus: 'WORKING',
+      actorUserId: actor.userId,
+      actorRole: actor.role,
+    });
+  }
+
+  /** Engineer pauses work (awaiting parts/customer/approval/other). SLA clock keeps running (§14.1 rule 21). */
+  markPending(id: string, pendingReason: PendingReason, pendingNotes: string | undefined, actor: RequestUser) {
+    return this.workflow.transition({
+      ticketId: id,
+      targetStatus: 'PENDING',
+      actorUserId: actor.userId,
+      actorRole: actor.role,
+      pendingReason,
+      pendingNotes,
+    });
+  }
+
+  /** Engineer resumes work after Pending clears. */
+  resume(id: string, actor: RequestUser) {
+    return this.workflow.transition({
+      ticketId: id,
+      targetStatus: 'WORKING',
+      actorUserId: actor.userId,
+      actorRole: actor.role,
+    });
+  }
+
+  /**
+   * Engineer marks the ticket resolved. §14.2 rule 23 says this should only
+   * happen via a submitted, linked FSV — FSV isn't built yet (Days 4-10), so
+   * this is a direct action for now, gated on resolutionSummary same as the
+   * FSD requires. Revisit once FSV submit exists.
+   */
+  resolve(id: string, resolutionSummary: string, actor: RequestUser) {
+    return this.workflow.transition({
+      ticketId: id,
+      targetStatus: 'ENGINEER_RESOLVED',
+      actorUserId: actor.userId,
+      actorRole: actor.role,
+      resolutionSummary,
+    });
+  }
+
+  /** ASM/Manager confirms resolution. */
+  asmResolve(id: string, actor: RequestUser) {
+    return this.workflow.transition({
+      ticketId: id,
+      targetStatus: 'ASM_RESOLVED',
+      actorUserId: actor.userId,
+      actorRole: actor.role,
+    });
+  }
+
+  /**
+   * Call Center/Manager closes the ticket. §14.4 rule 30 (chargeable tickets
+   * need a draft Sales Invoice before closure) isn't enforceable yet — no
+   * Quotation/billing handoff exists (Days 4-10, T3). TODO: add that check
+   * once erpnextInvoiceId is actually populated by that work.
+   */
+  close(id: string, actor: RequestUser) {
+    return this.workflow.transition({
+      ticketId: id,
+      targetStatus: 'CLOSED',
+      actorUserId: actor.userId,
+      actorRole: actor.role,
+    });
+  }
+
+  /** Admin-only reopen from Closed (§5.4 — "re-openable by Admin only"). */
+  reopen(id: string, actor: RequestUser) {
+    return this.workflow.transition({
+      ticketId: id,
+      targetStatus: 'ASM_RESOLVED',
+      actorUserId: actor.userId,
+      actorRole: actor.role,
+    });
+  }
+
+  /** "Regularize Ticket" — Admin/Call Center force-move, always reasoned + audited. */
+  regularize(id: string, targetStatus: TicketStatus, reason: string, actor: RequestUser) {
+    return this.workflow.regularize({
+      ticketId: id,
+      targetStatus,
+      actorUserId: actor.userId,
+      actorRole: actor.role,
+      reason,
     });
   }
 }

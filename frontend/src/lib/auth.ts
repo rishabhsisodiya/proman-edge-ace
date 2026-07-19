@@ -100,7 +100,7 @@ export function unlockUser(userId: string): Promise<void> {
   return apiFetch(`/auth/users/${userId}/unlock`, { method: "POST" }).then(() => undefined);
 }
 
-/** Where each role lands after login. */
+/** Where each role lands after login — one dashboard per role per §6.1. */
 export function dashboardPathForRole(role: Role): string {
   switch (role) {
     case "ADMIN":
@@ -108,8 +108,11 @@ export function dashboardPathForRole(role: Role): string {
     case "MANUFACTURING_HEAD":
       return "/dashboard/manufacturing";
     case "CALL_CENTER":
+      return "/dashboard/call-center";
     case "ASM":
+      return "/dashboard/asm";
     case "ENGINEER":
+      return "/dashboard/my-tickets";
     case "MANAGER":
     case "SERVICE_AFTERSALES_HEAD":
       return "/dashboard/service";
