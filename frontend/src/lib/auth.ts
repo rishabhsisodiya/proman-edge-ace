@@ -107,6 +107,17 @@ export function dashboardPathForRole(role: Role): string {
       return "/dashboard/admin";
     case "MANUFACTURING_HEAD":
       return "/dashboard/manufacturing";
+    case "SALES_HEAD_AGGREGATE":
+    case "SALES_HEAD_IM_BMH":
+      return "/dashboard/sales";
+    case "FINANCE_HEAD":
+      return "/dashboard/finance";
+    case "PROCUREMENT_HEAD":
+      return "/dashboard/procurement";
+    case "STORES_HEAD":
+      return "/dashboard/stores";
+    case "DISPATCH_HEAD":
+      return "/dashboard/dispatch";
     case "CALL_CENTER":
       return "/dashboard/call-center";
     case "ASM":
@@ -116,7 +127,9 @@ export function dashboardPathForRole(role: Role): string {
     case "MANAGER":
     case "SERVICE_AFTERSALES_HEAD":
       return "/dashboard/service";
+    // MD, ENGINEERING_DESIGN_HEAD, QMS_HEAD have no dedicated dashboard page
+    // built yet — falls through to default.
     default:
-      return "/dashboard/service"; // other role dashboards (sales, finance, etc.) not built yet
+      return "/dashboard/service";
   }
 }

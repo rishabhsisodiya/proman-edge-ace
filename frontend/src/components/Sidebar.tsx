@@ -39,11 +39,11 @@ function ticketingNavItem(role: Role | undefined): NavItem | null {
 // a flat list of every ERP module.
 const ERP_NAV_ITEMS: NavItem[] = [
   { label: "Manufacturing", href: "/dashboard/manufacturing", roles: ["MANUFACTURING_HEAD"] },
-  { label: "Sales", href: null, roles: ["SALES_HEAD_AGGREGATE", "SALES_HEAD_IM_BMH"] },
-  { label: "Finance", href: null, roles: ["FINANCE_HEAD"] },
-  { label: "Procurement", href: null, roles: ["PROCUREMENT_HEAD"] },
-  { label: "Dispatch", href: null, roles: ["DISPATCH_HEAD"] },
-  { label: "Stores", href: null, roles: ["STORES_HEAD"] },
+  { label: "Sales", href: "/dashboard/sales", roles: ["SALES_HEAD_AGGREGATE", "SALES_HEAD_IM_BMH"] },
+  { label: "Finance", href: "/dashboard/finance", roles: ["FINANCE_HEAD"] },
+  { label: "Procurement", href: "/dashboard/procurement", roles: ["PROCUREMENT_HEAD"] },
+  { label: "Dispatch", href: "/dashboard/dispatch", roles: ["DISPATCH_HEAD"] },
+  { label: "Stores", href: "/dashboard/stores", roles: ["STORES_HEAD"] },
 ];
 
 const ADMIN_ONLY_ITEMS: NavItem[] = [
