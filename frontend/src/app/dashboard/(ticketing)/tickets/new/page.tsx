@@ -174,7 +174,7 @@ export default function NewTicketPage() {
             {selectedCustomer ? (
               <div className="flex h-11 items-center justify-between rounded-md border border-line bg-navy-soft px-3 text-sm text-navy">
                 <span>
-                  {selectedCustomer.customerName} — {selectedCustomer.region}
+                  {selectedCustomer.customerName} — {selectedCustomer.region ?? "Region pending"}
                 </span>
                 <button
                   type="button"
@@ -212,7 +212,7 @@ export default function NewTicketPage() {
                     }}
                     className="block w-full px-3 py-2 text-left text-sm text-navy hover:bg-navy-tint"
                   >
-                    {c.customerName} <span className="text-muted">— {c.region}</span>
+                    {c.customerName} <span className="text-muted">— {c.region ?? "Region pending"}</span>
                   </button>
                 ))}
               </div>

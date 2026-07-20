@@ -15,6 +15,8 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/dashboard/my-tickets", title: "My Tickets" },
   { prefix: "/dashboard/service", title: "Manager Dashboard" },
   { prefix: "/dashboard/admin/security", title: "Login & Security" },
+  { prefix: "/dashboard/admin/region-mapping", title: "Regions & Territories" },
+  { prefix: "/dashboard/admin/sync-monitor", title: "Sync Monitor" },
   { prefix: "/dashboard/admin", title: "Admin Console" },
   { prefix: "/dashboard/dashboards", title: "Dashboards" },
 ];

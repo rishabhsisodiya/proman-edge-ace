@@ -248,7 +248,11 @@ model Customer {
   erpnextCustomerId      String?        @unique
   customerName           String
   customerType           CustomerType
-  region                 Region
+  // Nullable: the nightly Customer Sync job (§5.1) resolves this from
+  // ERPNext's territory field via RegionMapping. A customer whose territory
+  // isn't mapped yet stays null and is flagged via needsReview instead of
+  // failing the sync outright.
+  region                 Region?
   primaryContactName     String
   primaryContactMobile   String
   primaryContactEmail    String
@@ -264,11 +268,59 @@ model Customer {
   accountStatus          AccountStatus  @default(ACTIVE)
   gstNumber              String?
   creditTerms            String?
+  // Data-quality flag (not a failure) — e.g. unmapped territory or a missing
+  // required field on the ERPNext side. Retried every night indefinitely,
+  // distinct from CustomerSyncFailure (genuine technical error, capped retry).
+  needsReview            Boolean        @default(false)
+  reviewReason           String?
+  lastSyncedAt           DateTime?
   sites                  CustomerSite[]
   equipment              Equipment[]
   tickets                Ticket[]
   createdAt              DateTime       @default(now())
   updatedAt              DateTime       @updatedAt
+
+  @@index([needsReview])
+}
+
+/// Maps ERPNext's messy territory field (state-level, ~33 values with
+/// data-quality dupes like "Tamilnadu" vs "Tamil Nadu") onto the app's Region
+/// enum. Admin-maintained via its own small screen (not synced from ERPNext —
+/// ERPNext has no concept of this app's Region enum).
+model RegionMapping {
+  id           String   @id @default(uuid())
+  erpTerritory String   @unique
+  region       Region
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+/// Genuine technical sync failures (DB error, constraint violation, timeout)
+/// for a specific ERPNext customer record — distinct from needsReview, which
+/// is a data-quality issue, not a failure. Capped retry (5 nightly attempts)
+/// rather than the FSD's literal "retry forever," since infinite retry on a
+/// permanently-broken record wastes every future run forever.
+model CustomerSyncFailure {
+  id                String   @id @default(uuid())
+  erpnextCustomerId String   @unique
+  attemptCount      Int      @default(1)
+  lastError         String
+  firstFailedAt     DateTime @default(now())
+  lastAttemptAt     DateTime @default(now())
+}
+
+/// Customers never imported at all because ERPNext has no email AND no
+/// mobile for them (client decision: ~81% of real customers, 1,645/2,024,
+/// fall into this bucket — not a rare edge case). No Customer row exists for
+/// these, so they can't use Customer.needsReview; tracked here instead so
+/// Admin can see why, and re-checked every night in case ERP data gets fixed.
+model CustomerSyncSkipped {
+  id                String   @id @default(uuid())
+  erpnextCustomerId String   @unique
+  customerName      String
+  reason            String
+  firstSeenAt       DateTime @default(now())
+  lastCheckedAt     DateTime @default(now())
 }
 
 model CustomerSite {

@@ -4,7 +4,7 @@ import { Region } from "./types";
 export interface CustomerListItem {
   id: string;
   customerName: string;
-  region: Region;
+  region: Region | null;
   accountStatus: string;
 }
 

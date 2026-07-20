@@ -75,7 +75,10 @@ export const SERVICE_TYPE_LABEL: Record<ServiceType, string> = {
 export interface Customer {
   id: string;
   customerName: string;
-  region: Region;
+  // Nullable: the nightly Customer Sync job flags customers whose ERPNext
+  // territory isn't in RegionMapping yet as needsReview, region stays null
+  // until an Admin adds the mapping.
+  region: Region | null;
 }
 
 export interface Equipment {

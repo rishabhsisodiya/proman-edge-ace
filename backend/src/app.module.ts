@@ -6,6 +6,8 @@ import { AuthModule } from './auth/auth.module';
 import { WorkflowModule } from './ticketing/workflow/workflow.module';
 import { UsersModule } from './users/users.module';
 import { CustomersModule } from './ticketing/customers/customers.module';
+import { RegionMappingModule } from './ticketing/region-mapping/region-mapping.module';
+import { SyncModule } from './ticketing/sync/sync.module';
 import { EquipmentModule } from './ticketing/equipment/equipment.module';
 import { ItemsModule } from './ticketing/items/items.module';
 import { TicketsModule } from './ticketing/tickets/tickets.module';
@@ -27,6 +29,8 @@ import { DispatchModule } from './dashboards/dispatch/dispatch.module';
     WorkflowModule,
     UsersModule,
     CustomersModule,
+    RegionMappingModule,
+    SyncModule,
     EquipmentModule,
     ItemsModule,
     TicketsModule,

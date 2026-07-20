@@ -191,12 +191,17 @@ export class TicketsService {
 
     // §7.1 rule 5 — auto-routing to an ASM covering the customer's region,
     // load-based (fewest current open tickets), per Q12's documented default.
-    const regionAsms = await this.prisma.userRegion.findMany({
-      where: { region: customer.region, user: { role: 'ASM' } },
-      include: {
-        user: { include: { _count: { select: { ticketsAsAsm: { where: { status: { not: 'CLOSED' } } } } } } },
-      },
-    });
+    // A customer whose region hasn't been resolved yet (needsReview from the
+    // nightly sync) can't be routed — falls through to unassigned, same as
+    // the "no ASM covers this region" case below.
+    const regionAsms = customer.region
+      ? await this.prisma.userRegion.findMany({
+          where: { region: customer.region, user: { role: 'ASM' } },
+          include: {
+            user: { include: { _count: { select: { ticketsAsAsm: { where: { status: { not: 'CLOSED' } } } } } } },
+          },
+        })
+      : [];
     if (regionAsms.length > 0) {
       const chosenAsm = regionAsms.reduce((best, cur) =>
         cur.user._count.ticketsAsAsm < best.user._count.ticketsAsAsm ? cur : best,

@@ -10,6 +10,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "ts-node prisma/seed.ts",
+    "prisma:seed-region-mappings": "ts-node prisma/seed-region-mappings.ts",
     "lint": "eslint \"src/**/*.ts\""
   },
   "prisma": {

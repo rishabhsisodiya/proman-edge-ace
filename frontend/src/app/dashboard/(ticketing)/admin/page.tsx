@@ -16,7 +16,16 @@ const SECTIONS = [
   { label: "SLA Policies", description: "Response/resolution hours by service type × priority", href: null },
   { label: "Ticket Priorities", description: "Priority levels + Priority Matrix", href: null },
   { label: "Workflow States & Transitions", description: "Ticket lifecycle designer", href: null },
-  { label: "Regions & Territories", description: "Region list, ASM territory assignment", href: null },
+  {
+    label: "Regions & Territories",
+    description: "ERPNext territory → Region mapping, used by the nightly Customer Sync job",
+    href: "/dashboard/admin/region-mapping",
+  },
+  {
+    label: "Sync Monitor",
+    description: "ERPNext Customer sync history, failures, skipped records, needs-review",
+    href: "/dashboard/admin/sync-monitor",
+  },
   { label: "Notification Templates", description: "23 trigger templates, per channel", href: null },
   { label: "Skill Tags", description: "Standard engineer skill-tag list", href: null },
   { label: "Billing Rates", description: "engineer_level → hourly rate", href: null },

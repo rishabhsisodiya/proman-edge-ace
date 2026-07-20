@@ -345,7 +345,7 @@ function TicketActions({
 
   useEffect(() => {
     if ((role === "ASM" || role === "MANAGER") && (ticket.status === "OPEN" || ticket.status === "ASSIGNED")) {
-      engineerCandidates(ticket.customer.region).then(setCandidates).catch(() => setCandidates([]));
+      engineerCandidates(ticket.customer.region ?? undefined).then(setCandidates).catch(() => setCandidates([]));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role, ticket.status, ticket.customer.region]);
