@@ -5,7 +5,9 @@ module.exports = {
       cwd: '/root/proman-edge-ace/backend',
       script: 'dist/src/main.js',
       env: {
-        NODE_ENV: 'production',
+        // plain HTTP until nginx/TLS is set up — 'production' would force
+        // Secure cookies, which browsers silently drop over HTTP
+        NODE_ENV: 'development',
         PORT: '4000'
       }
     },
