@@ -3,7 +3,7 @@ module.exports = {
     {
       name: 'proman-backend',
       cwd: '/root/proman-edge-ace/backend',
-      script: 'dist/main.js',
+      script: 'dist/src/main.js',
       env: {
         NODE_ENV: 'production',
         PORT: '4000'
