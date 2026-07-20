@@ -7,13 +7,42 @@ import { addBusinessHours } from './business-hours.util';
 import { SLA_POLICY } from './sla-policy.constants';
 import { WorkflowService } from '../workflow/workflow.service';
 
-/** FSD §7.1 rule 4 — auto-classification for auto-sources. */
+/**
+ * FSD §7.1 rule 4 — auto-classification for auto-sources (AMC->Scheduled PM/
+ * Medium, warranty->Warranty Repair/High, predictive->Technical Audit/High).
+ * Genuinely nothing to do yet: those 3 auto-sources (amc_scheduled,
+ * warranty_triggered, predictive) aren't in the `Source` enum at all — they
+ * only get created once the AMC/Warranty/Predictive engines exist (Build
+ * Plan Days 4-10, T2). Left as an explicit stub rather than faking
+ * classification for sources that can't occur today.
+ */
 function autoClassify(source: Source): { serviceType?: ServiceType; priority?: Priority } {
-  // AMC/warranty/predictive auto-sources aren't in this MVP's ticket-creation surface
-  // (no AMC engine, no warranty engine yet) — kept here as the single extension point
-  // so Sprint 3+ work adds cases, not a second creation path.
   return {};
 }
+
+// FSD §5.2 Priority Matrix (service_type + customer_type + equipment_category
+// -> default priority) — full 3-dimension version needs the Admin config
+// screen (not built yet). This is the service_type-only slice of it: enough
+// to give Call Center a sensible default without forcing a manual pick every
+// time, per §5.3 ("priority auto-set by Priority Matrix, overridable by CC/ASM").
+const DEFAULT_PRIORITY_BY_SERVICE_TYPE: Record<ServiceType, Priority> = {
+  BREAKDOWN_CHARGEABLE: 'CRITICAL',
+  WARRANTY_REPAIR: 'HIGH',
+  TECHNICAL_AUDIT: 'MEDIUM',
+  RETROFIT_UPGRADE: 'MEDIUM',
+  SCHEDULED_PM: 'MEDIUM',
+  AMC: 'MEDIUM',
+  SPARES_SUPPLY_INSTALLATION: 'LOW',
+};
+
+// FSD §7.1 rule 2 — 24h dedup window (configurable; hardcoded until the
+// Admin config screen for this exists). Only auto-sources merge into the
+// existing ticket; customer-initiated/manual sources always create a new
+// ticket with a cross-reference note instead. API_PARTNER is the only
+// "auto" source that actually exists in our Source enum today — AMC/
+// warranty/predictive auto-sources don't exist yet (see autoClassify above).
+const DEDUP_WINDOW_HOURS = 24;
+const AUTO_MERGE_SOURCES: Source[] = ['API_PARTNER'];
 
 // Human-readable labels for the auto-generated subject (§5.3) — using the raw
 // enum value there leaks "BREAKDOWN_CHARGEABLE" straight into a user-facing field.
@@ -63,9 +92,40 @@ export class TicketsService {
 
     const autoClass = autoClassify(dto.source);
     const serviceType = dto.serviceType ?? autoClass.serviceType;
-    const priority = dto.priority ?? autoClass.priority;
-    if (!serviceType || !priority) {
-      throw new BadRequestException('serviceType and priority are required for this source');
+    if (!serviceType) {
+      throw new BadRequestException('serviceType is required for this source');
+    }
+    const priority = dto.priority ?? autoClass.priority ?? DEFAULT_PRIORITY_BY_SERVICE_TYPE[serviceType];
+
+    // §7.1 rule 2 — dedup check: same customer + equipment, created within
+    // the last 24h, not already closed.
+    const dedupWindowStart = new Date(Date.now() - DEDUP_WINDOW_HOURS * 60 * 60 * 1000);
+    const duplicateCandidate = dto.equipmentId
+      ? await this.prisma.ticket.findFirst({
+          where: {
+            customerId: dto.customerId,
+            equipmentId: dto.equipmentId,
+            status: { not: 'CLOSED' },
+            createdAt: { gte: dedupWindowStart },
+          },
+          orderBy: { createdAt: 'desc' },
+        })
+      : null;
+
+    if (duplicateCandidate && AUTO_MERGE_SOURCES.includes(dto.source)) {
+      // Auto-source duplicate: don't create a second ticket — merge as a note
+      // on the existing one instead.
+      await this.prisma.ticketAuditLog.create({
+        data: {
+          ticketId: duplicateCandidate.id,
+          fieldName: 'duplicate_merge',
+          oldValue: null,
+          newValue: `Merged duplicate ${dto.source} report: ${dto.description}`,
+          changedByUserId: actor.userId,
+          changeSource: 'SYSTEM_JOB',
+        },
+      });
+      return duplicateCandidate;
     }
 
     const warrantyStatusAtCreation = equipment?.warrantyStatus ?? null;
@@ -81,7 +141,7 @@ export class TicketsService {
       dto.subject ??
       `${equipment?.itemName ?? 'General'} — ${SERVICE_TYPE_LABEL[serviceType]} — ${customer.customerName}`;
 
-    return this.prisma.ticket.create({
+    const ticket = await this.prisma.ticket.create({
       data: {
         ticketNo,
         source: dto.source,
@@ -97,10 +157,50 @@ export class TicketsService {
         slaResponseDue,
         slaResolutionDue,
         createdByUserId: actor.userId,
-        // Auto-routing to an ASM by matching region is Sprint 1 follow-up work
-        // once User.regions seed data exists — left null here rather than guessed.
       },
     });
+
+    // Manual/customer-initiated sources: never merge, just cross-reference
+    // note pointing at the likely-duplicate ticket so Call Center/ASM can
+    // decide for themselves whether to consolidate.
+    if (duplicateCandidate && !AUTO_MERGE_SOURCES.includes(dto.source)) {
+      await this.prisma.ticketAuditLog.create({
+        data: {
+          ticketId: ticket.id,
+          fieldName: 'duplicate_reference',
+          oldValue: null,
+          newValue: `Possible duplicate of ${duplicateCandidate.ticketNo} (created ${duplicateCandidate.createdAt.toISOString()})`,
+          changedByUserId: actor.userId,
+          changeSource: 'SYSTEM_JOB',
+        },
+      });
+    }
+
+    // §7.1 rule 5 — auto-routing to an ASM covering the customer's region,
+    // load-based (fewest current open tickets), per Q12's documented default.
+    const regionAsms = await this.prisma.userRegion.findMany({
+      where: { region: customer.region, user: { role: 'ASM' } },
+      include: {
+        user: { include: { _count: { select: { ticketsAsAsm: { where: { status: { not: 'CLOSED' } } } } } } },
+      },
+    });
+    if (regionAsms.length > 0) {
+      const chosenAsm = regionAsms.reduce((best, cur) =>
+        cur.user._count.ticketsAsAsm < best.user._count.ticketsAsAsm ? cur : best,
+      ).user;
+
+      await this.prisma.ticket.update({ where: { id: ticket.id }, data: { assignedAsmId: chosenAsm.id } });
+      await this.workflow.transition({
+        ticketId: ticket.id,
+        targetStatus: 'ASSIGNED',
+        actorUserId: actor.userId,
+        actorRole: actor.role,
+      });
+    }
+    // No ASM covers this region: ticket stays OPEN/unassigned, already
+    // surfaced correctly by the existing "Unassigned" dashboard views.
+
+    return this.prisma.ticket.findUniqueOrThrow({ where: { id: ticket.id } });
   }
 
   /** Region/assignment-scoped list — enforced at the query layer, not the UI. */
