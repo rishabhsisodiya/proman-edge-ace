@@ -34,6 +34,9 @@ const DEFAULT_PRIORITY_BY_SERVICE_TYPE: Record<ServiceType, Priority> = {
   AMC: 'MEDIUM',
   SPARES_SUPPLY_INSTALLATION: 'LOW',
 };
+// Used when service type isn't known yet at creation — same neutral default
+// as the priority-picker's own fallback.
+const DEFAULT_PRIORITY_WHEN_UNKNOWN: Priority = 'MEDIUM';
 
 // FSD §7.1 rule 2 — 24h dedup window (configurable; hardcoded until the
 // Admin config screen for this exists). Only auto-sources merge into the
@@ -48,13 +51,19 @@ const AUTO_MERGE_SOURCES: Source[] = ['API_PARTNER'];
 // enum value there leaks "BREAKDOWN_CHARGEABLE" straight into a user-facing field.
 const SERVICE_TYPE_LABEL: Record<ServiceType, string> = {
   WARRANTY_REPAIR: 'Warranty Repair',
-  BREAKDOWN_CHARGEABLE: 'Breakdown (Chargeable)',
+  // Client request: drop "(Chargeable)" from the display label — billing
+  // behavior is unchanged, this is a display-only rename.
+  BREAKDOWN_CHARGEABLE: 'Breakdown',
   SCHEDULED_PM: 'Scheduled PM',
   TECHNICAL_AUDIT: 'Technical Audit',
   RETROFIT_UPGRADE: 'Retrofit / Upgrade',
   AMC: 'AMC',
   SPARES_SUPPLY_INSTALLATION: 'Spares Supply (with installation)',
 };
+const NOT_YET_DETERMINED_LABEL = 'Not Yet Determined';
+function serviceTypeLabel(s: ServiceType | null): string {
+  return s ? SERVICE_TYPE_LABEL[s] : NOT_YET_DETERMINED_LABEL;
+}
 
 export interface RequestUser {
   userId: string;
@@ -90,12 +99,16 @@ export class TicketsService {
       }
     }
 
+    // Client request: service type may genuinely not be known yet at ticket
+    // creation (Call Center hasn't diagnosed the issue) — stays null rather
+    // than blocking creation. ASM/Engineer/Manager/Admin set the real value
+    // later via updateServiceType() once it's known.
     const autoClass = autoClassify(dto.source);
-    const serviceType = dto.serviceType ?? autoClass.serviceType;
-    if (!serviceType) {
-      throw new BadRequestException('serviceType is required for this source');
-    }
-    const priority = dto.priority ?? autoClass.priority ?? DEFAULT_PRIORITY_BY_SERVICE_TYPE[serviceType];
+    const serviceType: ServiceType | null = dto.serviceType ?? autoClass.serviceType ?? null;
+    const priority =
+      dto.priority ??
+      autoClass.priority ??
+      (serviceType ? DEFAULT_PRIORITY_BY_SERVICE_TYPE[serviceType] : DEFAULT_PRIORITY_WHEN_UNKNOWN);
 
     // §7.1 rule 2 — dedup check: same customer + equipment, created within
     // the last 24h, not already closed.
@@ -131,7 +144,7 @@ export class TicketsService {
     const warrantyStatusAtCreation = equipment?.warrantyStatus ?? null;
     const warrantyEligible = warrantyStatusAtCreation === 'UNDER_WARRANTY';
 
-    const policy = SLA_POLICY[serviceType]?.[priority];
+    const policy = serviceType ? SLA_POLICY[serviceType]?.[priority] : undefined;
     const now = new Date();
     const slaResponseDue = policy ? addBusinessHours(now, policy.responseHours) : null;
     const slaResolutionDue = policy ? addBusinessHours(now, policy.resolutionHours) : null;
@@ -139,7 +152,7 @@ export class TicketsService {
     const ticketNo = await nextTicketNo(this.prisma);
     const subject =
       dto.subject ??
-      `${equipment?.itemName ?? 'General'} — ${SERVICE_TYPE_LABEL[serviceType]} — ${customer.customerName}`;
+      `${equipment?.itemName ?? 'General'} — ${serviceTypeLabel(serviceType)} — ${customer.customerName}`;
 
     const ticket = await this.prisma.ticket.create({
       data: {
@@ -242,10 +255,17 @@ export class TicketsService {
   }
 
   async timeline(id: string) {
-    return this.prisma.ticketAuditLog.findMany({
+    const entries = await this.prisma.ticketAuditLog.findMany({
       where: { ticketId: id },
       orderBy: { changedAt: 'asc' },
     });
+    const userIds = [...new Set(entries.map((e) => e.changedByUserId))];
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, fullName: true },
+    });
+    const nameById = new Map(users.map((u) => [u.id, u.fullName]));
+    return entries.map((e) => ({ ...e, changedByName: nameById.get(e.changedByUserId) ?? 'System' }));
   }
 
   /**
@@ -274,6 +294,7 @@ export class TicketsService {
       targetStatus: 'ENGINEER_ASSIGNED',
       actorUserId: actor.userId,
       actorRole: actor.role,
+      comment: `Assigned to ${engineer.fullName}`,
     });
   }
 
@@ -325,23 +346,61 @@ export class TicketsService {
     return { ...updated, escalationTier };
   }
 
+  /**
+   * Client request: service type can be set/updated after ticket creation
+   * (it may genuinely be unknown at creation time) — restricted to
+   * ASM/Engineer/Manager/Admin (enforced at the controller), not Call
+   * Center, since they're the ones actually diagnosing the issue. Priority
+   * and SLA due dates are recomputed against the newly-known service type,
+   * since there was no SLA clock running at all while it was unset.
+   */
+  async updateServiceType(id: string, serviceType: ServiceType, actor: RequestUser) {
+    const ticket = await this.prisma.ticket.findUniqueOrThrow({ where: { id } });
+    const policy = SLA_POLICY[serviceType]?.[ticket.priority];
+    const now = new Date();
+
+    const updated = await this.prisma.ticket.update({
+      where: { id },
+      data: {
+        serviceType,
+        slaResponseDue: policy ? addBusinessHours(now, policy.responseHours) : ticket.slaResponseDue,
+        slaResolutionDue: policy ? addBusinessHours(now, policy.resolutionHours) : ticket.slaResolutionDue,
+      },
+    });
+
+    await this.prisma.ticketAuditLog.create({
+      data: {
+        ticketId: id,
+        fieldName: 'serviceType',
+        oldValue: serviceTypeLabel(ticket.serviceType),
+        newValue: serviceTypeLabel(serviceType),
+        changedByUserId: actor.userId,
+        changeSource: 'WEB_UI',
+      },
+    });
+
+    return updated;
+  }
+
   /** Engineer marks arrival at the customer site. */
-  reachedSite(id: string, actor: RequestUser) {
+  reachedSite(id: string, actor: RequestUser, comment?: string) {
     return this.workflow.transition({
       ticketId: id,
       targetStatus: 'REACHED_SITE',
       actorUserId: actor.userId,
       actorRole: actor.role,
+      comment,
     });
   }
 
   /** Engineer begins on-site work. */
-  startWorking(id: string, actor: RequestUser) {
+  startWorking(id: string, actor: RequestUser, comment?: string) {
     return this.workflow.transition({
       ticketId: id,
       targetStatus: 'WORKING',
       actorUserId: actor.userId,
       actorRole: actor.role,
+      comment,
     });
   }
 
@@ -384,12 +443,13 @@ export class TicketsService {
   }
 
   /** ASM/Manager confirms resolution. */
-  asmResolve(id: string, actor: RequestUser) {
+  asmResolve(id: string, actor: RequestUser, comment?: string) {
     return this.workflow.transition({
       ticketId: id,
       targetStatus: 'ASM_RESOLVED',
       actorUserId: actor.userId,
       actorRole: actor.role,
+      comment,
     });
   }
 
@@ -399,12 +459,13 @@ export class TicketsService {
    * Quotation/billing handoff exists (Days 4-10, T3). TODO: add that check
    * once erpnextInvoiceId is actually populated by that work.
    */
-  close(id: string, actor: RequestUser) {
+  close(id: string, actor: RequestUser, comment?: string) {
     return this.workflow.transition({
       ticketId: id,
       targetStatus: 'CLOSED',
       actorUserId: actor.userId,
       actorRole: actor.role,
+      comment,
     });
   }
 

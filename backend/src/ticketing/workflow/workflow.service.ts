@@ -22,8 +22,12 @@ export class WorkflowService {
     pendingReason?: PendingReason;
     pendingNotes?: string;
     resolutionSummary?: string;
+    /** Optional free-text note from the actor (client request: allow a
+     * comment at each stage after Accepted) — folded into the audit log
+     * entry, same mechanism `regularize()` already uses for its reason. */
+    comment?: string;
   }): Promise<Ticket> {
-    const { ticketId, targetStatus, actorUserId, actorRole, pendingReason, pendingNotes, resolutionSummary } = params;
+    const { ticketId, targetStatus, actorUserId, actorRole, pendingReason, pendingNotes, resolutionSummary, comment } = params;
 
     const ticket = await this.prisma.ticket.findUniqueOrThrow({ where: { id: ticketId } });
     const rule = TICKET_TRANSITIONS[ticket.status];
@@ -48,6 +52,7 @@ export class WorkflowService {
       fromStatus: ticket.status,
       targetStatus,
       actorUserId,
+      auditNote: comment?.trim() || undefined,
       data: {
         status: targetStatus,
         closedAt: targetStatus === 'CLOSED' ? new Date() : undefined,

@@ -24,16 +24,31 @@ export type Region = "NORTH" | "SOUTH" | "EAST" | "WEST" | "CENTRAL" | "BANGLADE
 
 // §5.3 — 8 sources total; bulk_import/api_partner/amc_scheduled/warranty_triggered/
 // predictive aren't reachable from the manual New Ticket form (auto-sources only).
-export type Source = "CUSTOMER_CALL" | "CUSTOMER_WHATSAPP" | "INTERNAL" | "BULK_IMPORT" | "API_PARTNER";
+export type Source =
+  | "CUSTOMER_CALL"
+  | "CUSTOMER_WHATSAPP"
+  | "CUSTOMER_PORTAL"
+  | "CUSTOMER_EMAIL"
+  | "AMC_SCHEDULED"
+  | "WARRANTY_TRIGGERED"
+  | "PREDICTIVE"
+  | "INTERNAL"
+  | "BULK_IMPORT"
+  | "API_PARTNER";
 export const SOURCE_LABEL: Record<Source, string> = {
   CUSTOMER_CALL: "Customer Call",
   CUSTOMER_WHATSAPP: "Customer WhatsApp",
+  CUSTOMER_PORTAL: "Customer Portal",
+  CUSTOMER_EMAIL: "Customer Email",
+  AMC_SCHEDULED: "AMC Scheduled",
+  WARRANTY_TRIGGERED: "Warranty Triggered",
+  PREDICTIVE: "Predictive",
   INTERNAL: "Internal",
   BULK_IMPORT: "Bulk Import",
   API_PARTNER: "Partner API",
 };
 // Manual-creation sources only (§7.1 — the rest are auto/system sources).
-export const MANUAL_SOURCES: Source[] = ["CUSTOMER_CALL", "CUSTOMER_WHATSAPP", "INTERNAL"];
+export const MANUAL_SOURCES: Source[] = ["CUSTOMER_CALL", "CUSTOMER_WHATSAPP", "CUSTOMER_PORTAL", "CUSTOMER_EMAIL", "INTERNAL"];
 
 // §2.2 — 5 of 7 FSD service types exist in the schema today (AMC and Spares
 // Supply are enum-only, not yet exercised by ticket creation validation).
@@ -47,7 +62,9 @@ export type ServiceType =
   | "SPARES_SUPPLY_INSTALLATION";
 export const SERVICE_TYPE_LABEL: Record<ServiceType, string> = {
   WARRANTY_REPAIR: "Warranty Repair",
-  BREAKDOWN_CHARGEABLE: "Breakdown (Chargeable)",
+  // Client request: drop "(Chargeable)" from the display label — billing
+  // behavior is unchanged, this is a display-only rename.
+  BREAKDOWN_CHARGEABLE: "Breakdown",
   SCHEDULED_PM: "Scheduled PM",
   TECHNICAL_AUDIT: "Technical Audit",
   RETROFIT_UPGRADE: "Retrofit / Upgrade",
@@ -100,9 +117,12 @@ export interface Ticket {
   assignedAsm: EngineerRef | null;
 }
 
+// Client-requested display renames (internal enum values unchanged, so
+// nothing in the workflow engine/backend needed to change — only the label):
+// ASSIGNED -> "In Review", PENDING -> "On Hold".
 export const STATUS_LABEL: Record<TicketStatus, string> = {
   OPEN: "Open",
-  ASSIGNED: "Assigned",
+  ASSIGNED: "In Review",
   ENGINEER_ASSIGNED: "Engineer Assigned",
   ACCEPTED: "Accepted",
   REACHED_SITE: "Reached Site",

@@ -125,6 +125,13 @@ enum Priority {
 enum Source {
   CUSTOMER_CALL
   CUSTOMER_WHATSAPP
+  // FSD §7.1 canonical source — manual-selection tag for now (not an actual
+  // self-service portal yet, that's deferred, §7.5).
+  CUSTOMER_PORTAL
+  CUSTOMER_EMAIL
+  AMC_SCHEDULED
+  WARRANTY_TRIGGERED
+  PREDICTIVE
   INTERNAL
   BULK_IMPORT
   API_PARTNER
@@ -326,7 +333,10 @@ model Ticket {
   id                       String              @id @default(uuid())
   ticketNo                 String              @unique
   source                   Source
-  serviceType              ServiceType
+  // Nullable — client request: may genuinely be unknown at ticket creation
+  // (Call Center hasn't diagnosed it yet). Set later by ASM/Engineer/Manager/
+  // Admin via updateServiceType() once it's actually known.
+  serviceType              ServiceType?
   priority                 Priority
   status                   TicketStatus        @default(OPEN)
   subject                  String

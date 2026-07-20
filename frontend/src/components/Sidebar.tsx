@@ -89,7 +89,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
       >
         <div className="px-5 py-5">
           <h1 className="text-[15px] font-bold tracking-wide text-white">
-            PROMAN <span className="text-orange">EDGE</span>
+            PROMAN <span className="text-orange">EDGE</span> <span className="text-white/50">- ACE Service</span>
           </h1>
         </div>
 

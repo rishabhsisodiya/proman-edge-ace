@@ -9,6 +9,8 @@ import { RejectTicketDto } from './dto/reject-ticket.dto';
 import { MarkPendingDto } from './dto/mark-pending.dto';
 import { ResolveTicketDto } from './dto/resolve-ticket.dto';
 import { RegularizeTicketDto } from './dto/regularize-ticket.dto';
+import { CommentDto } from './dto/comment.dto';
+import { UpdateServiceTypeDto } from './dto/update-service-type.dto';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('tickets')
@@ -42,6 +44,15 @@ export class TicketsController {
     return this.tickets.assign(id, dto.engineerId, { userId: req.user.userId, role: req.user.role });
   }
 
+  // Client request: service type may not be known at creation — ASM/Engineer/
+  // Manager/Admin can set it once it's actually diagnosed. Not Call Center —
+  // they're not the ones diagnosing the issue.
+  @Roles('ASM', 'ENGINEER', 'MANAGER', 'ADMIN')
+  @Post(':id/service-type')
+  updateServiceType(@Param('id') id: string, @Body() dto: UpdateServiceTypeDto, @Req() req: any) {
+    return this.tickets.updateServiceType(id, dto.serviceType, { userId: req.user.userId, role: req.user.role });
+  }
+
   @Roles('ENGINEER')
   @Post(':id/accept')
   accept(@Param('id') id: string, @Req() req: any) {
@@ -56,14 +67,14 @@ export class TicketsController {
 
   @Roles('ENGINEER')
   @Post(':id/reached-site')
-  reachedSite(@Param('id') id: string, @Req() req: any) {
-    return this.tickets.reachedSite(id, { userId: req.user.userId, role: req.user.role });
+  reachedSite(@Param('id') id: string, @Body() dto: CommentDto, @Req() req: any) {
+    return this.tickets.reachedSite(id, { userId: req.user.userId, role: req.user.role }, dto.comment);
   }
 
   @Roles('ENGINEER')
   @Post(':id/start-working')
-  startWorking(@Param('id') id: string, @Req() req: any) {
-    return this.tickets.startWorking(id, { userId: req.user.userId, role: req.user.role });
+  startWorking(@Param('id') id: string, @Body() dto: CommentDto, @Req() req: any) {
+    return this.tickets.startWorking(id, { userId: req.user.userId, role: req.user.role }, dto.comment);
   }
 
   @Roles('ENGINEER')
@@ -89,14 +100,14 @@ export class TicketsController {
 
   @Roles('ASM', 'MANAGER')
   @Post(':id/asm-resolve')
-  asmResolve(@Param('id') id: string, @Req() req: any) {
-    return this.tickets.asmResolve(id, { userId: req.user.userId, role: req.user.role });
+  asmResolve(@Param('id') id: string, @Body() dto: CommentDto, @Req() req: any) {
+    return this.tickets.asmResolve(id, { userId: req.user.userId, role: req.user.role }, dto.comment);
   }
 
   @Roles('CALL_CENTER', 'MANAGER')
   @Post(':id/close')
-  close(@Param('id') id: string, @Req() req: any) {
-    return this.tickets.close(id, { userId: req.user.userId, role: req.user.role });
+  close(@Param('id') id: string, @Body() dto: CommentDto, @Req() req: any) {
+    return this.tickets.close(id, { userId: req.user.userId, role: req.user.role }, dto.comment);
   }
 
   @Roles('ADMIN')

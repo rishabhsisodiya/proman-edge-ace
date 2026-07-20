@@ -32,6 +32,7 @@ import {
   startWorking,
   TicketAuditEntry,
   ticketTimeline,
+  updateServiceType,
 } from "@/lib/ticketing/actions";
 
 // Ticket Detail (§10.1 W-08) — one shared screen for all roles; the action
@@ -158,20 +159,55 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             <p className="p-4 text-sm text-muted">No history yet.</p>
           ) : (
             <ul className="divide-y divide-line">
-              {timeline.map((e) => (
-                <li key={e.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
-                  <span className="text-navy">
-                    {e.oldValue} → {e.newValue}
-                  </span>
-                  <span className="text-xs text-muted">{new Date(e.changedAt).toLocaleString()}</span>
-                </li>
-              ))}
+              {timeline.map((e) => {
+                const { headline, note } = describeTimelineEntry(e);
+                return (
+                  <li key={e.id} className="flex items-start justify-between gap-4 px-4 py-2.5 text-sm">
+                    <div>
+                      <p className="text-navy">{headline}</p>
+                      {note && <p className="mt-0.5 text-xs text-muted">{note}</p>}
+                      <p className="mt-0.5 text-xs text-muted">by {e.changedByName}</p>
+                    </div>
+                    <span className="shrink-0 text-xs text-muted">{new Date(e.changedAt).toLocaleString()}</span>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
       </div>
     </div>
   );
+}
+
+function statusLabelOrRaw(value: string): string {
+  return STATUS_LABEL[value as TicketStatus] ?? value;
+}
+
+// Renders each TicketAuditLog row (raw fieldName/oldValue/newValue) into a
+// readable headline + optional note, instead of showing enum codes with
+// underscores or the "STATUS (note text)" packed format the backend stores.
+function describeTimelineEntry(e: TicketAuditEntry): { headline: string; note: string | null } {
+  if (e.fieldName === 'status') {
+    // WorkflowService packs an optional note as "TARGET_STATUS (note)".
+    const match = e.newValue?.match(/^([A-Z_]+)(?: \((.+)\))?$/);
+    const targetRaw = match?.[1] ?? e.newValue ?? '';
+    const note = match?.[2] ?? null;
+    const from = e.oldValue ? statusLabelOrRaw(e.oldValue) : null;
+    const to = statusLabelOrRaw(targetRaw);
+    return { headline: from ? `Status changed: ${from} → ${to}` : `Status set to ${to}`, note };
+  }
+  if (e.fieldName === 'serviceType') {
+    return { headline: `Service type changed: ${e.oldValue} → ${e.newValue}`, note: null };
+  }
+  if (e.fieldName === 'duplicate_merge' || e.fieldName === 'duplicate_reference') {
+    return { headline: e.newValue ?? '', note: null };
+  }
+  const fieldLabel = e.fieldName
+    .split('_')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+  return { headline: `${fieldLabel}: ${e.oldValue ?? '—'} → ${e.newValue ?? '—'}`, note: null };
 }
 
 // Linear lifecycle order for the progress bar (§5.4) — PENDING is a branch
@@ -246,6 +282,35 @@ function ActionButton({
   );
 }
 
+// A single-step transition button paired with an optional remark — client
+// request: engineer/ASM can leave a note on each stage from Accepted onward.
+function RemarkedAction({
+  label,
+  busy,
+  value,
+  onChange,
+  onSubmit,
+}: {
+  label: string;
+  busy: boolean;
+  value: string;
+  onChange: (v: string) => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Remark (optional)"
+        className="h-9 w-56 rounded-md border border-line px-2 text-sm text-navy placeholder:text-text-disabled"
+      />
+      <ActionButton label={label} busy={busy} onClick={onSubmit} />
+    </div>
+  );
+}
+
 /**
  * One row of role-appropriate action buttons — mirrors TICKET_TRANSITIONS'
  * allowedRoles + next[] exactly, so nothing here can call an endpoint the
@@ -271,6 +336,12 @@ function TicketActions({
   const [showPending, setShowPending] = useState(false);
   const [resolutionSummary, setResolutionSummary] = useState("");
   const [showResolve, setShowResolve] = useState(false);
+  const [reachedComment, setReachedComment] = useState("");
+  const [startComment, setStartComment] = useState("");
+  const [asmResolveComment, setAsmResolveComment] = useState("");
+  const [closeComment, setCloseComment] = useState("");
+  const [serviceType, setServiceType] = useState<ServiceType | "">((ticket.serviceType as ServiceType) ?? "");
+  const [serviceTypeSaving, setServiceTypeSaving] = useState(false);
 
   useEffect(() => {
     if ((role === "ASM" || role === "MANAGER") && (ticket.status === "OPEN" || ticket.status === "ASSIGNED")) {
@@ -280,6 +351,11 @@ function TicketActions({
   }, [role, ticket.status, ticket.customer.region]);
 
   const buttons: React.ReactNode[] = [];
+
+  // Service type may not be known at creation — ASM/Engineer/Manager/Admin
+  // can set/update it any time before the ticket is closed.
+  const canUpdateServiceType =
+    (role === "ASM" || role === "ENGINEER" || role === "MANAGER" || role === "ADMIN") && ticket.status !== "CLOSED";
 
   // ASM/Manager: assign an engineer (covers OPEN and ASSIGNED per tickets.service.ts assign()).
   if ((role === "ASM" || role === "MANAGER") && ticket.status !== "CLOSED" && !ticket.assignedEngineer) {
@@ -316,14 +392,19 @@ function TicketActions({
     );
   }
 
-  // Engineer: Reached Site
+  // Engineer: Reached Site — remark optional (§ client request: remarks on
+  // each stage from Accepted onward)
   if (role === "ENGINEER" && ticket.status === "ACCEPTED") {
     buttons.push(
-      <ActionButton
+      <RemarkedAction
         key="reached"
         label="Reached Site"
         busy={busy}
-        onClick={() => runAction(() => reachedSite(ticket.id), "Marked as reached site.")}
+        value={reachedComment}
+        onChange={setReachedComment}
+        onSubmit={() =>
+          runAction(() => reachedSite(ticket.id, reachedComment.trim() || undefined), "Marked as reached site.")
+        }
       />,
     );
   }
@@ -331,11 +412,13 @@ function TicketActions({
   // Engineer: Start Working
   if (role === "ENGINEER" && ticket.status === "REACHED_SITE") {
     buttons.push(
-      <ActionButton
+      <RemarkedAction
         key="start"
         label="Start Working"
         busy={busy}
-        onClick={() => runAction(() => startWorking(ticket.id), "Work started.")}
+        value={startComment}
+        onChange={setStartComment}
+        onSubmit={() => runAction(() => startWorking(ticket.id, startComment.trim() || undefined), "Work started.")}
       />,
     );
   }
@@ -356,11 +439,15 @@ function TicketActions({
   // ASM/Manager: confirm resolution
   if ((role === "ASM" || role === "MANAGER") && ticket.status === "ENGINEER_RESOLVED") {
     buttons.push(
-      <ActionButton
+      <RemarkedAction
         key="asmresolve"
         label="Confirm Resolution"
         busy={busy}
-        onClick={() => runAction(() => asmResolveTicket(ticket.id), "Resolution confirmed.")}
+        value={asmResolveComment}
+        onChange={setAsmResolveComment}
+        onSubmit={() =>
+          runAction(() => asmResolveTicket(ticket.id, asmResolveComment.trim() || undefined), "Resolution confirmed.")
+        }
       />,
     );
   }
@@ -368,7 +455,14 @@ function TicketActions({
   // Call Center/Manager: close
   if ((role === "CALL_CENTER" || role === "MANAGER") && ticket.status === "ASM_RESOLVED") {
     buttons.push(
-      <ActionButton key="close" label="Close Ticket" busy={busy} onClick={() => runAction(() => closeTicket(ticket.id), "Ticket closed.")} />,
+      <RemarkedAction
+        key="close"
+        label="Close Ticket"
+        busy={busy}
+        value={closeComment}
+        onChange={setCloseComment}
+        onSubmit={() => runAction(() => closeTicket(ticket.id, closeComment.trim() || undefined), "Ticket closed.")}
+      />,
     );
   }
 
@@ -408,6 +502,38 @@ function TicketActions({
 
   return (
     <div className="space-y-3">
+      {canUpdateServiceType && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-white p-3">
+          <p className="text-xs font-bold uppercase text-muted">Service Type</p>
+          <select
+            value={serviceType}
+            onChange={(e) => setServiceType(e.target.value as ServiceType | "")}
+            className="h-9 rounded-md border border-line px-2 text-sm text-navy"
+          >
+            <option value="">Not yet determined</option>
+            {Object.entries(SERVICE_TYPE_LABEL).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          </select>
+          <ActionButton
+            label={serviceTypeSaving ? "Saving…" : "Update"}
+            busy={serviceTypeSaving || !serviceType || serviceType === ticket.serviceType}
+            variant="secondary"
+            onClick={async () => {
+              if (!serviceType) return;
+              setServiceTypeSaving(true);
+              try {
+                await runAction(() => updateServiceType(ticket.id, serviceType), "Service type updated.");
+              } finally {
+                setServiceTypeSaving(false);
+              }
+            }}
+          />
+        </div>
+      )}
+
       {buttons.length > 0 && <div className="flex flex-wrap gap-2">{buttons}</div>}
 
       {showReject && (
