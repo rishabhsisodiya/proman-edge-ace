@@ -8,6 +8,7 @@ import { useQuotationDetail, extendQuotation, convertToSalesOrder, logFollowUp }
 import type { FunnelStage, FollowUpItem } from '@/types/sales'
 import { colors } from '@/lib/brand'
 import { formatMoney } from '@/lib/format'
+import { DashboardError } from '@/components/dashboards/DashboardError'
 
 // Ported verbatim from PROMAN/frontend/src/app/home/sales-head/page.tsx
 // (client-approved design — do not restyle). Plumbing changes only: api
@@ -195,7 +196,7 @@ export default function SalesHeadHomepage() {
   const { user, isLoading: userLoading } = useCurrentUser()
   const companies = ['PISPL']
 
-  const { data, isLoading, isError, refresh } = useSalesHomepage(companies)
+  const { data, isLoading, isError, status, refresh } = useSalesHomepage(companies)
 
   const [cardPeriods, setCardPeriods] = useState<Period[]>(['month', 'month', 'month', 'month', 'month'])
   const [funnelPeriod, setFunnelPeriod] = useState<Period>('month')
@@ -308,7 +309,9 @@ export default function SalesHeadHomepage() {
   }, [])
 
   if (isLoading || userLoading) return <div className="p-10 text-sm text-gray-500">Loading dashboard…</div>
-  if (isError || !data) return (
+  if (isError || !data) {
+    const isForbidden = status === 403
+    return (
     <div style={{ minHeight: '100vh', background: BG, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "Arial,'Helvetica Neue',Helvetica,sans-serif" }}>
       <div style={{ textAlign: 'center', maxWidth: 420, padding: '0 24px' }}>
         {/* Icon */}
@@ -320,33 +323,40 @@ export default function SalesHeadHomepage() {
         </div>
         {/* Heading */}
         <div style={{ fontSize: 20, fontWeight: 700, color: NAVY, marginBottom: 8 }}>
-          Dashboard unavailable
+          {isForbidden ? "You don't have access to this dashboard" : 'Dashboard unavailable'}
         </div>
         {/* Message */}
         <div style={{ fontSize: 13.5, color: TEXT2, lineHeight: 1.6, marginBottom: 6 }}>
-          Unable to reach the ERPNext server. This is usually a temporary issue with the API connection.
+          {isForbidden
+            ? "Your account role isn't permitted to view this page. If you think this is a mistake, contact your administrator."
+            : 'Unable to reach the ERPNext server. This is usually a temporary issue with the API connection.'}
         </div>
         <div style={{ fontSize: 12, color: TEXT3, marginBottom: 28 }}>
-          Error: 5xx — server did not respond
+          {isForbidden ? 'Error: 403 — Forbidden' : 'Error: 5xx — server did not respond'}
         </div>
         {/* Actions */}
         <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
-          <button onClick={refresh}
-            style={{ background: NAVY, color: '#fff', border: 'none', borderRadius: 8, padding: '10px 22px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-            Retry
-          </button>
-          <button onClick={() => window.location.reload()}
-            style={{ background: '#fff', color: NAVY, border: `1.5px solid ${BORDER}`, borderRadius: 8, padding: '10px 22px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-            Reload page
-          </button>
+          {!isForbidden && (
+            <button onClick={refresh}
+              style={{ background: NAVY, color: '#fff', border: 'none', borderRadius: 8, padding: '10px 22px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+              Retry
+            </button>
+          )}
+          <a href="/login"
+            style={{ background: isForbidden ? NAVY : '#fff', color: isForbidden ? '#fff' : NAVY, border: `1.5px solid ${BORDER}`, borderRadius: 8, padding: '10px 22px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'none', display: 'inline-block' }}>
+            {isForbidden ? 'Back to login' : 'Reload page'}
+          </a>
         </div>
         {/* Footer note */}
         <div style={{ marginTop: 32, fontSize: 11, color: '#B0B3CC' }}>
-          If this persists, check with your system administrator that the ERPNext server is running.
+          {isForbidden
+            ? ''
+            : 'If this persists, check with your system administrator that the ERPNext server is running.'}
         </div>
       </div>
     </div>
-  )
+    )
+  }
 
   // A5 alert triggers
   const pct      = Math.round(data.revenueTarget.pct)

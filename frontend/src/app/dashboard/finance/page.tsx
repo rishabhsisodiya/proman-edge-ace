@@ -419,7 +419,7 @@ export default function FinanceHeadPage() {
   const router = useRouter()
   const { user } = useCurrentUser()
   const [fyStartYear, setFyStartYear] = useState(currentFiscalYearStart())
-  const { data, isLoading, isError, refresh } = useFinanceHomepage(fyStartYear)
+  const { data, isLoading, isError, status, refresh } = useFinanceHomepage(fyStartYear)
 
   const [rcvEntity, setRcvEntity] = useState<string | null>(null)
   const [payEntity, setPayEntity] = useState<string | null>(null)
@@ -517,9 +517,19 @@ export default function FinanceHeadPage() {
     )
   }
   if (isError || !data) {
+    const isForbidden = status === 403
     return (
-      <div style={{ minHeight: '100vh', background: BG, display: 'flex', alignItems: 'center', justifyContent: 'center', color: RED, fontSize: 14 }}>
-        Failed to load dashboard. <button onClick={() => refresh()} style={{ marginLeft: 8, color: NAVY, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Retry</button>
+      <div style={{ minHeight: '100vh', background: BG, display: 'flex', alignItems: 'center', justifyContent: 'center', color: isForbidden ? INK2 : RED, fontSize: 14, textAlign: 'center', padding: '0 24px' }}>
+        {isForbidden ? (
+          <span>
+            You don&apos;t have access to this dashboard. Your account role isn&apos;t permitted to view this page.{' '}
+            <a href="/login" style={{ color: NAVY, textDecoration: 'underline' }}>Back to login</a>
+          </span>
+        ) : (
+          <span>
+            Failed to load dashboard. <button onClick={() => refresh()} style={{ marginLeft: 8, color: NAVY, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Retry</button>
+          </span>
+        )}
       </div>
     )
   }
