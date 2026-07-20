@@ -94,14 +94,63 @@ function LoginForm() {
           </button>
         </form>
 
-        <p className="mt-6 text-center text-xs text-muted">
-          Seed users: manager@proman.test · asm@proman.test · engineer@proman.test ·
-          callcenter@proman.test · manufacturing@proman.test · admin@proman.test — password: Password@123
-        </p>
+        <details className="mt-6 rounded-lg border border-line bg-white text-xs">
+          <summary className="cursor-pointer select-none px-3 py-2 font-bold text-navy">
+            Seed users ({SEED_USERS.length}) — click a user to autofill (password: {SEED_PASSWORD})
+          </summary>
+          <div className="border-t border-line px-3 py-2">
+            <p className="mb-1 mt-1 font-bold uppercase tracking-wide text-muted">Service Ticketing (ACE)</p>
+            {SEED_USERS.filter((u) => u.group === "ticketing").map((u) => (
+              <button
+                key={u.email}
+                type="button"
+                onClick={() => {
+                  setEmail(u.email);
+                  setPassword(SEED_PASSWORD);
+                }}
+                className="block w-full py-0.5 text-left text-muted hover:text-navy"
+              >
+                {u.email} <span className="text-text-disabled">— {u.label}</span>
+              </button>
+            ))}
+            <p className="mb-1 mt-3 font-bold uppercase tracking-wide text-muted">Business Dashboards (ERP)</p>
+            {SEED_USERS.filter((u) => u.group === "erp").map((u) => (
+              <button
+                key={u.email}
+                type="button"
+                onClick={() => {
+                  setEmail(u.email);
+                  setPassword(SEED_PASSWORD);
+                }}
+                className="block w-full py-0.5 text-left text-muted hover:text-navy"
+              >
+                {u.email} <span className="text-text-disabled">— {u.label}</span>
+              </button>
+            ))}
+          </div>
+        </details>
       </div>
     </div>
   );
 }
+
+// Mirrors backend/prisma/seed.ts exactly — update this list (and SEED_PASSWORD,
+// if seed.ts's bcrypt.hash() call ever changes) if that file changes.
+const SEED_PASSWORD = "Password@123";
+
+const SEED_USERS: { email: string; label: string; group: "ticketing" | "erp" }[] = [
+  { email: "admin@proman.test", label: "Admin", group: "ticketing" },
+  { email: "manager@proman.test", label: "Manager", group: "ticketing" },
+  { email: "asm@proman.test", label: "ASM", group: "ticketing" },
+  { email: "engineer@proman.test", label: "Engineer", group: "ticketing" },
+  { email: "callcenter@proman.test", label: "Call Center", group: "ticketing" },
+  { email: "manufacturing@proman.test", label: "Manufacturing Head", group: "erp" },
+  { email: "sales@proman.test", label: "Sales Head", group: "erp" },
+  { email: "finance@proman.test", label: "Finance Head", group: "erp" },
+  { email: "procurement@proman.test", label: "Procurement Head", group: "erp" },
+  { email: "stores@proman.test", label: "Stores Head", group: "erp" },
+  { email: "dispatch@proman.test", label: "Dispatch Head", group: "erp" },
+];
 
 export default function LoginPage() {
   return (

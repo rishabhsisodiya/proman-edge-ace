@@ -12,6 +12,7 @@ import {
   PendingReason,
   ServiceType,
   Ticket,
+  TicketStatus,
 } from "@/lib/ticketing/types";
 import {
   acceptTicket,
@@ -94,7 +95,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
   const isMine = ticket.assignedEngineer?.id ? undefined : undefined; // engineer scoping already enforced server-side
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 px-6 py-8">
+    <div className="mx-auto max-w-5xl space-y-6 px-6 py-8">
       <div>
         <p className="font-mono text-xs text-muted">{ticket.ticketNo}</p>
         <h1 className="text-xl font-bold text-navy">{ticket.subject}</h1>
@@ -108,6 +109,8 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
           <span className="text-xs text-muted">{SERVICE_TYPE_LABEL[ticket.serviceType as ServiceType] ?? ticket.serviceType}</span>
         </div>
       </div>
+
+      <StateBar status={ticket.status} />
 
       <div className="grid grid-cols-1 gap-4 rounded-lg border border-line bg-white p-4 text-sm sm:grid-cols-2">
         <div>
@@ -167,6 +170,51 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// Linear lifecycle order for the progress bar (§5.4) — PENDING is a branch
+// off WORKING in the actual state machine (WORKING ⇄ PENDING), not a strict
+// step everyone passes through, but shown inline here since that's where it
+// sits structurally; a ticket that never went through it just shows it as
+// upcoming/skipped, same as the golden-path briefing's demo bar.
+const STATE_ORDER: TicketStatus[] = [
+  "OPEN",
+  "ASSIGNED",
+  "ENGINEER_ASSIGNED",
+  "ACCEPTED",
+  "REACHED_SITE",
+  "WORKING",
+  "PENDING",
+  "ENGINEER_RESOLVED",
+  "ASM_RESOLVED",
+  "CLOSED",
+];
+
+function StateBar({ status }: { status: TicketStatus }) {
+  const currentIndex = STATE_ORDER.indexOf(status);
+
+  return (
+    <div className="flex flex-wrap gap-y-1 text-xs font-bold">
+      {STATE_ORDER.map((s, i) => {
+        const done = i < currentIndex;
+        const now = i === currentIndex;
+        return (
+          <span
+            key={s}
+            className={`whitespace-nowrap px-3.5 py-2.5 first:rounded-l-full last:rounded-r-full ${
+              now
+                ? "bg-orange text-navy"
+                : done
+                  ? "bg-navy text-white"
+                  : "bg-navy-tint text-muted"
+            }`}
+          >
+            {STATUS_LABEL[s]}
+          </span>
+        );
+      })}
     </div>
   );
 }
