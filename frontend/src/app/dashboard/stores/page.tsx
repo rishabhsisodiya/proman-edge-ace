@@ -9,6 +9,7 @@ import { FiscalYearSelect } from '@/components/widgets/FiscalYearSelect'
 import { currentFiscalYearStart } from '@/lib/fiscalYear'
 import { colors } from '@/lib/brand'
 import { formatMoney } from '@/lib/format'
+import { DashboardError } from '@/components/dashboards/DashboardError'
 import type { PickListRow, BelowReorderNoPoRow } from '@/types/stores'
 
 // Ported verbatim from PROMAN/frontend/src/app/home/stores-head/page.tsx
@@ -181,23 +182,7 @@ export default function StoresHeadPage() {
       </div>
     )
   }
-  if (isError || !data) {
-    const isForbidden = status === 403
-    return (
-      <div style={{ minHeight: '100vh', background: BG, display: 'flex', alignItems: 'center', justifyContent: 'center', color: isForbidden ? INK2 : RED, fontSize: 14, textAlign: 'center', padding: '0 24px' }}>
-        {isForbidden ? (
-          <span>
-            You don&apos;t have access to this dashboard. Your account role isn&apos;t permitted to view this page.{' '}
-            <a href="/login" style={{ color: NAVY, textDecoration: 'underline' }}>Back to login</a>
-          </span>
-        ) : (
-          <span>
-            Failed to load dashboard. <button onClick={() => refresh()} style={{ marginLeft: 8, color: NAVY, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Retry</button>
-          </span>
-        )}
-      </div>
-    )
-  }
+  if (isError || !data) return <DashboardError status={status} onRetry={() => refresh()} />
 
   const erpBase = data.erpBaseUrl.replace(/\/$/, '')
   const erpUrl  = (path: string) => `${erpBase}/app/${path}`

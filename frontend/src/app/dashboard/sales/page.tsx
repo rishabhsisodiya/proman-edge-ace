@@ -309,54 +309,7 @@ export default function SalesHeadHomepage() {
   }, [])
 
   if (isLoading || userLoading) return <div className="p-10 text-sm text-gray-500">Loading dashboard…</div>
-  if (isError || !data) {
-    const isForbidden = status === 403
-    return (
-    <div style={{ minHeight: '100vh', background: BG, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "Arial,'Helvetica Neue',Helvetica,sans-serif" }}>
-      <div style={{ textAlign: 'center', maxWidth: 420, padding: '0 24px' }}>
-        {/* Icon */}
-        <div style={{ width: 64, height: 64, borderRadius: 16, background: '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-            <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-          </svg>
-        </div>
-        {/* Heading */}
-        <div style={{ fontSize: 20, fontWeight: 700, color: NAVY, marginBottom: 8 }}>
-          {isForbidden ? "You don't have access to this dashboard" : 'Dashboard unavailable'}
-        </div>
-        {/* Message */}
-        <div style={{ fontSize: 13.5, color: TEXT2, lineHeight: 1.6, marginBottom: 6 }}>
-          {isForbidden
-            ? "Your account role isn't permitted to view this page. If you think this is a mistake, contact your administrator."
-            : 'Unable to reach the ERPNext server. This is usually a temporary issue with the API connection.'}
-        </div>
-        <div style={{ fontSize: 12, color: TEXT3, marginBottom: 28 }}>
-          {isForbidden ? 'Error: 403 — Forbidden' : 'Error: 5xx — server did not respond'}
-        </div>
-        {/* Actions */}
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
-          {!isForbidden && (
-            <button onClick={refresh}
-              style={{ background: NAVY, color: '#fff', border: 'none', borderRadius: 8, padding: '10px 22px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-              Retry
-            </button>
-          )}
-          <a href="/login"
-            style={{ background: isForbidden ? NAVY : '#fff', color: isForbidden ? '#fff' : NAVY, border: `1.5px solid ${BORDER}`, borderRadius: 8, padding: '10px 22px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'none', display: 'inline-block' }}>
-            {isForbidden ? 'Back to login' : 'Reload page'}
-          </a>
-        </div>
-        {/* Footer note */}
-        <div style={{ marginTop: 32, fontSize: 11, color: '#B0B3CC' }}>
-          {isForbidden
-            ? ''
-            : 'If this persists, check with your system administrator that the ERPNext server is running.'}
-        </div>
-      </div>
-    </div>
-    )
-  }
+  if (isError || !data) return <DashboardError status={status} onRetry={() => refresh()} />
 
   // A5 alert triggers
   const pct      = Math.round(data.revenueTarget.pct)
