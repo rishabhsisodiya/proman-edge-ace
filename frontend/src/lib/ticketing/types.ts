@@ -124,7 +124,7 @@ export interface Ticket {
 // nothing in the workflow engine/backend needed to change — only the label):
 // ASSIGNED -> "In Review", PENDING -> "On Hold".
 export const STATUS_LABEL: Record<TicketStatus, string> = {
-  OPEN: "Open",
+  OPEN: "New",
   ASSIGNED: "In Review",
   ENGINEER_ASSIGNED: "Engineer Assigned",
   ACCEPTED: "Accepted",
