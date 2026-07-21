@@ -17,6 +17,8 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/dashboard/admin/security", title: "Login & Security" },
   { prefix: "/dashboard/admin/region-mapping", title: "Regions & Territories" },
   { prefix: "/dashboard/admin/sync-monitor", title: "Sync Monitor" },
+  { prefix: "/dashboard/admin/equipment", title: "Equipment" },
+  { prefix: "/dashboard/admin/amc-contracts", title: "AMC Contracts" },
   { prefix: "/dashboard/admin", title: "Admin Console" },
   { prefix: "/dashboard/dashboards", title: "Dashboards" },
 ];

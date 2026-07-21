@@ -12,6 +12,16 @@ const SECTIONS = [
     description: "Locked accounts, unlock action",
     href: "/dashboard/admin/security",
   },
+  {
+    label: "Equipment",
+    description: "Manual equipment records — primary onboarding path until ERPNext Serial No is usable",
+    href: "/dashboard/admin/equipment",
+  },
+  {
+    label: "AMC Contracts",
+    description: "Annual Maintenance Contracts, coverage, and renewal status",
+    href: "/dashboard/admin/amc-contracts",
+  },
   { label: "Service Types", description: "The 7 service_type values + billing model", href: null },
   { label: "SLA Policies", description: "Response/resolution hours by service type × priority", href: null },
   { label: "Ticket Priorities", description: "Priority levels + Priority Matrix", href: null },

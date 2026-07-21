@@ -277,6 +277,7 @@ model Customer {
   sites                  CustomerSite[]
   equipment              Equipment[]
   tickets                Ticket[]
+  amcContracts           AmcContract[]
   createdAt              DateTime       @default(now())
   updatedAt              DateTime       @updatedAt
 
@@ -388,8 +389,10 @@ model Equipment {
   modelNumber          String?
   customerId           String
   customer             Customer       @relation(fields: [customerId], references: [id])
-  siteId               String
-  site                 CustomerSite   @relation(fields: [siteId], references: [id])
+  // Required in principle, but made optional for now — manual Equipment
+  // entry may happen before a customer's sites are known/synced.
+  siteId               String?
+  site                 CustomerSite?  @relation(fields: [siteId], references: [id])
   gpsLat               Float?
   gpsLong              Float?
   installationDate     DateTime
@@ -403,6 +406,11 @@ model Equipment {
   skillTagsRequired    String[]
   notes                String?
   erpnextSerialNo      String?
+  // Many-to-many: an equipment can have more than one AMC Contract over its
+  // lifetime (e.g. last year's + this year's renewal both present per
+  // §14.5's overlapping-contracts rule — system picks the later start_date
+  // one as active). A single FK couldn't represent that.
+  amcContracts         AmcContract[]
   tickets              Ticket[]
   createdAt            DateTime       @default(now())
   updatedAt            DateTime       @updatedAt
@@ -613,6 +621,7 @@ model AmcContract {
   id                  String              @id @default(uuid())
   contractReferenceNo String              @unique
   customerId          String
+  customer            Customer            @relation(fields: [customerId], references: [id])
   startDate           DateTime
   endDate             DateTime
   contractValue       Decimal
@@ -624,6 +633,9 @@ model AmcContract {
   owningAsmId         String?
   previousContractId  String?
   signedAgreementUrl  String?
+  // Many-to-many: coverage is per-equipment (≥1 required), and one equipment
+  // can be covered by more than one contract over time (see Equipment.amcContracts).
+  coveredEquipment    Equipment[]
   scheduledVisits     AmcScheduledVisit[]
   quotations          Quotation[]
   createdAt           DateTime            @default(now())

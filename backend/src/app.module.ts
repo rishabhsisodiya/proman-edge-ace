@@ -9,6 +9,7 @@ import { CustomersModule } from './ticketing/customers/customers.module';
 import { RegionMappingModule } from './ticketing/region-mapping/region-mapping.module';
 import { SyncModule } from './ticketing/sync/sync.module';
 import { EquipmentModule } from './ticketing/equipment/equipment.module';
+import { AmcModule } from './ticketing/amc/amc.module';
 import { ItemsModule } from './ticketing/items/items.module';
 import { TicketsModule } from './ticketing/tickets/tickets.module';
 import { ErpModule } from './erp/erp.module';
@@ -32,6 +33,7 @@ import { DispatchModule } from './dashboards/dispatch/dispatch.module';
     RegionMappingModule,
     SyncModule,
     EquipmentModule,
+    AmcModule,
     ItemsModule,
     TicketsModule,
     ManufacturingModule,
