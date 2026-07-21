@@ -324,7 +324,14 @@ model CustomerSyncSkipped {
 }
 
 model CustomerSite {
-  id           String      @id @default(uuid())
+  id               String  @id @default(uuid())
+  // Not in the FSD's own Customer SQL spec (site_addresses explicitly marked
+  // "no" there) — our own addition, sourced from ERPNext Address records
+  // linked to a Customer with address_type = 'Shipping'. Nullable + unique
+  // so it's only set for sync-created sites, and re-running sync doesn't
+  // create duplicates.
+  erpnextAddressId String? @unique
+
   customerId   String
   customer     Customer    @relation(fields: [customerId], references: [id])
   siteName     String
@@ -339,17 +346,37 @@ model CustomerSite {
 }
 
 model Item {
-  itemCode                      String          @id
+  itemCode                      String               @id
   itemName                      String
   itemGroup                     String
   itemDescription               String?
   uom                           String
   standardRate                  Decimal
   valuationRate                 Decimal?
+  // Aggregate convenience total (sum across all warehouses) — per Q4's
+  // resolution ("show different warehouse and engineer can select it"),
+  // the authoritative per-warehouse breakdown lives in ItemWarehouseStock
+  // instead; this field is just a quick "how many total, roughly" figure.
   currentStock                  Float?
   compatibleEquipmentCategories EquipCategory[]
   minimumStockLevel             Float?
   lastSyncedAt                  DateTime?
+  warehouseStock                ItemWarehouseStock[]
+}
+
+/// Per-warehouse stock breakdown (§5.1.3 Q4) — lets an engineer/ASM pick
+/// which warehouse to pull a part from, rather than the app silently
+/// assuming one "default" warehouse.
+model ItemWarehouseStock {
+  id            String   @id @default(uuid())
+  itemCode      String
+  item          Item     @relation(fields: [itemCode], references: [itemCode])
+  warehouse     String
+  actualQty     Float
+  valuationRate Decimal?
+  lastSyncedAt  DateTime @default(now())
+
+  @@unique([itemCode, warehouse])
 }
 
 model Equipment {

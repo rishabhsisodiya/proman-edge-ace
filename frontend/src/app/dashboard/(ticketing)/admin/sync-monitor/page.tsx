@@ -12,7 +12,7 @@ import {
   SyncFailure,
   SyncRun,
   SyncSkipped,
-  triggerCustomerSync,
+  triggerNightlySync,
 } from "@/lib/ticketing/sync-admin";
 
 type Tab = "runs" | "failures" | "skipped" | "needsReview";
@@ -40,7 +40,7 @@ export default function SyncMonitorPage() {
   function load() {
     setLoading(true);
     setError(null);
-    Promise.all([getSyncRuns("Customer"), getSyncFailures(), getSyncSkipped(), getNeedsReview()])
+    Promise.all([getSyncRuns(), getSyncFailures(), getSyncSkipped(), getNeedsReview()])
       .then(([r, f, s, n]) => {
         setRuns(r);
         setFailures(f);
@@ -71,21 +71,26 @@ export default function SyncMonitorPage() {
     }
   }
 
-  async function onTriggerRun() {
+  async function onTriggerRun(force: boolean) {
     setTriggering(true);
     setNotice(null);
     try {
-      await triggerCustomerSync();
-      setNotice("Sync run triggered and completed.");
+      await triggerNightlySync(force);
+      setNotice(
+        force
+          ? "Full resync triggered and completed (Customer + Item, all records reprocessed)."
+          : "Night job triggered and completed (Customer + Item).",
+      );
       load();
     } catch {
-      setError("Could not trigger sync run.");
+      setError("Could not trigger the night job.");
     } finally {
       setTriggering(false);
     }
   }
 
-  const lastRun = runs[0];
+  const lastRun = runs.find((r) => r.entity === "Customer");
+  const lastItemRun = runs.find((r) => r.entity === "Item");
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-10">
@@ -94,31 +99,62 @@ export default function SyncMonitorPage() {
       </a>
       <div className="mb-1 flex items-center justify-between">
         <h1 className="text-xl font-bold text-navy">Sync Monitor</h1>
-        <button
-          onClick={onTriggerRun}
-          disabled={triggering}
-          className="rounded-md bg-orange px-3 py-1.5 text-xs font-bold text-navy transition disabled:opacity-50"
-        >
-          {triggering ? "Running…" : "Run Customer Sync Now"}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => onTriggerRun(false)}
+            disabled={triggering}
+            className="rounded-md bg-orange px-3 py-1.5 text-xs font-bold text-navy transition disabled:opacity-50"
+          >
+            {triggering ? "Running…" : "Run Night Job Now"}
+          </button>
+          <button
+            onClick={() => {
+              if (window.confirm("Force a full resync? This reprocesses every customer and item from scratch, ignoring the incremental watermark. May take a while.")) {
+                onTriggerRun(true);
+              }
+            }}
+            disabled={triggering}
+            title="Reprocesses every record from scratch, ignoring the incremental watermark"
+            className="rounded-md bg-navy-tint px-3 py-1.5 text-xs font-bold text-navy transition disabled:opacity-50"
+          >
+            {triggering ? "Running…" : "Force Full Resync"}
+          </button>
+        </div>
       </div>
       <p className="mb-4 text-sm text-muted">
-        ERPNext Customer sync history, failed records, skipped records, and customers flagged for review.
+        ERPNext Customer (+ site addresses) + Item sync history, failed records, skipped records, and customers
+        flagged for review.
       </p>
 
-      {lastRun && (
-        <div className="mb-6 flex flex-wrap items-center gap-3 rounded-lg border border-line bg-white p-4 text-sm">
-          <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${STATUS_STYLE[lastRun.status]}`}>
-            {lastRun.status}
-          </span>
-          <span className="text-navy">Last run: {new Date(lastRun.startedAt).toLocaleString()}</span>
-          <span className="text-muted">
-            {lastRun.payload?.recordsOk ?? 0} synced ok, {lastRun.payload?.recordsFailed ?? 0} failed this run ·{" "}
-            {failures.length} failure{failures.length === 1 ? "" : "s"} · {skipped.length} skipped ·{" "}
-            {needsReview.length} needs review
-          </span>
-        </div>
-      )}
+      <div className="mb-6 space-y-2">
+        {lastRun && (
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-white p-4 text-sm">
+            <span className="text-xs font-bold uppercase text-muted">Customer</span>
+            <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${STATUS_STYLE[lastRun.status]}`}>
+              {lastRun.status}
+            </span>
+            <span className="text-navy">Last run: {new Date(lastRun.startedAt).toLocaleString()}</span>
+            <span className="text-muted">
+              {lastRun.payload?.recordsOk ?? 0} synced ok, {lastRun.payload?.recordsFailed ?? 0} failed this run ·{" "}
+              {failures.length} failure{failures.length === 1 ? "" : "s"} · {skipped.length} skipped ·{" "}
+              {needsReview.length} needs review
+            </span>
+          </div>
+        )}
+        {lastItemRun && (
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-white p-4 text-sm">
+            <span className="text-xs font-bold uppercase text-muted">Item</span>
+            <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${STATUS_STYLE[lastItemRun.status]}`}>
+              {lastItemRun.status}
+            </span>
+            <span className="text-navy">Last run: {new Date(lastItemRun.startedAt).toLocaleString()}</span>
+            <span className="text-muted">
+              {lastItemRun.payload?.recordsOk ?? 0} synced ok, {lastItemRun.payload?.recordsFailed ?? 0} failed this
+              run
+            </span>
+          </div>
+        )}
+      </div>
 
       {notice && <p className="mb-4 rounded-md bg-brand-green-bg px-3 py-2 text-xs text-brand-green">{notice}</p>}
       {error && <p className="mb-4 rounded-md bg-brand-red-bg px-3 py-2 text-xs text-brand-red">{error}</p>}
@@ -163,6 +199,7 @@ function RunsTable({ runs }: { runs: SyncRun[] }) {
     <table className="w-full rounded-lg border border-line bg-white text-sm">
       <thead>
         <tr className="border-b border-line text-left text-xs font-bold uppercase tracking-wide text-navy">
+          <th className="px-4 py-3">Entity</th>
           <th className="px-4 py-3">Started</th>
           <th className="px-4 py-3">Completed</th>
           <th className="px-4 py-3">Status</th>
@@ -173,6 +210,7 @@ function RunsTable({ runs }: { runs: SyncRun[] }) {
       <tbody>
         {runs.map((r) => (
           <tr key={r.id} className="border-b border-line last:border-0">
+            <td className="px-4 py-3 text-navy">{r.entity}</td>
             <td className="px-4 py-3 text-navy">{new Date(r.startedAt).toLocaleString()}</td>
             <td className="px-4 py-3 text-muted">{r.completedAt ? new Date(r.completedAt).toLocaleString() : "—"}</td>
             <td className="px-4 py-3">

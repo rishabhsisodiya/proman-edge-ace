@@ -52,5 +52,10 @@ export const getNeedsReview = () => apiFetch<NeedsReviewCustomer[]>(`/admin/sync
 export const retrySyncFailure = (id: string) =>
   apiFetch<{ ok: boolean }>(`/admin/sync/failures/${id}/retry`, { method: "POST" });
 
-export const triggerCustomerSync = () =>
-  apiFetch<{ ok: boolean }>(`/admin/sync/customer/run`, { method: "POST" });
+/**
+ * Triggers the full night job — Customer (+ CustomerSite) then Item — in one go.
+ * @param force Ignores each sync's watermark and reprocesses every record from
+ * scratch — for one-off full resyncs (e.g. after adding new sync logic), not routine use.
+ */
+export const triggerNightlySync = (force = false) =>
+  apiFetch<{ ok: boolean }>(`/admin/sync/run`, { method: "POST", body: JSON.stringify({ force }) });

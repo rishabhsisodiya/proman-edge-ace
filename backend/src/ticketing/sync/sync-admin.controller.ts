@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { RolesGuard } from '../../auth/roles.guard';
 import { Roles } from '../../auth/roles.decorator';
@@ -35,8 +35,13 @@ export class SyncAdminController {
     return this.syncAdmin.retryFailure(id);
   }
 
-  @Post('customer/run')
-  triggerRun() {
-    return this.syncAdmin.triggerRun();
+  /**
+   * Runs the full night job — Customer (+ CustomerSite) then Item — in one
+   * go. Pass { force: true } to ignore each sync's watermark and reprocess
+   * every record from scratch (one-off full resync, not routine use).
+   */
+  @Post('run')
+  triggerRun(@Body('force') force?: boolean) {
+    return this.syncAdmin.triggerRun(force ?? false);
   }
 }

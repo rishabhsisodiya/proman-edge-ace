@@ -77,6 +77,46 @@ function fullName(first: string | null, last: string | null): string | null {
   return name || null;
 }
 
+// Batch size for `IN (...)` chunks used by the backfill passes below —
+// avoids firing one network round-trip per skipped/failed record (the
+// original version did exactly that, which is what made those passes slow
+// once CustomerSyncSkipped/CustomerSyncFailure held more than a handful of rows).
+const CUSTOMER_BATCH_SIZE = 500;
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+// Not in the FSD's own Customer SQL spec (site_addresses marked "no" there)
+// — our own addition. address_type = 'Shipping' addresses are real physical
+// site locations (confirmed against real data — e.g. actual crusher plant
+// addresses distinct from the billing/office address); 'Billing' stays as
+// Customer's own billingAddress* fields via customer_primary_address.
+const SITE_ADDRESS_SELECT = `
+  SELECT
+      a.name         AS erpnext_address_id,
+      a.address_title AS address_title,
+      a.address_line1 AS address_line1,
+      a.city         AS city,
+      a.state        AS state,
+      a.pincode      AS pincode
+  FROM \`tabAddress\` a
+  JOIN \`tabDynamic Link\` dl ON dl.parent = a.name
+  WHERE dl.link_doctype = 'Customer' AND dl.parenttype = 'Address'
+    AND dl.link_name = ? AND a.address_type = 'Shipping'
+`;
+
+interface ErpSiteAddressRow {
+  erpnext_address_id: string;
+  address_title: string | null;
+  address_line1: string | null;
+  city: string | null;
+  state: string | null;
+  pincode: string | null;
+}
+
 /**
  * Nightly sync — the sole writer for Customer create/update (§5.1). Pulls
  * modified-since records from ERPNext via the read-only ErpDbService, never
@@ -97,7 +137,16 @@ export class CustomerSyncService {
     private readonly regionMappings: RegionMappingService,
   ) {}
 
-  async run(): Promise<void> {
+  /**
+   * @param force Ignores the modified-since watermark and re-pulls every
+   * ERPNext customer, reprocessing them through the full syncOne() path
+   * (including syncSites()) even if they already exist unchanged. Used for
+   * one-off full resyncs — e.g. after adding new sync logic (like
+   * CustomerSite) that existing, already-synced customers never picked up
+   * since their ERPNext record hasn't changed since. Not the normal nightly
+   * mode — that stays incremental.
+   */
+  async run(force = false): Promise<void> {
     const startedAt = new Date();
     // Keyed by erpnextCustomerId so a customer touched by more than one pass
     // in the same run (e.g. pulled by the main modified-since query while
@@ -107,7 +156,7 @@ export class CustomerSyncService {
     let errorMessage: string | null = null;
 
     try {
-      const watermark = await this.getWatermark();
+      const watermark = force ? new Date(0) : await this.getWatermark();
       const rows = await this.erpDb.query<ErpCustomerRow>(
         `${CUSTOMER_SELECT} WHERE c.modified > ? ORDER BY c.modified ASC`,
         [watermark.toISOString().slice(0, 19).replace('T', ' ')],
@@ -215,7 +264,7 @@ export class CustomerSyncService {
         lastSyncedAt: new Date(),
       };
 
-      await this.prisma.customer.upsert({
+      const customer = await this.prisma.customer.upsert({
         where: { erpnextCustomerId: row.erpnext_customer_id },
         create: {
           erpnextCustomerId: row.erpnext_customer_id,
@@ -228,6 +277,8 @@ export class CustomerSyncService {
         },
       });
 
+      await this.syncSites(customer.id, row.erpnext_customer_id);
+
       // Successful sync clears any prior failure/skip tracking for this record.
       await this.prisma.customerSyncFailure.deleteMany({ where: { erpnextCustomerId: row.erpnext_customer_id } });
       await this.prisma.customerSyncSkipped.deleteMany({ where: { erpnextCustomerId: row.erpnext_customer_id } });
@@ -235,6 +286,31 @@ export class CustomerSyncService {
     } catch (err: any) {
       await this.recordFailure(row.erpnext_customer_id, err?.message ?? String(err));
       return false;
+    }
+  }
+
+  private async syncSites(customerId: string, erpnextCustomerId: string): Promise<void> {
+    const rows = await this.erpDb.query<ErpSiteAddressRow>(SITE_ADDRESS_SELECT, [erpnextCustomerId]);
+    for (const row of rows) {
+      await this.prisma.customerSite.upsert({
+        where: { erpnextAddressId: row.erpnext_address_id },
+        create: {
+          erpnextAddressId: row.erpnext_address_id,
+          customerId,
+          siteName: row.address_title ?? row.erpnext_address_id,
+          addressLine1: row.address_line1 ?? '',
+          city: row.city ?? '',
+          state: row.state ?? '',
+          pin: row.pincode ?? '',
+        },
+        update: {
+          siteName: row.address_title ?? row.erpnext_address_id,
+          addressLine1: row.address_line1 ?? '',
+          city: row.city ?? '',
+          state: row.state ?? '',
+          pin: row.pincode ?? '',
+        },
+      });
     }
   }
 
@@ -251,6 +327,18 @@ export class CustomerSyncService {
     });
   }
 
+  /** Batch-fetches Customer rows for the given ERPNext IDs, chunked to avoid one query per ID. */
+  private async fetchCustomersByIds(erpnextCustomerIds: string[]): Promise<Map<string, ErpCustomerRow>> {
+    const byId = new Map<string, ErpCustomerRow>();
+    for (const batch of chunk(erpnextCustomerIds, CUSTOMER_BATCH_SIZE)) {
+      if (batch.length === 0) continue;
+      const placeholders = batch.map(() => '?').join(',');
+      const rows = await this.erpDb.query<ErpCustomerRow>(`${CUSTOMER_SELECT} WHERE c.name IN (${placeholders})`, batch);
+      for (const row of rows) byId.set(row.erpnext_customer_id, row);
+    }
+    return byId;
+  }
+
   /**
    * Backfill pass — re-check every currently-skipped record against live
    * ERPNext data. syncOne is self-correcting in both directions: if any of
@@ -259,11 +347,10 @@ export class CustomerSyncService {
    */
   private async recheckSkipped(results: Map<string, boolean>): Promise<void> {
     const skipped = await this.prisma.customerSyncSkipped.findMany();
+    const byId = await this.fetchCustomersByIds(skipped.map((s) => s.erpnextCustomerId));
     for (const s of skipped) {
-      const rows = await this.erpDb.query<ErpCustomerRow>(`${CUSTOMER_SELECT} WHERE c.name = ?`, [
-        s.erpnextCustomerId,
-      ]);
-      if (rows[0]) results.set(s.erpnextCustomerId, await this.syncOne(rows[0]));
+      const row = byId.get(s.erpnextCustomerId);
+      if (row) results.set(s.erpnextCustomerId, await this.syncOne(row));
     }
   }
 
@@ -272,11 +359,10 @@ export class CustomerSyncService {
     const failures = await this.prisma.customerSyncFailure.findMany({
       where: { attemptCount: { lt: MAX_FAILURE_ATTEMPTS } },
     });
+    const byId = await this.fetchCustomersByIds(failures.map((f) => f.erpnextCustomerId));
     for (const f of failures) {
-      const rows = await this.erpDb.query<ErpCustomerRow>(`${CUSTOMER_SELECT} WHERE c.name = ?`, [
-        f.erpnextCustomerId,
-      ]);
-      if (rows[0]) results.set(f.erpnextCustomerId, await this.syncOne(rows[0]));
+      const row = byId.get(f.erpnextCustomerId);
+      if (row) results.set(f.erpnextCustomerId, await this.syncOne(row));
     }
   }
 
