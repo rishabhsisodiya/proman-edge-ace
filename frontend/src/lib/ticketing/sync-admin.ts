@@ -8,6 +8,7 @@ export interface SyncRun {
   erpDoctype: string;
   status: "SUCCESS" | "FAILED" | "PARTIAL";
   errorMessage: string | null;
+  payload: { recordsOk?: number; recordsFailed?: number } | null;
   startedAt: string;
   completedAt: string | null;
 }

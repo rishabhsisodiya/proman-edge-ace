@@ -113,6 +113,7 @@ export default function SyncMonitorPage() {
           </span>
           <span className="text-navy">Last run: {new Date(lastRun.startedAt).toLocaleString()}</span>
           <span className="text-muted">
+            {lastRun.payload?.recordsOk ?? 0} synced ok, {lastRun.payload?.recordsFailed ?? 0} failed this run ·{" "}
             {failures.length} failure{failures.length === 1 ? "" : "s"} · {skipped.length} skipped ·{" "}
             {needsReview.length} needs review
           </span>
@@ -165,6 +166,7 @@ function RunsTable({ runs }: { runs: SyncRun[] }) {
           <th className="px-4 py-3">Started</th>
           <th className="px-4 py-3">Completed</th>
           <th className="px-4 py-3">Status</th>
+          <th className="px-4 py-3">Records</th>
           <th className="px-4 py-3">Error</th>
         </tr>
       </thead>
@@ -177,6 +179,9 @@ function RunsTable({ runs }: { runs: SyncRun[] }) {
               <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${STATUS_STYLE[r.status]}`}>
                 {r.status}
               </span>
+            </td>
+            <td className="px-4 py-3 text-muted">
+              {r.payload ? `${r.payload.recordsOk ?? 0} ok, ${r.payload.recordsFailed ?? 0} failed` : "—"}
             </td>
             <td className="px-4 py-3 text-muted">{r.errorMessage ?? "—"}</td>
           </tr>
