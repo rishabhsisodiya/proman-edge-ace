@@ -569,7 +569,7 @@ export class FinanceService {
            ORDER BY due_date, outstanding_amount DESC`,
           [company],
         );
-        return rows.map((r) => ({ dueDate: r.due_date, supplier: r.supplier, amount: Number(r.outstanding_amount), entity: company }));
+        return rows.map((r) => ({ dueDate: this.iso(new Date(r.due_date)), supplier: r.supplier, amount: Number(r.outstanding_amount), entity: company }));
       }),
     );
     return perEntity.flat().sort((a, b) => a.dueDate.localeCompare(b.dueDate));

@@ -19,6 +19,7 @@ export class ErpDbService implements OnModuleDestroy {
     const port = parseInt(process.env.ERP_DB_PORT || '3306', 10);
     const database = process.env.ERP_DB_NAME || '';
     const user = process.env.ERP_DB_USER || '';
+    const connectionLimit = parseInt(process.env.ERP_DB_CONNECTION_LIMIT || '5', 10);
 
     const sslOptions: { ssl?: { ca: Buffer } | { rejectUnauthorized: boolean } } =
       process.env.ERP_DB_SSL_CA
@@ -33,7 +34,7 @@ export class ErpDbService implements OnModuleDestroy {
       database,
       user,
       password: process.env.ERP_DB_PASSWORD || '',
-      connectionLimit: 5,
+      connectionLimit,
       waitForConnections: true,
       ...sslOptions,
     });
