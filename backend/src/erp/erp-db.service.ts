@@ -33,7 +33,7 @@ export class ErpDbService implements OnModuleDestroy {
       database,
       user,
       password: process.env.ERP_DB_PASSWORD || '',
-      connectionLimit: 10,
+      connectionLimit: 5,
       waitForConnections: true,
       ...sslOptions,
     });
