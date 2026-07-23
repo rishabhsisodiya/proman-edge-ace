@@ -24,8 +24,6 @@ export const startWorking = (id: string, comment?: string) => post<Ticket>(`/tic
 export const markPending = (id: string, pendingReason: PendingReason, pendingNotes?: string) =>
   post<Ticket>(`/tickets/${id}/pending`, { pendingReason, pendingNotes });
 export const resumeTicket = (id: string) => post<Ticket>(`/tickets/${id}/resume`);
-export const resolveTicket = (id: string, resolutionSummary: string) =>
-  post<Ticket>(`/tickets/${id}/resolve`, { resolutionSummary });
 export const asmResolveTicket = (id: string, comment?: string) => post<Ticket>(`/tickets/${id}/asm-resolve`, { comment });
 export const closeTicket = (id: string, comment?: string) => post<Ticket>(`/tickets/${id}/close`, { comment });
 export const reopenTicket = (id: string) => post<Ticket>(`/tickets/${id}/reopen`);
@@ -33,6 +31,8 @@ export const regularizeTicket = (id: string, targetStatus: TicketStatus, reason:
   post<Ticket>(`/tickets/${id}/regularize`, { targetStatus, reason });
 export const updateServiceType = (id: string, serviceType: ServiceType) =>
   post<Ticket>(`/tickets/${id}/service-type`, { serviceType });
+export const resolveDuplicate = (id: string, action: "MERGE" | "DISMISS", reason?: string) =>
+  post<Ticket>(`/tickets/${id}/duplicate/resolve`, { action, reason });
 
 export interface EngineerCandidate {
   id: string;

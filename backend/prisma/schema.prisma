@@ -225,6 +225,9 @@ model User {
   currentGpsLong      Float?
   lastLocationUpdate  DateTime?
   erpnextUserId       String?             @unique
+  // Free-text, not an enum — actual levels (Junior/Senior/Lead or otherwise)
+  // aren't fixed yet (§5.2 Build Plan note); looked up against BillingRate.level.
+  engineerLevel       String?
   regions             UserRegion[]
   companies           UserCompany[]
   createdAt           DateTime            @default(now())
@@ -278,6 +281,7 @@ model Customer {
   equipment              Equipment[]
   tickets                Ticket[]
   amcContracts           AmcContract[]
+  quotations             Quotation[]
   createdAt              DateTime       @default(now())
   updatedAt              DateTime       @updatedAt
 
@@ -294,6 +298,17 @@ model RegionMapping {
   region       Region
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+/// §5.2 Billing Rates config — engineer_level -> hourly rate, for labour
+/// line items on chargeable Sales Invoices. `level` is a free-text label
+/// (matches User.engineerLevel), not an enum — actual levels aren't fixed yet.
+model BillingRate {
+  id         String   @id @default(uuid())
+  level      String   @unique
+  hourlyRate Decimal
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
 /// Genuine technical sync failures (DB error, constraint violation, timeout)
@@ -458,10 +473,25 @@ model Ticket {
   csatScore                Int?
   csatResponseText         String?
   erpnextInvoiceId         String?
+  // FSD Analysis decisions log, 20 Jul 2026: "For the 24-hour same-customer/
+  // same-equipment duplicate flag, add a manual merge or dismiss action
+  // alongside the automatic merge." Automatic merge (AUTO_MERGE_SOURCES) never
+  // creates a second ticket at all, so it needs neither field. This pair is
+  // only for the manual/customer-initiated case, where a second ticket *is*
+  // created with just a free-text audit note today — these make the flag
+  // structured/actionable instead of only a line of timeline text.
+  possibleDuplicateOfId    String?
+  possibleDuplicateOf      Ticket?             @relation("TicketDuplicateFlag", fields: [possibleDuplicateOfId], references: [id])
+  possibleDuplicatesOfThis Ticket[]            @relation("TicketDuplicateFlag")
+  duplicateFlagResolved    Boolean             @default(false)
   tags                     String[]
   visits                   FieldServiceVisit[]
   auditLog                 TicketAuditLog[]
   notifications            NotificationLog[]
+  quotations               Quotation[]
+  // Direct Deliveries only (the non-chargeable path with no Quotation) —
+  // chargeable-path Deliveries are reached via quotations[].deliveries.
+  directDeliveries         Delivery[]
   createdAt                DateTime            @default(now())
   updatedAt                DateTime            @updatedAt
   closedAt                 DateTime?
@@ -509,6 +539,9 @@ model FieldServiceVisit {
   customerSignatureUrl   String?
   gpsLatAtCheckin        Float?
   gpsLongAtCheckin       Float?
+  // §14.2: submit requires parts consumed OR this explicit flag — an empty
+  // parts[] array alone can't distinguish "no parts used" from "forgot to log it".
+  noPartsUsed            Boolean           @default(false)
   status                 FsvStatus         @default(DRAFT)
   submittedAt            DateTime?
   submittedBy            String?
@@ -668,32 +701,56 @@ enum QuotationStatus {
 /// Scaffolded schema-only per Days 1-3 (Build Plan) — CS Support screens, GST
 /// computation, quotation PDF are Days 4-10, T3.
 model Quotation {
-  id                  String          @id @default(uuid())
-  quotationNo         String          @unique
-  ticketId            String
-  customerId          String
-  createdByUserId     String
-  amcContractId       String?
-  amcContract         AmcContract?    @relation(fields: [amcContractId], references: [id])
-  quotationDate       DateTime        @default(now())
-  validUntil          DateTime
-  labourCharges       Decimal?
-  subtotal            Decimal?
-  taxAmount           Decimal?
-  grandTotal          Decimal?
-  notesToCustomer     String?
-  termsAndConditions  String?
-  status              QuotationStatus @default(DRAFT)
-  sentAt              DateTime?
-  customerPoNumber    String?
-  customerPoDate      DateTime?
-  customerPoDocUrl    String?
-  erpnextQuotationId  String?
-  erpnextSalesOrderId String?
-  deliveryStatus      DeliveryStatus  @default(PENDING)
-  deliveries          Delivery[]
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
+  id                    String          @id @default(uuid())
+  quotationNo           String          @unique
+  ticketId              String
+  ticket                Ticket          @relation(fields: [ticketId], references: [id])
+  customerId            String
+  customer              Customer        @relation(fields: [customerId], references: [id])
+  createdByUserId       String
+  amcContractId         String?
+  amcContract           AmcContract?    @relation(fields: [amcContractId], references: [id])
+  quotationDate         DateTime        @default(now())
+  validUntil            DateTime
+  labourCharges         Decimal?
+  subtotal              Decimal?
+  taxAmount             Decimal?
+  grandTotal            Decimal?
+  notesToCustomer       String?
+  termsAndConditions    String?
+  status                QuotationStatus @default(DRAFT)
+  sentAt                DateTime?
+  customerPoNumber      String?
+  customerPoDate        DateTime?
+  customerPoDocUrl      String?
+  erpnextQuotationId    String?
+  erpnextSalesOrderId   String?
+  // Added per Shivam's 2026-07-23 revised pipeline: Delivery Note is raised
+  // MANUALLY in ERPNext (not created by ACE) — its id is only fetched back
+  // via webhook/poll. Sales Invoice is created as DRAFT once the Sales
+  // Order reaches ERPNext status "To Bill", also webhook/poll-driven, not
+  // tied to ACE ticket close anymore.
+  erpnextDeliveryNoteId String?
+  erpnextInvoiceId      String?
+  deliveryStatus        DeliveryStatus  @default(PENDING)
+  items                 QuotationItem[]
+  deliveries            Delivery[]
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+}
+
+/// Itemized quotation lines — editable during Negotiation (§ ACE_Ticket_Master_Flow.png).
+model QuotationItem {
+  id          String    @id @default(uuid())
+  quotationId String
+  quotation   Quotation @relation(fields: [quotationId], references: [id])
+  itemCode    String
+  itemName    String
+  qty         Decimal
+  uom         String
+  unitPrice   Decimal
+  taxAmount   Decimal   @default(0)
+  lineTotal   Decimal
 }
 
 enum DeliveryStatus {
@@ -704,10 +761,27 @@ enum DeliveryStatus {
 
 /// Scaffolded per Q13 (FSD Analysis doc) — no field spec exists in the FSD
 /// itself, this is our proposed minimal set, pending client confirmation.
+///
+/// quotationId is optional and ticketId exists directly per
+/// ACE_Ticket_Master_Flow.png's non-chargeable branch — that path goes
+/// straight from "Chargeable? No" to an ERPNext Sales Order with no
+/// Quotation box at all, so a Delivery there has nothing to link via
+/// quotationId. Exactly one of quotationId / ticketId must be set (enforced
+/// in the service layer, not a DB constraint).
 model Delivery {
   id                    String         @id @default(uuid())
-  quotationId           String
-  quotation             Quotation      @relation(fields: [quotationId], references: [id])
+  quotationId           String?
+  quotation             Quotation?     @relation(fields: [quotationId], references: [id])
+  ticketId              String?
+  ticket                Ticket?        @relation(fields: [ticketId], references: [id])
+  // Only set on the direct (no-Quotation) path — the chargeable path's SO id
+  // already lives on Quotation.erpnextSalesOrderId.
+  erpnextSalesOrderId   String?
+  // Set whenever the ERPNext write is skipped (e.g. no FSV parts logged yet,
+  // or the customer has no erpnextCustomerId) or fails — previously this was
+  // only logged server-side, leaving erpnextSalesOrderId silently null with
+  // no way to tell "not tried yet" from "tried and failed" from the UI.
+  erpnextSyncNote       String?
   erpnextDeliveryNoteId String?
   deliveryDate          DateTime?
   status                DeliveryStatus @default(PENDING)

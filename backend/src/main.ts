@@ -1,10 +1,23 @@
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { ValidationPipe } from '@nestjs/common';
 import * as cookieParser from 'cookie-parser';
+import * as fs from 'fs';
+import * as path from 'path';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // Local disk storage for FSV photo uploads (backend/uploads/fsv-photos) —
+  // served back at /uploads/*, matching the URL FsvController.uploadPhoto()
+  // constructs and stores on FsvPhoto.url.
+  fs.mkdirSync(path.join(process.cwd(), 'uploads', 'fsv-photos'), { recursive: true });
+  fs.mkdirSync(path.join(process.cwd(), 'uploads', 'fsv-signatures'), { recursive: true });
+  // rawBody: true keeps the exact request bytes available (req.rawBody) —
+  // needed to verify ERPNext's HMAC webhook signature, which is computed
+  // over the raw payload, not the re-serialized parsed JSON (those aren't
+  // guaranteed byte-identical).
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
+  app.useStaticAssets(path.join(process.cwd(), 'uploads'), { prefix: '/uploads/' });
   // Without this, ErpDbService.onModuleDestroy() (pool.end()) never runs on SIGTERM/SIGINT,
   // leaving the pool's DB connections open until MariaDB's wait_timeout reaps them — which
   // silently eats into a low max_user_connections cap across restarts.

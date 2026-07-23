@@ -1,7 +1,20 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ApiError } from "@/lib/api";
+import { createFsv, FieldServiceVisit, listFsvForTicket } from "@/lib/ticketing/fsv";
+import {
+  Chargeability,
+  createDirectSalesOrder,
+  createQuotation,
+  Delivery as DeliveryRecord,
+  isTicketChargeable,
+  listDeliveriesForTicket,
+  listQuotationsForTicket,
+  Quotation as QuotationRecord,
+  retryDirectSalesOrderErpSync,
+} from "@/lib/ticketing/quotation";
 import { AuthUser, getCurrentUser } from "@/lib/auth";
 import {
   PENDING_REASON_LABEL,
@@ -27,7 +40,7 @@ import {
   regularizeTicket,
   rejectTicket,
   reopenTicket,
-  resolveTicket,
+  resolveDuplicate,
   resumeTicket,
   startWorking,
   TicketAuditEntry,
@@ -48,14 +61,18 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [visits, setVisits] = useState<FieldServiceVisit[]>([]);
+  const [showMergeReason, setShowMergeReason] = useState(false);
+  const [mergeReason, setMergeReason] = useState("");
 
   function load() {
     setLoading(true);
     setError(null);
-    Promise.all([getTicket(id), ticketTimeline(id)])
-      .then(([t, tl]) => {
+    Promise.all([getTicket(id), ticketTimeline(id), listFsvForTicket(id)])
+      .then(([t, tl, v]) => {
         setTicket(t);
         setTimeline(tl);
+        setVisits(v);
       })
       .catch(() => setError("Could not load this ticket."))
       .finally(() => setLoading(false));
@@ -113,42 +130,103 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
 
       <StateBar status={ticket.status} />
 
-      <div className="grid grid-cols-1 gap-4 rounded-lg border border-line bg-white p-4 text-sm sm:grid-cols-2">
-        <div>
+      <div className="grid grid-cols-1 gap-x-4 gap-y-3 rounded-lg border border-line bg-white p-4 text-sm sm:grid-cols-2 sm:gap-y-4">
+        <div className="min-w-0">
           <p className="text-xs font-bold uppercase text-muted">Customer</p>
-          <p className="text-navy">{ticket.customer.customerName}</p>
+          <p className="break-words text-navy">{ticket.customer.customerName}</p>
         </div>
-        <div>
+        <div className="min-w-0">
           <p className="text-xs font-bold uppercase text-muted">Site</p>
-          <p className="text-navy">{ticket.site?.siteName ?? "—"}</p>
+          <p className="break-words text-navy">{ticket.site?.siteName ?? "—"}</p>
         </div>
-        <div>
+        <div className="min-w-0">
           <p className="text-xs font-bold uppercase text-muted">Equipment</p>
-          <p className="text-navy">{ticket.equipment?.itemName ?? "—"}</p>
+          <p className="break-words text-navy">{ticket.equipment?.itemName ?? "—"}</p>
         </div>
-        <div>
+        <div className="min-w-0">
           <p className="text-xs font-bold uppercase text-muted">Engineer</p>
-          <p className="text-navy">{ticket.assignedEngineer?.fullName ?? "Unassigned"}</p>
+          <p className="break-words text-navy">{ticket.assignedEngineer?.fullName ?? "Unassigned"}</p>
         </div>
         {ticket.status === "PENDING" && (
-          <div className="col-span-2">
+          <div className="min-w-0 sm:col-span-2">
             <p className="text-xs font-bold uppercase text-muted">Pending reason</p>
-            <p className="text-navy">
+            <p className="break-words text-navy">
               {ticket.pendingReason ? PENDING_REASON_LABEL[ticket.pendingReason] : "—"}
               {ticket.pendingNotes ? ` — ${ticket.pendingNotes}` : ""}
             </p>
           </div>
         )}
         {ticket.resolutionSummary && (
-          <div className="col-span-2">
+          <div className="min-w-0 sm:col-span-2">
             <p className="text-xs font-bold uppercase text-muted">Resolution summary</p>
-            <p className="text-navy">{ticket.resolutionSummary}</p>
+            <p className="break-words text-navy">{ticket.resolutionSummary}</p>
           </div>
         )}
       </div>
 
       {error && <p className="rounded-md bg-brand-red-bg px-3 py-2 text-xs text-brand-red">{error}</p>}
       {notice && <p className="rounded-md bg-brand-green-bg px-3 py-2 text-xs text-brand-green">{notice}</p>}
+
+      {ticket.possibleDuplicateOf && !ticket.duplicateFlagResolved && (
+        <div className="rounded-lg border border-brand-amber bg-brand-amber-bg p-3">
+          <p className="text-sm text-navy">
+            Possible duplicate of{" "}
+            <a href={`/dashboard/tickets/${ticket.possibleDuplicateOf.id}`} className="font-bold underline">
+              {ticket.possibleDuplicateOf.ticketNo}
+            </a>{" "}
+            ({STATUS_LABEL[ticket.possibleDuplicateOf.status]}).
+          </p>
+          {(role === "CALL_CENTER" || role === "ASM" || role === "MANAGER" || role === "ADMIN") && (
+            <>
+              <div className="mt-2 flex gap-2">
+                <ActionButton
+                  label="Merge (close this one)"
+                  variant="danger"
+                  busy={busy}
+                  onClick={() => setShowMergeReason((s) => !s)}
+                />
+                <ActionButton
+                  label="Not a duplicate — dismiss"
+                  variant="secondary"
+                  busy={busy}
+                  onClick={() => runAction(() => resolveDuplicate(ticket.id, "DISMISS"), "Duplicate flag dismissed.")}
+                />
+              </div>
+              {showMergeReason && (
+                <div className="mt-2">
+                  <textarea
+                    value={mergeReason}
+                    onChange={(e) => setMergeReason(e.target.value)}
+                    placeholder="Reason (required, audit-logged)"
+                    className="mb-2 h-16 w-full rounded-md border border-line p-2 text-sm"
+                  />
+                  <div className="flex gap-2">
+                    <ActionButton
+                      label="Confirm Merge"
+                      variant="danger"
+                      busy={busy || !mergeReason.trim()}
+                      onClick={() => {
+                        runAction(
+                          () => resolveDuplicate(ticket.id, "MERGE", mergeReason.trim()),
+                          "Ticket merged and closed.",
+                        );
+                        setShowMergeReason(false);
+                        setMergeReason("");
+                      }}
+                    />
+                    <ActionButton
+                      label="Cancel"
+                      variant="secondary"
+                      busy={false}
+                      onClick={() => setShowMergeReason(false)}
+                    />
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       <TicketActions role={role} ticket={ticket} busy={busy} runAction={runAction} />
 
@@ -176,6 +254,33 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
           )}
         </div>
       </div>
+
+      {visits.length > 0 && (
+        <div>
+          <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-navy">Field Service Visits</h2>
+          <div className="divide-y divide-line rounded-lg border border-line bg-white">
+            {visits.map((v) => (
+              <a
+                key={v.id}
+                href={`/dashboard/fsv/${v.id}`}
+                className="flex items-center justify-between px-4 py-2.5 text-sm hover:bg-navy-tint"
+              >
+                <div>
+                  <p className="font-mono text-xs text-muted">{v.visitNo}</p>
+                  <p className="text-navy">Visit #{v.visitNumber}</p>
+                </div>
+                <span
+                  className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
+                    v.status === "SUBMITTED" ? "bg-brand-green-bg text-brand-green" : "bg-navy-tint text-navy"
+                  }`}
+                >
+                  {v.status}
+                </span>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -230,27 +335,71 @@ const STATE_ORDER: TicketStatus[] = [
 
 function StateBar({ status }: { status: TicketStatus }) {
   const currentIndex = STATE_ORDER.indexOf(status);
+  const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="flex flex-wrap gap-y-1 text-xs font-bold">
-      {STATE_ORDER.map((s, i) => {
-        const done = i < currentIndex;
-        const now = i === currentIndex;
-        return (
-          <span
-            key={s}
-            className={`whitespace-nowrap px-3.5 py-2.5 first:rounded-l-full last:rounded-r-full ${
-              now
-                ? "bg-orange text-navy"
-                : done
-                  ? "bg-navy text-white"
-                  : "bg-navy-tint text-muted"
-            }`}
-          >
-            {STATUS_LABEL[s]}
+    <div>
+      {/* Mobile: compact current-stage label + progress dots, tap to expand the full list. */}
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full flex-col gap-1.5 rounded-lg border border-line bg-white px-3.5 py-2.5 text-left sm:hidden"
+      >
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-bold text-navy">{STATUS_LABEL[status]}</span>
+          <span className="text-xs text-muted">
+            Step {currentIndex + 1} of {STATE_ORDER.length} {expanded ? "▲" : "▼"}
           </span>
-        );
-      })}
+        </div>
+        <div className="flex gap-1">
+          {STATE_ORDER.map((s, i) => (
+            <span
+              key={s}
+              className={`h-1.5 flex-1 rounded-full ${i <= currentIndex ? "bg-orange" : "bg-navy-tint"}`}
+            />
+          ))}
+        </div>
+        {expanded && (
+          <ul className="mt-1.5 divide-y divide-line border-t border-line pt-1.5">
+            {STATE_ORDER.map((s, i) => {
+              const done = i < currentIndex;
+              const now = i === currentIndex;
+              return (
+                <li key={s} className="flex items-center gap-2 py-1.5 text-xs">
+                  <span className={now ? "text-orange" : done ? "text-navy" : "text-muted"}>
+                    {done ? "✓" : now ? "●" : "○"}
+                  </span>
+                  <span className={now ? "font-bold text-navy" : done ? "text-navy" : "text-muted"}>
+                    {STATUS_LABEL[s]}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </button>
+
+      {/* Desktop/tablet: original full pill bar. */}
+      <div className="hidden flex-wrap gap-y-1 text-xs font-bold sm:flex">
+        {STATE_ORDER.map((s, i) => {
+          const done = i < currentIndex;
+          const now = i === currentIndex;
+          return (
+            <span
+              key={s}
+              className={`whitespace-nowrap px-3.5 py-2.5 first:rounded-l-full last:rounded-r-full ${
+                now
+                  ? "bg-orange text-navy"
+                  : done
+                    ? "bg-navy text-white"
+                    : "bg-navy-tint text-muted"
+              }`}
+            >
+              {STATUS_LABEL[s]}
+            </span>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -334,14 +483,22 @@ function TicketActions({
   const [pendingReason, setPendingReason] = useState<PendingReason>("AWAITING_PARTS");
   const [pendingNotes, setPendingNotes] = useState("");
   const [showPending, setShowPending] = useState(false);
-  const [resolutionSummary, setResolutionSummary] = useState("");
-  const [showResolve, setShowResolve] = useState(false);
+  const [fsvList, setFsvList] = useState<FieldServiceVisit[]>([]);
+  const [fsvBusy, setFsvBusy] = useState(false);
   const [reachedComment, setReachedComment] = useState("");
   const [startComment, setStartComment] = useState("");
   const [asmResolveComment, setAsmResolveComment] = useState("");
   const [closeComment, setCloseComment] = useState("");
   const [serviceType, setServiceType] = useState<ServiceType | "">((ticket.serviceType as ServiceType) ?? "");
   const [serviceTypeSaving, setServiceTypeSaving] = useState(false);
+  const [chargeability, setChargeability] = useState<Chargeability | null>(null);
+  const [showRegularize, setShowRegularize] = useState(false);
+  const [regularizeTarget, setRegularizeTarget] = useState<TicketStatus>("OPEN");
+  const [regularizeReason, setRegularizeReason] = useState("");
+  const [quotations, setQuotations] = useState<QuotationRecord[]>([]);
+  const [deliveries, setDeliveries] = useState<DeliveryRecord[]>([]);
+  const [commercialBusy, setCommercialBusy] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     if ((role === "ASM" || role === "MANAGER") && (ticket.status === "OPEN" || ticket.status === "ASSIGNED")) {
@@ -349,6 +506,33 @@ function TicketActions({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role, ticket.status, ticket.customer.region]);
+
+  useEffect(() => {
+    listFsvForTicket(ticket.id).then(setFsvList).catch(() => setFsvList([]));
+  }, [ticket.id]);
+
+  useEffect(() => {
+    if (role === "CALL_CENTER" || role === "ASM" || role === "MANAGER" || role === "ADMIN") {
+      isTicketChargeable(ticket.id).then(setChargeability).catch(() => setChargeability(null));
+      listQuotationsForTicket(ticket.id).then(setQuotations).catch(() => setQuotations([]));
+      listDeliveriesForTicket(ticket.id).then(setDeliveries).catch(() => setDeliveries([]));
+    }
+  }, [role, ticket.id]);
+
+  async function onOpenFsv() {
+    setFsvBusy(true);
+    try {
+      const existingDraft = fsvList.find((v) => v.status === "DRAFT");
+      if (existingDraft) {
+        router.push(`/dashboard/fsv/${existingDraft.id}`);
+        return;
+      }
+      const created = await createFsv(ticket.id, new Date().toISOString());
+      router.push(`/dashboard/fsv/${created.id}`);
+    } finally {
+      setFsvBusy(false);
+    }
+  }
 
   const buttons: React.ReactNode[] = [];
 
@@ -423,10 +607,18 @@ function TicketActions({
     );
   }
 
-  // Engineer: Mark Pending / Resolve
+  // Engineer: Mark Pending / Field Service Visit (submitting the FSV is what
+  // moves the ticket to Engineer Resolved — see fsv.service.ts's submit()).
   if (role === "ENGINEER" && ticket.status === "WORKING") {
     buttons.push(<ActionButton key="pending" label="Mark Pending" variant="secondary" busy={busy} onClick={() => setShowPending(true)} />);
-    buttons.push(<ActionButton key="resolve" label="Resolve" busy={busy} onClick={() => setShowResolve(true)} />);
+    buttons.push(
+      <ActionButton
+        key="fsv"
+        label={fsvList.some((v) => v.status === "DRAFT") ? "Continue Field Service Visit" : "Start Field Service Visit"}
+        busy={fsvBusy}
+        onClick={onOpenFsv}
+      />,
+    );
   }
 
   // Engineer: Resume
@@ -487,15 +679,7 @@ function TicketActions({
         label="Regularize"
         variant="secondary"
         busy={busy}
-        onClick={() => {
-          const target = window.prompt(
-            "Target status (OPEN/ASSIGNED/ENGINEER_ASSIGNED/ACCEPTED/REACHED_SITE/WORKING/PENDING/ENGINEER_RESOLVED/ASM_RESOLVED/CLOSED):",
-          );
-          if (!target) return;
-          const reason = window.prompt("Reason (required, audit-logged):");
-          if (!reason) return;
-          runAction(() => regularizeTicket(ticket.id, target as any, reason), "Ticket regularized.");
-        }}
+        onClick={() => setShowRegularize(true)}
       />,
     );
   }
@@ -531,6 +715,87 @@ function TicketActions({
               }
             }}
           />
+        </div>
+      )}
+
+      {(role === "CALL_CENTER" || role === "ASM" || role === "MANAGER" || role === "ADMIN") && (
+        <div className="rounded-lg border border-line bg-white p-3">
+          <p className="mb-2 text-xs font-bold uppercase text-muted">Commercial</p>
+          {chargeability === null ? (
+            <p className="text-xs text-muted">Checking chargeable status…</p>
+          ) : quotations.length === 0 && deliveries.length === 0 ? (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted">
+                {chargeability.chargeable
+                  ? "This ticket is chargeable."
+                  : chargeability.reason === "WARRANTY"
+                    ? `Covered by Warranty${chargeability.warrantyEndDate ? ` (until ${new Date(chargeability.warrantyEndDate).toLocaleDateString()})` : ""} — not chargeable.`
+                    : chargeability.reason === "AMC"
+                      ? `Covered by AMC ${chargeability.amcContractRef}${chargeability.amcEndDate ? ` (until ${new Date(chargeability.amcEndDate).toLocaleDateString()})` : ""} — not chargeable.`
+                      : "Not chargeable."}
+              </span>
+              <ActionButton
+                label={chargeability.chargeable ? "Create Quotation" : "Create Direct Sales Order"}
+                busy={commercialBusy}
+                variant="secondary"
+                onClick={async () => {
+                  setCommercialBusy(true);
+                  try {
+                    if (chargeability.chargeable) {
+                      const validUntil = new Date();
+                      validUntil.setDate(validUntil.getDate() + 14);
+                      const q = await createQuotation(ticket.id, { validUntil: validUntil.toISOString().slice(0, 10) });
+                      router.push(`/dashboard/quotations/${q.id}`);
+                    } else {
+                      await createDirectSalesOrder(ticket.id);
+                      setDeliveries(await listDeliveriesForTicket(ticket.id));
+                    }
+                  } finally {
+                    setCommercialBusy(false);
+                  }
+                }}
+              />
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {quotations.map((q) => (
+                <a key={q.id} href={`/dashboard/quotations/${q.id}`} className="block text-xs font-bold text-navy hover:underline">
+                  {q.quotationNo} — {q.status}
+                </a>
+              ))}
+              {deliveries.map((d) => (
+                <div key={d.id} className="text-xs text-muted">
+                  <p>
+                    {d.quotationId ? "Sales Order via Quotation" : "Direct Sales Order (warranty/AMC)"} — delivery: {d.status}
+                  </p>
+                  {d.erpnextSalesOrderId ? (
+                    <p className="text-brand-green">ERPNext Sales Order: {d.erpnextSalesOrderId}</p>
+                  ) : (
+                    <div className="flex items-center gap-2 text-brand-red">
+                      <span>{d.erpnextSyncNote ?? "Not yet synced to ERPNext"}</span>
+                      {!d.quotationId && (
+                        <button
+                          type="button"
+                          className="font-bold underline"
+                          onClick={async () => {
+                            setCommercialBusy(true);
+                            try {
+                              await retryDirectSalesOrderErpSync(d.id);
+                              setDeliveries(await listDeliveriesForTicket(ticket.id));
+                            } finally {
+                              setCommercialBusy(false);
+                            }
+                          }}
+                        >
+                          Retry
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -594,27 +859,48 @@ function TicketActions({
         </div>
       )}
 
-      {showResolve && (
+      {showRegularize && (
         <div className="rounded-lg border border-line bg-white p-4">
-          <p className="mb-2 text-xs font-bold uppercase text-navy">Resolution summary</p>
+          <p className="mb-2 text-xs font-bold uppercase text-navy">Regularize — force to any status</p>
+          <p className="mb-2 text-xs text-muted">
+            Bypasses the normal workflow rules. Always audit-logged with the reason below.
+          </p>
+          <select
+            value={regularizeTarget}
+            onChange={(e) => setRegularizeTarget(e.target.value as TicketStatus)}
+            className="mb-2 w-full rounded-md border border-line px-3 py-2 text-sm"
+          >
+            {Object.entries(STATUS_LABEL).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          </select>
           <textarea
-            value={resolutionSummary}
-            onChange={(e) => setResolutionSummary(e.target.value)}
+            value={regularizeReason}
+            onChange={(e) => setRegularizeReason(e.target.value)}
+            placeholder="Reason (required, audit-logged)"
             className="mb-2 h-20 w-full rounded-md border border-line p-2 text-sm"
           />
           <div className="flex gap-2">
             <ActionButton
-              label="Submit Resolution"
-              busy={busy || !resolutionSummary}
+              label="Confirm Regularize"
+              variant="danger"
+              busy={busy || !regularizeReason.trim()}
               onClick={() => {
-                runAction(() => resolveTicket(ticket.id, resolutionSummary), "Marked resolved.");
-                setShowResolve(false);
+                runAction(
+                  () => regularizeTicket(ticket.id, regularizeTarget, regularizeReason.trim()),
+                  "Ticket regularized.",
+                );
+                setShowRegularize(false);
+                setRegularizeReason("");
               }}
             />
-            <ActionButton label="Cancel" variant="secondary" busy={false} onClick={() => setShowResolve(false)} />
+            <ActionButton label="Cancel" variant="secondary" busy={false} onClick={() => setShowRegularize(false)} />
           </div>
         </div>
       )}
+
     </div>
   );
 }

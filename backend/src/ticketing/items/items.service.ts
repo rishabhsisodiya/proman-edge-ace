@@ -13,6 +13,6 @@ export class ItemsService {
   }
 
   findOne(itemCode: string) {
-    return this.prisma.item.findUniqueOrThrow({ where: { itemCode } });
+    return this.prisma.item.findUniqueOrThrow({ where: { itemCode }, include: { warehouseStock: true } });
   }
 }

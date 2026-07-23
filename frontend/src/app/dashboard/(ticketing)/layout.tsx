@@ -10,6 +10,8 @@ import TopBar from "@/components/TopBar";
 const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/dashboard/tickets/new", title: "New Ticket" },
   { prefix: "/dashboard/tickets/", title: "Ticket Detail" },
+  { prefix: "/dashboard/fsv/", title: "Field Service Visit" },
+  { prefix: "/dashboard/quotations/", title: "Quotation" },
   { prefix: "/dashboard/call-center", title: "Call Center Dashboard" },
   { prefix: "/dashboard/asm", title: "ASM Dashboard" },
   { prefix: "/dashboard/my-tickets", title: "My Tickets" },
@@ -19,6 +21,7 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/dashboard/admin/sync-monitor", title: "Sync Monitor" },
   { prefix: "/dashboard/admin/equipment", title: "Equipment" },
   { prefix: "/dashboard/admin/amc-contracts", title: "AMC Contracts" },
+  { prefix: "/dashboard/admin/billing-rates", title: "Billing Rates" },
   { prefix: "/dashboard/admin", title: "Admin Console" },
   { prefix: "/dashboard/dashboards", title: "Dashboards" },
 ];

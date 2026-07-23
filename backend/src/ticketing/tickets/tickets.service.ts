@@ -154,71 +154,85 @@ export class TicketsService {
       dto.subject ??
       `${equipment?.itemName ?? 'General'} — ${serviceTypeLabel(serviceType)} — ${customer.customerName}`;
 
-    const ticket = await this.prisma.ticket.create({
-      data: {
-        ticketNo,
-        source: dto.source,
-        serviceType,
-        priority,
-        subject,
-        description: dto.description,
-        customerId: dto.customerId,
-        equipmentId: dto.equipmentId,
-        siteId: equipment?.siteId,
-        warrantyStatusAtCreation,
-        warrantyEligible,
-        slaResponseDue,
-        slaResolutionDue,
-        createdByUserId: actor.userId,
-      },
-    });
-
-    // Manual/customer-initiated sources: never merge, just cross-reference
-    // note pointing at the likely-duplicate ticket so Call Center/ASM can
-    // decide for themselves whether to consolidate.
-    if (duplicateCandidate && !AUTO_MERGE_SOURCES.includes(dto.source)) {
-      await this.prisma.ticketAuditLog.create({
+    // Ticket creation + duplicate note + auto-assignment + the ASSIGNED
+    // transition all happen in one transaction — a failure at any step
+    // (e.g. the transition's own role check) rolls back the whole thing,
+    // instead of leaving a committed ticket behind that the caller sees as
+    // a hard error and retries, creating another one each time.
+    const ticketId = await this.prisma.$transaction(async (tx) => {
+      const ticket = await tx.ticket.create({
         data: {
-          ticketId: ticket.id,
-          fieldName: 'duplicate_reference',
-          oldValue: null,
-          newValue: `Possible duplicate of ${duplicateCandidate.ticketNo} (created ${duplicateCandidate.createdAt.toISOString()})`,
-          changedByUserId: actor.userId,
-          changeSource: 'SYSTEM_JOB',
+          ticketNo,
+          source: dto.source,
+          serviceType,
+          priority,
+          subject,
+          description: dto.description,
+          customerId: dto.customerId,
+          equipmentId: dto.equipmentId,
+          siteId: equipment?.siteId,
+          warrantyStatusAtCreation,
+          warrantyEligible,
+          slaResponseDue,
+          slaResolutionDue,
+          createdByUserId: actor.userId,
         },
       });
-    }
 
-    // §7.1 rule 5 — auto-routing to an ASM covering the customer's region,
-    // load-based (fewest current open tickets), per Q12's documented default.
-    // A customer whose region hasn't been resolved yet (needsReview from the
-    // nightly sync) can't be routed — falls through to unassigned, same as
-    // the "no ASM covers this region" case below.
-    const regionAsms = customer.region
-      ? await this.prisma.userRegion.findMany({
-          where: { region: customer.region, user: { role: 'ASM' } },
-          include: {
-            user: { include: { _count: { select: { ticketsAsAsm: { where: { status: { not: 'CLOSED' } } } } } } },
+      // Manual/customer-initiated sources: never merge, just cross-reference
+      // note pointing at the likely-duplicate ticket so Call Center/ASM can
+      // decide for themselves whether to consolidate. FSD Analysis decisions
+      // log (20 Jul 2026): this needs a manual merge-or-dismiss action, not
+      // just a timeline note — possibleDuplicateOfId/duplicateFlagResolved
+      // make that actionable (see resolveDuplicate() below).
+      if (duplicateCandidate && !AUTO_MERGE_SOURCES.includes(dto.source)) {
+        await tx.ticket.update({ where: { id: ticket.id }, data: { possibleDuplicateOfId: duplicateCandidate.id } });
+        await tx.ticketAuditLog.create({
+          data: {
+            ticketId: ticket.id,
+            fieldName: 'duplicate_reference',
+            oldValue: null,
+            newValue: `Possible duplicate of ${duplicateCandidate.ticketNo} (created ${duplicateCandidate.createdAt.toISOString()})`,
+            changedByUserId: actor.userId,
+            changeSource: 'SYSTEM_JOB',
           },
-        })
-      : [];
-    if (regionAsms.length > 0) {
-      const chosenAsm = regionAsms.reduce((best, cur) =>
-        cur.user._count.ticketsAsAsm < best.user._count.ticketsAsAsm ? cur : best,
-      ).user;
+        });
+      }
 
-      await this.prisma.ticket.update({ where: { id: ticket.id }, data: { assignedAsmId: chosenAsm.id } });
-      await this.workflow.transition({
-        ticketId: ticket.id,
-        targetStatus: 'ASSIGNED',
-        actorUserId: actor.userId,
-        actorRole: actor.role,
-      });
-    }
-    // No ASM covers this region: ticket stays OPEN/unassigned, already
-    // surfaced correctly by the existing "Unassigned" dashboard views.
+      // §7.1 rule 5 — auto-routing to an ASM covering the customer's region,
+      // load-based (fewest current open tickets), per Q12's documented default.
+      // A customer whose region hasn't been resolved yet (needsReview from the
+      // nightly sync) can't be routed — falls through to unassigned, same as
+      // the "no ASM covers this region" case below.
+      const regionAsms = customer.region
+        ? await tx.userRegion.findMany({
+            where: { region: customer.region, user: { role: 'ASM' } },
+            include: {
+              user: { include: { _count: { select: { ticketsAsAsm: { where: { status: { not: 'CLOSED' } } } } } } },
+            },
+          })
+        : [];
+      if (regionAsms.length > 0) {
+        const chosenAsm = regionAsms.reduce((best, cur) =>
+          cur.user._count.ticketsAsAsm < best.user._count.ticketsAsAsm ? cur : best,
+        ).user;
 
-    return this.prisma.ticket.findUniqueOrThrow({ where: { id: ticket.id } });
+        await tx.ticket.update({ where: { id: ticket.id }, data: { assignedAsmId: chosenAsm.id } });
+        await this.workflow.transition({
+          ticketId: ticket.id,
+          targetStatus: 'ASSIGNED',
+          actorUserId: actor.userId,
+          actorRole: actor.role,
+          tx,
+        });
+      }
+      // No ASM covers this region: ticket stays OPEN/unassigned, already
+      // surfaced correctly by the existing "Unassigned" dashboard views.
+
+      return ticket.id;
+    });
+
+    return this.prisma.ticket.findUniqueOrThrow({ where: { id: ticketId } });
   }
 
   /** Region/assignment-scoped list — enforced at the query layer, not the UI. */
@@ -250,13 +264,81 @@ export class TicketsService {
   async findOne(id: string, actor: RequestUser) {
     const ticket = await this.prisma.ticket.findUnique({
       where: { id },
-      include: { customer: true, equipment: true, site: true, visits: true, assignedEngineer: true, assignedAsm: true },
+      include: {
+        customer: true,
+        equipment: true,
+        site: true,
+        visits: true,
+        assignedEngineer: true,
+        assignedAsm: true,
+        possibleDuplicateOf: { select: { id: true, ticketNo: true, status: true } },
+      },
     });
     if (!ticket) throw new NotFoundException('Ticket not found');
     if (actor.role === 'ENGINEER' && ticket.assignedEngineerId !== actor.userId) {
       throw new ForbiddenException('Not your ticket');
     }
     return ticket;
+  }
+
+  /**
+   * FSD Analysis decisions log (20 Jul 2026): manual merge-or-dismiss action
+   * for the possible-duplicate flag set at creation (see create() above).
+   * "Merge" closes this ticket via the existing regularize path (always
+   * reasoned + audit-logged) rather than deleting it — the original ticket
+   * and its FSVs/audit trail stay intact, just marked closed and linked to
+   * the canonical one. "Dismiss" just clears the flag with no status change.
+   */
+  async resolveDuplicate(id: string, action: 'MERGE' | 'DISMISS', actor: RequestUser, reason?: string) {
+    const ticket = await this.prisma.ticket.findUniqueOrThrow({
+      where: { id },
+      include: { possibleDuplicateOf: true },
+    });
+    if (!ticket.possibleDuplicateOfId) {
+      throw new BadRequestException('This ticket has no unresolved duplicate flag');
+    }
+    if (ticket.duplicateFlagResolved) {
+      throw new BadRequestException('This duplicate flag has already been resolved');
+    }
+
+    if (action === 'MERGE') {
+      if (!reason?.trim()) {
+        throw new BadRequestException('A reason is required to merge this ticket');
+      }
+      // Deliberately not routed through WorkflowService.regularize() — that's
+      // gated to REGULARIZE_ROLES (Admin/Call Center only) for its
+      // general-purpose "force to any status" power. This action is narrower
+      // (duplicate -> Closed only) and per the FSD decisions log is meant to
+      // be available to Call Center *and* ASM, so it has its own self-
+      // contained permission check (this method's callers, gated in the
+      // controller) rather than inheriting Regularize's stricter one.
+      await this.prisma.$transaction([
+        this.prisma.ticket.update({ where: { id }, data: { status: 'CLOSED', closedAt: new Date() } }),
+        this.prisma.ticketAuditLog.create({
+          data: {
+            ticketId: id,
+            fieldName: 'status',
+            oldValue: ticket.status,
+            newValue: `CLOSED (Merged as duplicate of ${ticket.possibleDuplicateOf!.ticketNo}: ${reason.trim()})`,
+            changedByUserId: actor.userId,
+            changeSource: 'WEB_UI',
+          },
+        }),
+      ]);
+    } else {
+      await this.prisma.ticketAuditLog.create({
+        data: {
+          ticketId: id,
+          fieldName: 'duplicate_reference',
+          oldValue: null,
+          newValue: `Dismissed — confirmed not a duplicate of ${ticket.possibleDuplicateOf!.ticketNo}${reason?.trim() ? `: ${reason.trim()}` : ''}`,
+          changedByUserId: actor.userId,
+          changeSource: 'WEB_UI',
+        },
+      });
+    }
+
+    return this.prisma.ticket.update({ where: { id }, data: { duplicateFlagResolved: true } });
   }
 
   async timeline(id: string) {
@@ -431,22 +513,6 @@ export class TicketsService {
     });
   }
 
-  /**
-   * Engineer marks the ticket resolved. §14.2 rule 23 says this should only
-   * happen via a submitted, linked FSV — FSV isn't built yet (Days 4-10), so
-   * this is a direct action for now, gated on resolutionSummary same as the
-   * FSD requires. Revisit once FSV submit exists.
-   */
-  resolve(id: string, resolutionSummary: string, actor: RequestUser) {
-    return this.workflow.transition({
-      ticketId: id,
-      targetStatus: 'ENGINEER_RESOLVED',
-      actorUserId: actor.userId,
-      actorRole: actor.role,
-      resolutionSummary,
-    });
-  }
-
   /** ASM/Manager confirms resolution. */
   asmResolve(id: string, actor: RequestUser, comment?: string) {
     return this.workflow.transition({
@@ -459,10 +525,12 @@ export class TicketsService {
   }
 
   /**
-   * Call Center/Manager closes the ticket. §14.4 rule 30 (chargeable tickets
-   * need a draft Sales Invoice before closure) isn't enforceable yet — no
-   * Quotation/billing handoff exists (Days 4-10, T3). TODO: add that check
-   * once erpnextInvoiceId is actually populated by that work.
+   * Call Center/Manager closes the ticket. Per Shivam's revised pipeline
+   * (2026-07-23), Sales Invoice creation is fully decoupled from ticket
+   * close — it's driven by the Sales Order reaching ERPNext status
+   * "To Bill" (after a manual Delivery Note), via webhook/poll (see
+   * quotations/quotation.service.ts). Closing the ticket doesn't create,
+   * gate on, or wait for an invoice at all anymore.
    */
   close(id: string, actor: RequestUser, comment?: string) {
     return this.workflow.transition({

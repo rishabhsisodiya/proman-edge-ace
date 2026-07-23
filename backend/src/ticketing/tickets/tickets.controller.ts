@@ -7,10 +7,10 @@ import { CreateTicketDto } from './dto/create-ticket.dto';
 import { AssignTicketDto } from './dto/assign-ticket.dto';
 import { RejectTicketDto } from './dto/reject-ticket.dto';
 import { MarkPendingDto } from './dto/mark-pending.dto';
-import { ResolveTicketDto } from './dto/resolve-ticket.dto';
 import { RegularizeTicketDto } from './dto/regularize-ticket.dto';
 import { CommentDto } from './dto/comment.dto';
 import { UpdateServiceTypeDto } from './dto/update-service-type.dto';
+import { ResolveDuplicateDto } from './dto/resolve-duplicate.dto';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('tickets')
@@ -92,12 +92,6 @@ export class TicketsController {
     return this.tickets.resume(id, { userId: req.user.userId, role: req.user.role });
   }
 
-  @Roles('ENGINEER')
-  @Post(':id/resolve')
-  resolve(@Param('id') id: string, @Body() dto: ResolveTicketDto, @Req() req: any) {
-    return this.tickets.resolve(id, dto.resolutionSummary, { userId: req.user.userId, role: req.user.role });
-  }
-
   @Roles('ASM', 'MANAGER')
   @Post(':id/asm-resolve')
   asmResolve(@Param('id') id: string, @Body() dto: CommentDto, @Req() req: any) {
@@ -123,5 +117,11 @@ export class TicketsController {
       userId: req.user.userId,
       role: req.user.role,
     });
+  }
+
+  @Roles('CALL_CENTER', 'ASM', 'MANAGER', 'ADMIN')
+  @Post(':id/duplicate/resolve')
+  resolveDuplicate(@Param('id') id: string, @Body() dto: ResolveDuplicateDto, @Req() req: any) {
+    return this.tickets.resolveDuplicate(id, dto.action, { userId: req.user.userId, role: req.user.role }, dto.reason);
   }
 }

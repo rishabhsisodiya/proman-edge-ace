@@ -1,9 +1,12 @@
 import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
-import { ChangeSource, PendingReason, Role, Ticket, TicketStatus } from '@prisma/client';
+import { ChangeSource, Prisma, PendingReason, Role, Ticket, TicketStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TICKET_TRANSITIONS } from './workflow.constants';
 
 const REGULARIZE_ROLES: Role[] = ['ADMIN', 'CALL_CENTER'];
+
+/** Lets a caller (e.g. TicketsService.create's own $transaction) fold a transition into its own atomic unit instead of committing separately. */
+type Db = PrismaService | Prisma.TransactionClient;
 
 @Injectable()
 export class WorkflowService {
@@ -26,10 +29,16 @@ export class WorkflowService {
      * comment at each stage after Accepted) — folded into the audit log
      * entry, same mechanism `regularize()` already uses for its reason. */
     comment?: string;
+    /** Pass the caller's own transaction client to make this transition
+     * atomic with whatever else the caller is doing (e.g. ticket creation +
+     * auto-assignment) — a failure here then rolls back the whole thing
+     * instead of leaving a half-created ticket committed. */
+    tx?: Prisma.TransactionClient;
   }): Promise<Ticket> {
-    const { ticketId, targetStatus, actorUserId, actorRole, pendingReason, pendingNotes, resolutionSummary, comment } = params;
+    const { ticketId, targetStatus, actorUserId, actorRole, pendingReason, pendingNotes, resolutionSummary, comment, tx } = params;
+    const db: Db = tx ?? this.prisma;
 
-    const ticket = await this.prisma.ticket.findUniqueOrThrow({ where: { id: ticketId } });
+    const ticket = await db.ticket.findUniqueOrThrow({ where: { id: ticketId } });
     const rule = TICKET_TRANSITIONS[ticket.status];
 
     if (!rule.next.includes(targetStatus)) {
@@ -37,7 +46,10 @@ export class WorkflowService {
         `Cannot move ticket from ${ticket.status} to ${targetStatus}`,
       );
     }
-    if (!rule.allowedRoles.includes(actorRole)) {
+    // Admin is a universal bypass everywhere else in the app (RolesGuard) —
+    // apply the same convention here instead of listing ADMIN in every
+    // TICKET_TRANSITIONS entry individually.
+    if (actorRole !== 'ADMIN' && !rule.allowedRoles.includes(actorRole)) {
       throw new ForbiddenException(`Role ${actorRole} cannot trigger this transition`);
     }
     if (targetStatus === 'PENDING' && !pendingReason) {
@@ -53,6 +65,7 @@ export class WorkflowService {
       targetStatus,
       actorUserId,
       auditNote: comment?.trim() || undefined,
+      tx,
       data: {
         status: targetStatus,
         closedAt: targetStatus === 'CLOSED' ? new Date() : undefined,
@@ -111,21 +124,28 @@ export class WorkflowService {
     actorUserId: string;
     auditNote?: string;
     data: Record<string, unknown>;
+    tx?: Prisma.TransactionClient;
   }): Promise<Ticket> {
-    const { ticketId, fromStatus, targetStatus, actorUserId, auditNote, data } = params;
+    const { ticketId, fromStatus, targetStatus, actorUserId, auditNote, data, tx } = params;
+
+    const auditData = {
+      ticketId,
+      fieldName: 'status',
+      oldValue: fromStatus,
+      newValue: auditNote ? `${targetStatus} (${auditNote})` : targetStatus,
+      changedByUserId: actorUserId,
+      changeSource: ChangeSource.WEB_UI,
+    };
+
+    if (tx) {
+      const updated = await tx.ticket.update({ where: { id: ticketId }, data: data as any });
+      await tx.ticketAuditLog.create({ data: auditData });
+      return updated;
+    }
 
     const [updated] = await this.prisma.$transaction([
       this.prisma.ticket.update({ where: { id: ticketId }, data: data as any }),
-      this.prisma.ticketAuditLog.create({
-        data: {
-          ticketId,
-          fieldName: 'status',
-          oldValue: fromStatus,
-          newValue: auditNote ? `${targetStatus} (${auditNote})` : targetStatus,
-          changedByUserId: actorUserId,
-          changeSource: ChangeSource.WEB_UI,
-        },
-      }),
+      this.prisma.ticketAuditLog.create({ data: auditData }),
     ]);
 
     return updated;

@@ -12,6 +12,10 @@ import { EquipmentModule } from './ticketing/equipment/equipment.module';
 import { AmcModule } from './ticketing/amc/amc.module';
 import { ItemsModule } from './ticketing/items/items.module';
 import { TicketsModule } from './ticketing/tickets/tickets.module';
+import { FsvModule } from './ticketing/fsv/fsv.module';
+import { QuotationModule } from './ticketing/quotations/quotation.module';
+import { BillingRateModule } from './ticketing/billing-rates/billing-rate.module';
+import { ErpWebhooksModule } from './ticketing/erp-webhooks/erp-webhooks.module';
 import { ErpModule } from './erp/erp.module';
 import { ManufacturingModule } from './dashboards/manufacturing/manufacturing.module';
 import { SalesModule } from './dashboards/sales/sales.module';
@@ -36,6 +40,10 @@ import { DispatchModule } from './dashboards/dispatch/dispatch.module';
     AmcModule,
     ItemsModule,
     TicketsModule,
+    FsvModule,
+    QuotationModule,
+    BillingRateModule,
+    ErpWebhooksModule,
     ManufacturingModule,
     SalesModule,
     FinanceModule,

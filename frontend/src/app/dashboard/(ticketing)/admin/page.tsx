@@ -38,7 +38,11 @@ const SECTIONS = [
   },
   { label: "Notification Templates", description: "23 trigger templates, per channel", href: null },
   { label: "Skill Tags", description: "Standard engineer skill-tag list", href: null },
-  { label: "Billing Rates", description: "engineer_level → hourly rate", href: null },
+  {
+    label: "Billing Rates",
+    description: "engineer_level → hourly rate, used for labour billing on chargeable tickets",
+    href: "/dashboard/admin/billing-rates",
+  },
   { label: "Predictive Rules", description: "Time-since-service / breakdown-frequency / hours thresholds", href: null },
   { label: "User Management", description: "Full user CRUD (roles, regions, skill tags)", href: null },
 ];

@@ -118,6 +118,8 @@ export interface Ticket {
   equipment: Equipment | null;
   assignedEngineer: EngineerRef | null;
   assignedAsm: EngineerRef | null;
+  possibleDuplicateOf?: { id: string; ticketNo: string; status: TicketStatus } | null;
+  duplicateFlagResolved?: boolean;
 }
 
 // Client-requested display renames (internal enum values unchanged, so
