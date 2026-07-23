@@ -45,8 +45,12 @@ export default function SignaturePad({ onCapture, disabled }: Props) {
   }
 
   function end() {
+    // Guard on drawing.current *before* resetting it — pointerleave fires on
+    // every mouse-hover-out, drawn or not, so without this a signature that
+    // was captured once gets silently re-uploaded on every subsequent hover.
+    const wasDrawing = drawing.current;
     drawing.current = false;
-    if (hasDrawn && canvasRef.current) {
+    if (wasDrawing && hasDrawn && canvasRef.current) {
       canvasRef.current.toBlob((blob) => onCapture(blob), "image/png");
     }
   }
