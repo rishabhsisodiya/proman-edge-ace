@@ -19,6 +19,7 @@ import { AuthUser, getCurrentUser } from "@/lib/auth";
 import {
   PENDING_REASON_LABEL,
   PRIORITY_STYLE,
+  SELECTABLE_SERVICE_TYPES,
   SERVICE_TYPE_LABEL,
   STATUS_LABEL,
   STATUS_STYLE,
@@ -613,9 +614,9 @@ function ServiceTypeCard({
         className="mb-2 w-full rounded-md border border-line px-3 py-2 text-sm text-navy"
       >
         <option value="">Not yet determined</option>
-        {Object.entries(SERVICE_TYPE_LABEL).map(([k, v]) => (
+        {SELECTABLE_SERVICE_TYPES.map((k) => (
           <option key={k} value={k}>
-            {v}
+            {SERVICE_TYPE_LABEL[k]}
           </option>
         ))}
       </select>

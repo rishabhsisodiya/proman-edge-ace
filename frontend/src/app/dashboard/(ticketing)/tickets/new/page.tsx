@@ -8,6 +8,7 @@ import { CustomerListItem, EquipmentListItem, equipmentForCustomer, listCustomer
 import {
   MANUAL_SOURCES,
   Priority,
+  SELECTABLE_SERVICE_TYPES,
   SERVICE_TYPE_LABEL,
   SOURCE_LABEL,
   ServiceType,
@@ -145,9 +146,9 @@ export default function NewTicketPage() {
               className="h-11 w-full rounded-md border border-line px-3 text-sm text-navy"
             >
               <option value="">Not yet determined</option>
-              {Object.entries(SERVICE_TYPE_LABEL).map(([k, v]) => (
+              {SELECTABLE_SERVICE_TYPES.map((k) => (
                 <option key={k} value={k}>
-                  {v}
+                  {SERVICE_TYPE_LABEL[k]}
                 </option>
               ))}
             </select>

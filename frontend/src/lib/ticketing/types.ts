@@ -72,6 +72,14 @@ export const SERVICE_TYPE_LABEL: Record<ServiceType, string> = {
   SPARES_SUPPLY_INSTALLATION: "Spares Supply (with installation)",
 };
 
+// Client request (Ashwath feedback, 20 Jul 2026): remove AMC from the Service
+// Type list. AMC stays in the ServiceType enum/SERVICE_TYPE_LABEL above so an
+// existing AMC-tagged ticket (TCKT-2026-000001) still displays correctly —
+// this list only controls what's *selectable* going forward.
+export const SELECTABLE_SERVICE_TYPES = (Object.keys(SERVICE_TYPE_LABEL) as ServiceType[]).filter(
+  (t) => t !== "AMC",
+);
+
 export interface Customer {
   id: string;
   customerName: string;
