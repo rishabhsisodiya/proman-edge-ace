@@ -233,9 +233,10 @@ model User {
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
 
-  ticketsAsAsm      Ticket[]            @relation("AsmTickets")
-  ticketsAsEngineer Ticket[]            @relation("EngineerTickets")
-  fsvs              FieldServiceVisit[]
+  ticketsAsAsm          Ticket[]            @relation("AsmTickets")
+  ticketsAsEngineer     Ticket[]            @relation("EngineerTickets")
+  fsvs                  FieldServiceVisit[]
+  partnerApiKeysCreated PartnerApiKey[]
 }
 
 model UserRegion {
@@ -244,6 +245,22 @@ model UserRegion {
   user   User   @relation(fields: [userId], references: [id])
 
   @@id([userId, region])
+}
+
+/// Partner/IoT API keys (Build Plan Phase 2 item 7) — replaces the original
+/// single-static-env-var PARTNER_API_KEY with real key management: Admin can
+/// generate a key (shown once, only the SHA-256 hash is ever stored — same
+/// principle as a password), hand the raw value to the partner, and revoke
+/// it later without needing a code change/restart.
+model PartnerApiKey {
+  id              String    @id @default(uuid())
+  label           String
+  keyHash         String    @unique
+  createdByUserId String
+  createdBy       User      @relation(fields: [createdByUserId], references: [id])
+  createdAt       DateTime  @default(now())
+  lastUsedAt      DateTime?
+  revokedAt       DateTime?
 }
 
 model Customer {

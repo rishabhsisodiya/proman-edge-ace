@@ -1,5 +1,7 @@
-import { apiFetch } from "@/lib/api";
+import { apiFetch, ApiError } from "@/lib/api";
 import { PendingReason, ServiceType, Ticket, TicketStatus } from "./types";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4100/api/v1";
 
 function post<T>(path: string, body?: unknown): Promise<T> {
   return apiFetch<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined });
@@ -34,6 +36,32 @@ export const updateServiceType = (id: string, serviceType: ServiceType) =>
 export const resolveDuplicate = (id: string, action: "MERGE" | "DISMISS", reason?: string) =>
   post<Ticket>(`/tickets/${id}/duplicate/resolve`, { action, reason });
 
+export interface BulkImportResult {
+  total: number;
+  succeeded: number;
+  failed: number;
+  results: { row: number; ticketNo?: string; error?: string }[];
+}
+
+/** Not routed through apiFetch — that forces Content-Type: application/json, which breaks multipart. */
+export async function bulkImportTickets(file: File): Promise<BulkImportResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const send = () => fetch(`${API_URL}/tickets/bulk-import`, { method: "POST", credentials: "include", body: formData });
+
+  let res = await send();
+  if (res.status === 401) {
+    const refreshed = await fetch(`${API_URL}/auth/refresh`, { method: "POST", credentials: "include" });
+    if (refreshed.ok) res = await send();
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new ApiError(res.status, body);
+  }
+  return res.json() as Promise<BulkImportResult>;
+}
+
 export interface EngineerCandidate {
   id: string;
   fullName: string;
@@ -45,6 +73,8 @@ export interface EngineerCandidate {
 
 export const assignTicket = (id: string, engineerId: string) =>
   post<Ticket>(`/tickets/${id}/assign`, { engineerId });
+
+export const retryAutoRouting = (id: string) => post<Ticket>(`/tickets/${id}/retry-routing`);
 
 export const engineerCandidates = (region?: string) =>
   apiFetch<EngineerCandidate[]>(`/users/engineer-candidates${region ? `?region=${region}` : ""}`);

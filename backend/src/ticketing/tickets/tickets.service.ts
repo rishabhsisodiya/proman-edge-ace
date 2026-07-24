@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, Role, ServiceType, Priority, Source, PendingReason, TicketStatus } from '@prisma/client';
+import { parse } from 'csv-parse/sync';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { nextTicketNo } from './ticket-number.util';
@@ -385,6 +386,50 @@ export class TicketsService {
     });
   }
 
+  /**
+   * Re-runs the same region→ASM auto-routing check create() does, for a
+   * ticket that's still stuck OPEN/unassigned because no ASM covered its
+   * customer's region *at creation time*. Auto-routing is a one-time
+   * decision made when the ticket is created — it never re-fires just
+   * because the customer's region or the region's ASM staffing changes
+   * afterward, so this gives ASM/Manager a manual way to retry it once that
+   * changes (e.g. an ASM gets added to the region, or the customer's region
+   * gets corrected).
+   */
+  async retryAutoRouting(id: string, actor: RequestUser) {
+    const ticket = await this.prisma.ticket.findUniqueOrThrow({ where: { id }, include: { customer: true } });
+    if (ticket.status !== 'OPEN') {
+      throw new BadRequestException('This ticket has already moved past New — auto-routing only applies while unassigned');
+    }
+    if (ticket.assignedAsmId) {
+      throw new BadRequestException('This ticket already has an ASM assigned');
+    }
+    if (!ticket.customer.region) {
+      throw new BadRequestException("This ticket's customer still has no region set — resolve that first");
+    }
+
+    const regionAsms = await this.prisma.userRegion.findMany({
+      where: { region: ticket.customer.region, user: { role: 'ASM' } },
+      include: { user: { include: { _count: { select: { ticketsAsAsm: { where: { status: { not: 'CLOSED' } } } } } } } },
+    });
+    if (regionAsms.length === 0) {
+      throw new BadRequestException(`Still no ASM covers region ${ticket.customer.region} — nothing to route to yet`);
+    }
+
+    const chosenAsm = regionAsms.reduce((best, cur) =>
+      cur.user._count.ticketsAsAsm < best.user._count.ticketsAsAsm ? cur : best,
+    ).user;
+
+    await this.prisma.ticket.update({ where: { id }, data: { assignedAsmId: chosenAsm.id } });
+    return this.workflow.transition({
+      ticketId: id,
+      targetStatus: 'ASSIGNED',
+      actorUserId: actor.userId,
+      actorRole: actor.role,
+      comment: `Auto-routed to ${chosenAsm.fullName} on retry`,
+    });
+  }
+
   /** Engineer accepts an assignment. */
   accept(id: string, actor: RequestUser) {
     return this.workflow.transition({
@@ -561,5 +606,158 @@ export class TicketsService {
       actorRole: actor.role,
       reason,
     });
+  }
+
+  /**
+   * Bulk CSV ticket import (Build Plan, Days 4-10, T1 — "genuinely simple, no
+   * external dependency"). Validates each row against the same create()
+   * entry point every other source uses (dedup, auto-routing, priority
+   * matrix all apply identically) — partial success, not all-or-nothing: a
+   * bad row is reported with its error, valid rows still create tickets.
+   *
+   * Expected columns (header row required): source, description, and either
+   * customerId (UUID) or customerErpId (Customer.erpnextCustomerId) — plus
+   * optional serviceType, priority, subject, and either equipmentId (UUID)
+   * or equipmentSerialNo (Equipment.serialNo). CSV rows realistically won't
+   * know internal UUIDs, so the human-friendly identifiers are resolved here
+   * before handing off to create().
+   */
+  async bulkImport(csvBuffer: Buffer, actor: RequestUser) {
+    let rows: Record<string, string>[];
+    try {
+      rows = parse(csvBuffer, { columns: true, skip_empty_lines: true, trim: true });
+    } catch (err: any) {
+      throw new BadRequestException(`Could not parse CSV: ${err?.message ?? err}`);
+    }
+    if (rows.length === 0) {
+      throw new BadRequestException('CSV has no data rows');
+    }
+
+    const results: { row: number; ticketNo?: string; error?: string }[] = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const rowNum = i + 2; // +1 for 0-index, +1 for the header row
+      try {
+        if (!row.source || !Object.values(Source).includes(row.source as Source)) {
+          throw new Error(`Invalid or missing "source" (got "${row.source ?? ''}")`);
+        }
+        if (!row.description?.trim()) {
+          throw new Error('Missing "description"');
+        }
+        if (row.serviceType && !Object.values(ServiceType).includes(row.serviceType as ServiceType)) {
+          throw new Error(`Invalid "serviceType" (got "${row.serviceType}")`);
+        }
+        if (row.priority && !Object.values(Priority).includes(row.priority as Priority)) {
+          throw new Error(`Invalid "priority" (got "${row.priority}")`);
+        }
+
+        const { customerId, equipmentId } = await this.resolveExternalRefs(row);
+
+        const dto: CreateTicketDto = {
+          source: row.source as Source,
+          serviceType: (row.serviceType as ServiceType) || undefined,
+          priority: (row.priority as Priority) || undefined,
+          description: row.description.trim(),
+          customerId,
+          equipmentId,
+          subject: row.subject?.trim() || undefined,
+        };
+
+        const ticket = await this.create(dto, actor);
+        results.push({ row: rowNum, ticketNo: ticket.ticketNo });
+      } catch (err: any) {
+        results.push({ row: rowNum, error: err?.message ?? String(err) });
+      }
+    }
+
+    return {
+      total: rows.length,
+      succeeded: results.filter((r) => r.ticketNo).length,
+      failed: results.filter((r) => r.error).length,
+      results,
+    };
+  }
+
+  /** Shared by bulkImport() and createFromPartner() — resolves human-friendly identifiers to internal UUIDs. */
+  private async resolveExternalRefs(row: {
+    customerId?: string;
+    customerErpId?: string;
+    equipmentId?: string;
+    equipmentSerialNo?: string;
+  }): Promise<{ customerId: string; equipmentId?: string }> {
+    let customerId = row.customerId?.trim();
+    if (!customerId && row.customerErpId?.trim()) {
+      const customer = await this.prisma.customer.findFirst({ where: { erpnextCustomerId: row.customerErpId.trim() } });
+      if (!customer) throw new Error(`No customer found with erpnextCustomerId "${row.customerErpId}"`);
+      customerId = customer.id;
+    }
+    if (!customerId) throw new Error('Missing "customerId" or "customerErpId"');
+
+    let equipmentId = row.equipmentId?.trim() || undefined;
+    if (!equipmentId && row.equipmentSerialNo?.trim()) {
+      const equipment = await this.prisma.equipment.findUnique({ where: { serialNo: row.equipmentSerialNo.trim() } });
+      if (!equipment) throw new Error(`No equipment found with serialNo "${row.equipmentSerialNo}"`);
+      equipmentId = equipment.id;
+    }
+
+    return { customerId, equipmentId };
+  }
+
+  /**
+   * Partner/IoT webhook entry point (Build Plan Phase 2 item 7 — scaffolding
+   * only, no real adapter exists yet since no partner/sensor vendor is
+   * confirmed). Always tagged source=API_PARTNER regardless of what the
+   * caller sends (the whole point of this source value is knowing it came
+   * from here, not from a logged-in user) — dedup/auto-classification/
+   * auto-routing all apply identically via the same create() entry point.
+   * There's no authenticated user for createdByUserId here (API-key auth,
+   * not JWT), so this attributes to whichever user ID
+   * PARTNER_ACTOR_USER_ID names — falls back to the first ADMIN found if
+   * unset, since some real user must own the FK.
+   */
+  async createFromPartner(row: {
+    description: string;
+    customerId?: string;
+    customerErpId?: string;
+    equipmentId?: string;
+    equipmentSerialNo?: string;
+    serviceType?: string;
+    priority?: string;
+    subject?: string;
+  }) {
+    if (!row.description?.trim()) throw new BadRequestException('Missing "description"');
+    if (row.serviceType && !Object.values(ServiceType).includes(row.serviceType as ServiceType)) {
+      throw new BadRequestException(`Invalid "serviceType" (got "${row.serviceType}")`);
+    }
+    if (row.priority && !Object.values(Priority).includes(row.priority as Priority)) {
+      throw new BadRequestException(`Invalid "priority" (got "${row.priority}")`);
+    }
+
+    let customerId: string, equipmentId: string | undefined;
+    try {
+      ({ customerId, equipmentId } = await this.resolveExternalRefs(row));
+    } catch (err: any) {
+      throw new BadRequestException(err?.message ?? String(err));
+    }
+
+    let actorUserId = process.env.PARTNER_ACTOR_USER_ID;
+    if (!actorUserId) {
+      const admin = await this.prisma.user.findFirst({ where: { role: 'ADMIN' } });
+      if (!admin) throw new BadRequestException('No PARTNER_ACTOR_USER_ID configured and no ADMIN user exists to attribute this ticket to');
+      actorUserId = admin.id;
+    }
+
+    const dto: CreateTicketDto = {
+      source: 'API_PARTNER',
+      serviceType: (row.serviceType as ServiceType) || undefined,
+      priority: (row.priority as Priority) || undefined,
+      description: row.description.trim(),
+      customerId,
+      equipmentId,
+      subject: row.subject?.trim() || undefined,
+    };
+
+    return this.create(dto, { userId: actorUserId, role: 'ADMIN' });
   }
 }

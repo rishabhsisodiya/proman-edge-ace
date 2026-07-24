@@ -12,6 +12,7 @@ import { EquipmentModule } from './ticketing/equipment/equipment.module';
 import { AmcModule } from './ticketing/amc/amc.module';
 import { ItemsModule } from './ticketing/items/items.module';
 import { TicketsModule } from './ticketing/tickets/tickets.module';
+import { TicketSourcesModule } from './ticketing/ticket-sources/ticket-sources.module';
 import { FsvModule } from './ticketing/fsv/fsv.module';
 import { QuotationModule } from './ticketing/quotations/quotation.module';
 import { BillingRateModule } from './ticketing/billing-rates/billing-rate.module';
@@ -40,6 +41,7 @@ import { DispatchModule } from './dashboards/dispatch/dispatch.module';
     AmcModule,
     ItemsModule,
     TicketsModule,
+    TicketSourcesModule,
     FsvModule,
     QuotationModule,
     BillingRateModule,

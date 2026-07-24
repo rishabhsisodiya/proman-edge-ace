@@ -36,6 +36,16 @@ const SECTIONS = [
     description: "ERPNext Customer sync history, failures, skipped records, needs-review",
     href: "/dashboard/admin/sync-monitor",
   },
+  {
+    label: "Bulk Ticket Import",
+    description: "Upload a CSV of ticket rows — valid rows create tickets, invalid rows report per-row errors",
+    href: "/dashboard/admin/bulk-import",
+  },
+  {
+    label: "Partner API Keys",
+    description: "Generate/revoke API keys for the partner/IoT ticket-creation webhook",
+    href: "/dashboard/admin/partner-api-keys",
+  },
   { label: "Notification Templates", description: "23 trigger templates, per channel", href: null },
   { label: "Skill Tags", description: "Standard engineer skill-tag list", href: null },
   {

@@ -42,6 +42,7 @@ import {
   reopenTicket,
   resolveDuplicate,
   resumeTicket,
+  retryAutoRouting,
   startWorking,
   TicketAuditEntry,
   ticketTimeline,
@@ -225,6 +226,22 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
               )}
             </>
           )}
+        </div>
+      )}
+
+      {ticket.status === "OPEN" && !ticket.assignedAsm && (role === "ASM" || role === "MANAGER" || role === "ADMIN") && (
+        <div className="rounded-lg border border-brand-amber bg-brand-amber-bg p-3">
+          <p className="text-sm text-navy">
+            No ASM covered {ticket.customer.region ?? "this customer's region"} when this ticket was created —
+            auto-routing only runs once, at creation time. If a region's ASM staffing has changed since, retry it here.
+          </p>
+          <div className="mt-2">
+            <ActionButton
+              label="Retry Auto-Routing"
+              busy={busy}
+              onClick={() => runAction(() => retryAutoRouting(ticket.id), "Ticket auto-routed.")}
+            />
+          </div>
         </div>
       )}
 

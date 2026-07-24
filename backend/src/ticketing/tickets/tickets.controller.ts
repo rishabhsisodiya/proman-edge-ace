@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { RolesGuard } from '../../auth/roles.guard';
 import { Roles } from '../../auth/roles.decorator';
@@ -28,6 +29,14 @@ export class TicketsController {
     return this.tickets.list({ userId: req.user.userId, role: req.user.role }, filters);
   }
 
+  @Roles('CALL_CENTER', 'ASM', 'MANAGER')
+  @Post('bulk-import')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  bulkImport(@UploadedFile() file: Express.Multer.File, @Req() req: any) {
+    if (!file) throw new BadRequestException('No CSV file uploaded');
+    return this.tickets.bulkImport(file.buffer, { userId: req.user.userId, role: req.user.role });
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string, @Req() req: any) {
     return this.tickets.findOne(id, { userId: req.user.userId, role: req.user.role });
@@ -42,6 +51,12 @@ export class TicketsController {
   @Post(':id/assign')
   assign(@Param('id') id: string, @Body() dto: AssignTicketDto, @Req() req: any) {
     return this.tickets.assign(id, dto.engineerId, { userId: req.user.userId, role: req.user.role });
+  }
+
+  @Roles('ASM', 'MANAGER', 'ADMIN')
+  @Post(':id/retry-routing')
+  retryAutoRouting(@Param('id') id: string, @Req() req: any) {
+    return this.tickets.retryAutoRouting(id, { userId: req.user.userId, role: req.user.role });
   }
 
   // Client request: service type may not be known at creation — ASM/Engineer/
