@@ -63,8 +63,12 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [visits, setVisits] = useState<FieldServiceVisit[]>([]);
-  const [showMergeReason, setShowMergeReason] = useState(false);
+  const [showMergeModal, setShowMergeModal] = useState(false);
   const [mergeReason, setMergeReason] = useState("");
+  const [showRegularizeModal, setShowRegularizeModal] = useState(false);
+  const [regularizeTarget, setRegularizeTarget] = useState<TicketStatus>("OPEN");
+  const [regularizeReason, setRegularizeReason] = useState("");
+  const [chargeability, setChargeability] = useState<Chargeability | null>(null);
 
   function load() {
     setLoading(true);
@@ -84,6 +88,19 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  useEffect(() => {
+    if (!ticket) return;
+    if (
+      user?.role === "CALL_CENTER" ||
+      user?.role === "ASM" ||
+      user?.role === "MANAGER" ||
+      user?.role === "ADMIN" ||
+      user?.role === "ENGINEER"
+    ) {
+      isTicketChargeable(ticket.id).then(setChargeability).catch(() => setChargeability(null));
+    }
+  }, [ticket?.id, user?.role]);
 
   async function runAction<T>(action: () => Promise<T>, successNote?: string) {
     setBusy(true);
@@ -113,24 +130,160 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
   const role = user.role;
   const isMine = ticket.assignedEngineer?.id ? undefined : undefined; // engineer scoping already enforced server-side
 
+  const canRegularize = role === "ADMIN" || role === "CALL_CENTER";
+  const canResolveDuplicate =
+    ticket.possibleDuplicateOf &&
+    !ticket.duplicateFlagResolved &&
+    (role === "CALL_CENTER" || role === "ASM" || role === "MANAGER" || role === "ADMIN");
+
+  const menuItems: { label: string; onClick: () => void; variant?: "danger" }[] = [];
+  if (canResolveDuplicate) {
+    menuItems.push({ label: "Merge / Duplicate", onClick: () => setShowMergeModal(true), variant: "danger" });
+  }
+  if (canRegularize) {
+    menuItems.push({ label: "Regularize", onClick: () => setShowRegularizeModal(true) });
+  }
+
   return (
-    <div className="mx-auto max-w-5xl space-y-6 px-6 py-8">
-      <div>
-        <p className="font-mono text-xs text-muted">{ticket.ticketNo}</p>
-        <h1 className="text-xl font-bold text-navy">{ticket.subject}</h1>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${STATUS_STYLE[ticket.status]}`}>
-            {STATUS_LABEL[ticket.status]}
-          </span>
-          <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${PRIORITY_STYLE[ticket.priority]}`}>
-            {ticket.priority}
-          </span>
-          <span className="text-xs text-muted">{SERVICE_TYPE_LABEL[ticket.serviceType as ServiceType] ?? ticket.serviceType}</span>
+    <div className="mx-auto max-w-6xl space-y-6 px-6 py-8">
+      <div className="relative flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="absolute right-0 top-0 sm:hidden">
+          <DotMenu items={menuItems} />
+        </div>
+        <div className="min-w-0 pr-12 sm:pr-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="font-mono text-xs text-muted">{ticket.ticketNo}</p>
+            {ticket.possibleDuplicateOf && !ticket.duplicateFlagResolved && role !== "ENGINEER" && (
+              <span className="animate-pulse rounded-full bg-brand-red-bg px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-brand-red">
+                Duplicate?
+              </span>
+            )}
+          </div>
+          <h1 className="break-words text-xl font-bold text-navy">{ticket.subject}</h1>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${STATUS_STYLE[ticket.status]}`}>
+              {STATUS_LABEL[ticket.status]}
+            </span>
+            <span className="text-xs text-muted">{SERVICE_TYPE_LABEL[ticket.serviceType as ServiceType] ?? ticket.serviceType}</span>
+          </div>
+        </div>
+        <div className="flex flex-col items-start gap-2 sm:items-end">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`rounded-full px-3 py-1.5 text-xs font-bold ${PRIORITY_STYLE[ticket.priority]}`}>
+              {ticket.priority}
+            </span>
+            {chargeability && !chargeability.chargeable && chargeability.reason && (
+              <span
+                className={`rounded-full px-3 py-1.5 text-xs font-bold ${
+                  chargeability.reason === "WARRANTY" ? "bg-brand-amber-bg text-brand-amber" : "bg-brand-green-bg text-brand-green"
+                }`}
+              >
+                {chargeability.reason === "WARRANTY"
+                  ? "Under Warranty"
+                  : `Under AMC${chargeability.amcEndDate ? ` — till ${new Date(chargeability.amcEndDate).toLocaleDateString()}` : ""}`}
+              </span>
+            )}
+            <div className="hidden sm:block">
+              <DotMenu items={menuItems} />
+            </div>
+          </div>
         </div>
       </div>
 
+      {showMergeModal && ticket.possibleDuplicateOf && (
+        <Modal title={`Merge into ${ticket.possibleDuplicateOf.ticketNo}`} onClose={() => setShowMergeModal(false)}>
+          <p className="mb-2 text-sm text-navy">
+            Possible duplicate of{" "}
+            <a href={`/dashboard/tickets/${ticket.possibleDuplicateOf.id}`} className="font-bold underline">
+              {ticket.possibleDuplicateOf.ticketNo}
+            </a>{" "}
+            ({STATUS_LABEL[ticket.possibleDuplicateOf.status]}).
+          </p>
+          <p className="mb-2 text-xs text-muted">
+            This ticket is currently at "{STATUS_LABEL[ticket.status]}" — if real work has already happened on it,
+            make sure that's actually intended before confirming a merge.
+          </p>
+          <textarea
+            value={mergeReason}
+            onChange={(e) => setMergeReason(e.target.value)}
+            placeholder="Reason (required if merging, audit-logged)"
+            className="mb-3 h-16 w-full rounded-md border border-line p-2 text-sm"
+          />
+          <div className="flex flex-wrap gap-2">
+            <ActionButton
+              label="Merge (close this one)"
+              variant="danger"
+              busy={busy || !mergeReason.trim()}
+              onClick={() => {
+                const alreadyActive = ticket.status !== "OPEN";
+                const confirmed = window.confirm(
+                  alreadyActive
+                    ? `This ticket is already at "${STATUS_LABEL[ticket.status]}" — it looks like real work may have happened on it. Merging will close it immediately and cannot be undone. Continue?`
+                    : `Merge this ticket into ${ticket.possibleDuplicateOf!.ticketNo} and close it? This cannot be undone.`,
+                );
+                if (!confirmed) return;
+                runAction(() => resolveDuplicate(ticket.id, "MERGE", mergeReason.trim()), "Ticket merged and closed.");
+                setShowMergeModal(false);
+                setMergeReason("");
+              }}
+            />
+            <ActionButton
+              label="Not a duplicate — dismiss"
+              variant="secondary"
+              busy={busy}
+              onClick={() => {
+                runAction(() => resolveDuplicate(ticket.id, "DISMISS"), "Duplicate flag dismissed.");
+                setShowMergeModal(false);
+              }}
+            />
+            <ActionButton label="Cancel" variant="secondary" busy={false} onClick={() => setShowMergeModal(false)} />
+          </div>
+        </Modal>
+      )}
+
+      {showRegularizeModal && (
+        <Modal title="Regularize — force to any status" onClose={() => setShowRegularizeModal(false)}>
+          <p className="mb-2 text-xs text-muted">Bypasses the normal workflow rules. Always audit-logged with the reason below.</p>
+          <select
+            value={regularizeTarget}
+            onChange={(e) => setRegularizeTarget(e.target.value as TicketStatus)}
+            className="mb-2 w-full rounded-md border border-line px-3 py-2 text-sm"
+          >
+            {Object.entries(STATUS_LABEL).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          </select>
+          <textarea
+            value={regularizeReason}
+            onChange={(e) => setRegularizeReason(e.target.value)}
+            placeholder="Reason (required, audit-logged)"
+            className="mb-3 h-20 w-full rounded-md border border-line p-2 text-sm"
+          />
+          <div className="flex gap-2">
+            <ActionButton
+              label="Confirm Regularize"
+              variant="danger"
+              busy={busy || !regularizeReason.trim()}
+              onClick={() => {
+                runAction(
+                  () => regularizeTicket(ticket.id, regularizeTarget, regularizeReason.trim()),
+                  "Ticket regularized.",
+                );
+                setShowRegularizeModal(false);
+                setRegularizeReason("");
+              }}
+            />
+            <ActionButton label="Cancel" variant="secondary" busy={false} onClick={() => setShowRegularizeModal(false)} />
+          </div>
+        </Modal>
+      )}
+
       <StateBar status={ticket.status} />
 
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_300px]">
+        <div className="space-y-6">
       <div className="grid grid-cols-1 gap-x-4 gap-y-3 rounded-lg border border-line bg-white p-4 text-sm sm:grid-cols-2 sm:gap-y-4">
         <div className="min-w-0">
           <p className="text-xs font-bold uppercase text-muted">Customer</p>
@@ -143,10 +296,6 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         <div className="min-w-0">
           <p className="text-xs font-bold uppercase text-muted">Equipment</p>
           <p className="break-words text-navy">{ticket.equipment?.itemName ?? "—"}</p>
-        </div>
-        <div className="min-w-0">
-          <p className="text-xs font-bold uppercase text-muted">Engineer</p>
-          <p className="break-words text-navy">{ticket.assignedEngineer?.fullName ?? "Unassigned"}</p>
         </div>
         {ticket.status === "PENDING" && (
           <div className="min-w-0 sm:col-span-2">
@@ -168,78 +317,6 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
       {error && <p className="rounded-md bg-brand-red-bg px-3 py-2 text-xs text-brand-red">{error}</p>}
       {notice && <p className="rounded-md bg-brand-green-bg px-3 py-2 text-xs text-brand-green">{notice}</p>}
 
-      {ticket.possibleDuplicateOf && !ticket.duplicateFlagResolved && (
-        <div className="rounded-lg border border-brand-amber bg-brand-amber-bg p-3">
-          <p className="text-sm text-navy">
-            Possible duplicate of{" "}
-            <a href={`/dashboard/tickets/${ticket.possibleDuplicateOf.id}`} className="font-bold underline">
-              {ticket.possibleDuplicateOf.ticketNo}
-            </a>{" "}
-            ({STATUS_LABEL[ticket.possibleDuplicateOf.status]}).
-          </p>
-          {(role === "CALL_CENTER" || role === "ASM" || role === "MANAGER" || role === "ADMIN") && (
-            <>
-              <div className="mt-2 flex gap-2">
-                <ActionButton
-                  label="Merge (close this one)"
-                  variant="danger"
-                  busy={busy}
-                  onClick={() => setShowMergeReason((s) => !s)}
-                />
-                <ActionButton
-                  label="Not a duplicate — dismiss"
-                  variant="secondary"
-                  busy={busy}
-                  onClick={() => runAction(() => resolveDuplicate(ticket.id, "DISMISS"), "Duplicate flag dismissed.")}
-                />
-              </div>
-              {showMergeReason && (
-                <div className="mt-2">
-                  <p className="mb-2 text-xs text-muted">
-                    This ticket is currently at "{STATUS_LABEL[ticket.status]}" — if real work has already happened
-                    on it, make sure that's actually intended before confirming.
-                  </p>
-                  <textarea
-                    value={mergeReason}
-                    onChange={(e) => setMergeReason(e.target.value)}
-                    placeholder="Reason (required, audit-logged)"
-                    className="mb-2 h-16 w-full rounded-md border border-line p-2 text-sm"
-                  />
-                  <div className="flex gap-2">
-                    <ActionButton
-                      label="Confirm Merge"
-                      variant="danger"
-                      busy={busy || !mergeReason.trim()}
-                      onClick={() => {
-                        const alreadyActive = ticket.status !== "OPEN";
-                        const confirmed = window.confirm(
-                          alreadyActive
-                            ? `This ticket is already at "${STATUS_LABEL[ticket.status]}" — it looks like real work may have happened on it. Merging will close it immediately and cannot be undone. Continue?`
-                            : `Merge this ticket into ${ticket.possibleDuplicateOf!.ticketNo} and close it? This cannot be undone.`,
-                        );
-                        if (!confirmed) return;
-                        runAction(
-                          () => resolveDuplicate(ticket.id, "MERGE", mergeReason.trim()),
-                          "Ticket merged and closed.",
-                        );
-                        setShowMergeReason(false);
-                        setMergeReason("");
-                      }}
-                    />
-                    <ActionButton
-                      label="Cancel"
-                      variant="secondary"
-                      busy={false}
-                      onClick={() => setShowMergeReason(false)}
-                    />
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
       {ticket.status === "OPEN" && !ticket.assignedAsm && (role === "ASM" || role === "MANAGER" || role === "ADMIN") && (
         <div className="rounded-lg border border-brand-amber bg-brand-amber-bg p-3">
           <p className="text-sm text-navy">
@@ -258,8 +335,356 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
 
       <TicketActions role={role} ticket={ticket} busy={busy} runAction={runAction} />
 
-      <div>
-        <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-navy">Timeline</h2>
+      <TicketHistoryTabs
+        timeline={timeline}
+        visits={visits}
+        ticket={ticket}
+        showCommercial={role === "CALL_CENTER" || role === "ASM" || role === "MANAGER" || role === "ADMIN"}
+      />
+        </div>
+
+        <div className="order-first space-y-4 lg:order-none lg:sticky lg:top-6 lg:self-start">
+          {role === "ENGINEER" ? (
+            <EngineerActionCard ticket={ticket} busy={busy} runAction={runAction} />
+          ) : (
+            <div className="rounded-lg border border-line bg-white p-3 text-sm">
+              <p className="mb-2 text-xs font-bold uppercase text-muted">Assigned ASM</p>
+              <p className="mb-3 text-navy">{ticket.assignedAsm?.fullName ?? "Unassigned"}</p>
+              <p className="mb-2 text-xs font-bold uppercase text-muted">Assigned Engineer</p>
+              <AssignEngineerCard role={role} ticket={ticket} busy={busy} runAction={runAction} />
+            </div>
+          )}
+          {(role === "ASM" || role === "ENGINEER" || role === "MANAGER" || role === "ADMIN") &&
+            ticket.status !== "CLOSED" && <ServiceTypeCard ticket={ticket} runAction={runAction} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Engineer's own next-step card in the sidebar — not relevant to other
+ * roles (they don't need "who's assigned" surfaced to themselves, they need
+ * their own next action prominent instead, same reasoning that put Assign
+ * Engineer in the sidebar for ASM/Manager). Covers the full Accept -> Reject
+ * -> Reached Site -> Start Working -> Mark Pending/FSV -> Resume chain.
+ */
+function EngineerActionCard({
+  ticket,
+  busy,
+  runAction,
+}: {
+  ticket: Ticket;
+  busy: boolean;
+  runAction: <T>(action: () => Promise<T>, note?: string) => void;
+}) {
+  const [rejectReason, setRejectReason] = useState("");
+  const [showReject, setShowReject] = useState(false);
+  const [pendingReason, setPendingReason] = useState<PendingReason>("AWAITING_PARTS");
+  const [pendingNotes, setPendingNotes] = useState("");
+  const [showPending, setShowPending] = useState(false);
+  const [fsvList, setFsvList] = useState<FieldServiceVisit[]>([]);
+  const [fsvBusy, setFsvBusy] = useState(false);
+  const [reachedComment, setReachedComment] = useState("");
+  const [startComment, setStartComment] = useState("");
+  const router = useRouter();
+
+  useEffect(() => {
+    listFsvForTicket(ticket.id).then(setFsvList).catch(() => setFsvList([]));
+  }, [ticket.id]);
+
+  async function onOpenFsv() {
+    setFsvBusy(true);
+    try {
+      const existingDraft = fsvList.find((v) => v.status === "DRAFT");
+      if (existingDraft) {
+        router.push(`/dashboard/fsv/${existingDraft.id}`);
+        return;
+      }
+      const created = await createFsv(ticket.id, new Date().toISOString());
+      router.push(`/dashboard/fsv/${created.id}`);
+    } finally {
+      setFsvBusy(false);
+    }
+  }
+
+  const items: React.ReactNode[] = [];
+
+  if (ticket.status === "ENGINEER_ASSIGNED") {
+    items.push(
+      <ActionButton key="accept" label="Accept" busy={busy} onClick={() => runAction(() => acceptTicket(ticket.id), "Accepted.")} />,
+    );
+    items.push(
+      <ActionButton key="reject" label="Reject" variant="danger" busy={busy} onClick={() => setShowReject(true)} />,
+    );
+  }
+  if (ticket.status === "ACCEPTED") {
+    items.push(
+      <RemarkedAction
+        key="reached"
+        label="Reached Site"
+        busy={busy}
+        value={reachedComment}
+        onChange={setReachedComment}
+        onSubmit={() =>
+          runAction(() => reachedSite(ticket.id, reachedComment.trim() || undefined), "Marked as reached site.")
+        }
+      />,
+    );
+  }
+  if (ticket.status === "REACHED_SITE") {
+    items.push(
+      <RemarkedAction
+        key="start"
+        label="Start Working"
+        busy={busy}
+        value={startComment}
+        onChange={setStartComment}
+        onSubmit={() => runAction(() => startWorking(ticket.id, startComment.trim() || undefined), "Work started.")}
+      />,
+    );
+  }
+  if (ticket.status === "WORKING") {
+    items.push(<ActionButton key="pending" label="Mark Pending" variant="secondary" busy={busy} onClick={() => setShowPending(true)} />);
+  }
+
+  const FSV_ELIGIBLE_STATUSES: TicketStatus[] = [
+    "REACHED_SITE",
+    "WORKING",
+    "PENDING",
+    "ENGINEER_RESOLVED",
+    "ASM_RESOLVED",
+  ];
+  if (FSV_ELIGIBLE_STATUSES.includes(ticket.status)) {
+    const hasDraftFsv = fsvList.some((v) => v.status === "DRAFT");
+    const alreadyResolvedOnce = ticket.status === "ENGINEER_RESOLVED" || ticket.status === "ASM_RESOLVED";
+    const fsvLabel = hasDraftFsv
+      ? "Continue Field Service Visit"
+      : alreadyResolvedOnce
+        ? "Start Another Field Service Visit"
+        : "Start Field Service Visit";
+    items.push(<ActionButton key="fsv" label={fsvLabel} busy={fsvBusy} onClick={onOpenFsv} />);
+  }
+  if (ticket.status === "PENDING") {
+    items.push(
+      <ActionButton key="resume" label="Resume Work" busy={busy} onClick={() => runAction(() => resumeTicket(ticket.id), "Resumed.")} />,
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-line bg-white p-3 text-sm">
+      <p className="mb-2 text-xs font-bold uppercase text-muted">Your Next Action</p>
+      {items.length === 0 ? (
+        <p className="text-muted">Nothing to do right now.</p>
+      ) : (
+        <div className="flex flex-col gap-2">{items}</div>
+      )}
+
+      {showReject && (
+        <div className="mt-3 border-t border-line pt-3">
+          <p className="mb-2 text-xs font-bold uppercase text-navy">Rejection reason</p>
+          <textarea
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            className="mb-2 h-20 w-full rounded-md border border-line p-2 text-sm"
+          />
+          <div className="flex gap-2">
+            <ActionButton
+              label="Submit Rejection"
+              variant="danger"
+              busy={busy || !rejectReason}
+              onClick={() => {
+                runAction(() => rejectTicket(ticket.id, rejectReason), "Ticket rejected.");
+                setShowReject(false);
+                setRejectReason("");
+              }}
+            />
+            <ActionButton label="Cancel" variant="secondary" busy={false} onClick={() => setShowReject(false)} />
+          </div>
+        </div>
+      )}
+
+      {showPending && (
+        <div className="mt-3 border-t border-line pt-3">
+          <p className="mb-2 text-xs font-bold uppercase text-navy">Pending reason</p>
+          <select
+            value={pendingReason}
+            onChange={(e) => setPendingReason(e.target.value as PendingReason)}
+            className="mb-2 w-full rounded-md border border-line px-3 py-2 text-sm"
+          >
+            {Object.entries(PENDING_REASON_LABEL).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          </select>
+          <textarea
+            value={pendingNotes}
+            onChange={(e) => setPendingNotes(e.target.value)}
+            placeholder="Notes (optional)"
+            className="mb-2 h-16 w-full rounded-md border border-line p-2 text-sm"
+          />
+          <div className="flex gap-2">
+            <ActionButton
+              label="Mark Pending"
+              busy={busy}
+              onClick={() => {
+                runAction(() => markPending(ticket.id, pendingReason, pendingNotes || undefined), "Marked pending.");
+                setShowPending(false);
+              }}
+            />
+            <ActionButton label="Cancel" variant="secondary" busy={false} onClick={() => setShowPending(false)} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AssignEngineerCard({
+  role,
+  ticket,
+  busy,
+  runAction,
+}: {
+  role: AuthUser["role"];
+  ticket: Ticket;
+  busy: boolean;
+  runAction: <T>(action: () => Promise<T>, note?: string) => void;
+}) {
+  const [engineerId, setEngineerId] = useState("");
+  const [candidates, setCandidates] = useState<EngineerCandidate[]>([]);
+
+  useEffect(() => {
+    if ((role === "ASM" || role === "MANAGER") && (ticket.status === "OPEN" || ticket.status === "ASSIGNED")) {
+      engineerCandidates(ticket.customer.region ?? undefined).then(setCandidates).catch(() => setCandidates([]));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [role, ticket.status, ticket.customer.region]);
+
+  if (ticket.assignedEngineer) {
+    return <p className="text-navy">{ticket.assignedEngineer.fullName}</p>;
+  }
+
+  if (!((role === "ASM" || role === "MANAGER") && ticket.status !== "CLOSED")) {
+    return <p className="text-muted">Unassigned</p>;
+  }
+
+  return (
+    <div className="space-y-2">
+      <select
+        value={engineerId}
+        onChange={(e) => setEngineerId(e.target.value)}
+        className="w-full rounded-md border border-line px-3 py-2 text-sm"
+      >
+        <option value="">Select engineer…</option>
+        {candidates.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.fullName} — {c.openLoad} open{c.territoryMatch ? " · territory match" : ""}
+          </option>
+        ))}
+      </select>
+      <ActionButton
+        label="Assign"
+        busy={busy || !engineerId}
+        onClick={() => runAction(() => assignTicket(ticket.id, engineerId), "Engineer assigned.")}
+      />
+    </div>
+  );
+}
+
+/** Moved into the sidebar per client feedback — was a standalone card in the main action list. */
+function ServiceTypeCard({
+  ticket,
+  runAction,
+}: {
+  ticket: Ticket;
+  runAction: <T>(action: () => Promise<T>, note?: string) => void;
+}) {
+  const [serviceType, setServiceType] = useState<ServiceType | "">((ticket.serviceType as ServiceType) ?? "");
+  const [saving, setSaving] = useState(false);
+
+  return (
+    <div className="rounded-lg border border-line bg-white p-3 text-sm">
+      <p className="mb-2 text-xs font-bold uppercase text-muted">Service Type</p>
+      <select
+        value={serviceType}
+        onChange={(e) => setServiceType(e.target.value as ServiceType | "")}
+        className="mb-2 w-full rounded-md border border-line px-3 py-2 text-sm text-navy"
+      >
+        <option value="">Not yet determined</option>
+        {Object.entries(SERVICE_TYPE_LABEL).map(([k, v]) => (
+          <option key={k} value={k}>
+            {v}
+          </option>
+        ))}
+      </select>
+      <ActionButton
+        label={saving ? "Saving…" : "Update"}
+        variant="secondary"
+        busy={saving || !serviceType || serviceType === ticket.serviceType}
+        onClick={async () => {
+          if (!serviceType) return;
+          setSaving(true);
+          try {
+            await runAction(() => updateServiceType(ticket.id, serviceType), "Service type updated.");
+          } finally {
+            setSaving(false);
+          }
+        }}
+      />
+    </div>
+  );
+}
+
+function TicketHistoryTabs({
+  timeline,
+  visits,
+  ticket,
+  showCommercial,
+}: {
+  timeline: TicketAuditEntry[];
+  visits: FieldServiceVisit[];
+  ticket: Ticket;
+  showCommercial: boolean;
+}) {
+  const [tab, setTab] = useState<"timeline" | "fsv" | "commercial">("timeline");
+
+  return (
+    <div>
+      <div className="mb-2 flex gap-1 border-b border-line">
+        <button
+          type="button"
+          onClick={() => setTab("timeline")}
+          className={`px-3 py-2 text-sm font-bold ${
+            tab === "timeline" ? "border-b-2 border-orange text-navy" : "text-muted"
+          }`}
+        >
+          Timeline
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("fsv")}
+          className={`px-3 py-2 text-sm font-bold ${tab === "fsv" ? "border-b-2 border-orange text-navy" : "text-muted"}`}
+        >
+          Field Service Visits {visits.length > 0 ? `(${visits.length})` : ""}
+        </button>
+        {showCommercial && (
+          <button
+            type="button"
+            onClick={() => setTab("commercial")}
+            className={`px-3 py-2 text-sm font-bold ${
+              tab === "commercial" ? "border-b-2 border-orange text-navy" : "text-muted"
+            }`}
+          >
+            Commercial
+          </button>
+        )}
+      </div>
+
+      {tab === "commercial" && showCommercial && <CommercialTab ticket={ticket} />}
+
+      {tab === "timeline" && (
         <div className="rounded-lg border border-line bg-white">
           {timeline.length === 0 ? (
             <p className="p-4 text-sm text-muted">No history yet.</p>
@@ -281,13 +706,14 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             </ul>
           )}
         </div>
-      </div>
+      )}
 
-      {visits.length > 0 && (
-        <div>
-          <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-navy">Field Service Visits</h2>
-          <div className="divide-y divide-line rounded-lg border border-line bg-white">
-            {visits.map((v) => (
+      {tab === "fsv" && (
+        <div className="divide-y divide-line rounded-lg border border-line bg-white">
+          {visits.length === 0 ? (
+            <p className="p-4 text-sm text-muted">No Field Service Visits yet.</p>
+          ) : (
+            visits.map((v) => (
               <a
                 key={v.id}
                 href={`/dashboard/fsv/${v.id}`}
@@ -305,8 +731,8 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                   {v.status}
                 </span>
               </a>
-            ))}
-          </div>
+            ))
+          )}
         </div>
       )}
     </div>
@@ -432,6 +858,64 @@ function StateBar({ status }: { status: TicketStatus }) {
   );
 }
 
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div
+        className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-bold uppercase text-navy">{title}</h3>
+          <button type="button" onClick={onClose} className="text-lg leading-none text-muted hover:text-navy">
+            ×
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function DotMenu({ items }: { items: { label: string; onClick: () => void; variant?: "danger" }[] }) {
+  const [open, setOpen] = useState(false);
+  if (items.length === 0) return null;
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex h-9 w-9 items-center justify-center rounded-md border border-line bg-white text-2xl font-bold leading-none text-navy shadow-sm hover:border-navy hover:bg-navy-tint"
+        aria-label="More actions"
+      >
+        ⋮
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 z-20 mt-1 w-56 rounded-md border border-line bg-white py-1 shadow-lg">
+            {items.map((it) => (
+              <button
+                key={it.label}
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  it.onClick();
+                }}
+                className={`block w-full px-3 py-2 text-left text-sm hover:bg-navy-tint ${
+                  it.variant === "danger" ? "text-brand-red" : "text-navy"
+                }`}
+              >
+                {it.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function ActionButton({
   label,
   onClick,
@@ -504,173 +988,15 @@ function TicketActions({
   busy: boolean;
   runAction: <T>(action: () => Promise<T>, note?: string) => void;
 }) {
-  const [engineerId, setEngineerId] = useState("");
-  const [candidates, setCandidates] = useState<EngineerCandidate[]>([]);
-  const [rejectReason, setRejectReason] = useState("");
-  const [showReject, setShowReject] = useState(false);
-  const [pendingReason, setPendingReason] = useState<PendingReason>("AWAITING_PARTS");
-  const [pendingNotes, setPendingNotes] = useState("");
-  const [showPending, setShowPending] = useState(false);
-  const [fsvList, setFsvList] = useState<FieldServiceVisit[]>([]);
-  const [fsvBusy, setFsvBusy] = useState(false);
-  const [reachedComment, setReachedComment] = useState("");
-  const [startComment, setStartComment] = useState("");
   const [asmResolveComment, setAsmResolveComment] = useState("");
   const [closeComment, setCloseComment] = useState("");
-  const [serviceType, setServiceType] = useState<ServiceType | "">((ticket.serviceType as ServiceType) ?? "");
-  const [serviceTypeSaving, setServiceTypeSaving] = useState(false);
-  const [chargeability, setChargeability] = useState<Chargeability | null>(null);
-  const [showRegularize, setShowRegularize] = useState(false);
-  const [regularizeTarget, setRegularizeTarget] = useState<TicketStatus>("OPEN");
-  const [regularizeReason, setRegularizeReason] = useState("");
-  const [quotations, setQuotations] = useState<QuotationRecord[]>([]);
-  const [deliveries, setDeliveries] = useState<DeliveryRecord[]>([]);
-  const [commercialBusy, setCommercialBusy] = useState(false);
-  const router = useRouter();
-
-  useEffect(() => {
-    if ((role === "ASM" || role === "MANAGER") && (ticket.status === "OPEN" || ticket.status === "ASSIGNED")) {
-      engineerCandidates(ticket.customer.region ?? undefined).then(setCandidates).catch(() => setCandidates([]));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [role, ticket.status, ticket.customer.region]);
-
-  useEffect(() => {
-    listFsvForTicket(ticket.id).then(setFsvList).catch(() => setFsvList([]));
-  }, [ticket.id]);
-
-  useEffect(() => {
-    if (role === "CALL_CENTER" || role === "ASM" || role === "MANAGER" || role === "ADMIN") {
-      isTicketChargeable(ticket.id).then(setChargeability).catch(() => setChargeability(null));
-      listQuotationsForTicket(ticket.id).then(setQuotations).catch(() => setQuotations([]));
-      listDeliveriesForTicket(ticket.id).then(setDeliveries).catch(() => setDeliveries([]));
-    }
-  }, [role, ticket.id]);
-
-  async function onOpenFsv() {
-    setFsvBusy(true);
-    try {
-      const existingDraft = fsvList.find((v) => v.status === "DRAFT");
-      if (existingDraft) {
-        router.push(`/dashboard/fsv/${existingDraft.id}`);
-        return;
-      }
-      const created = await createFsv(ticket.id, new Date().toISOString());
-      router.push(`/dashboard/fsv/${created.id}`);
-    } finally {
-      setFsvBusy(false);
-    }
-  }
 
   const buttons: React.ReactNode[] = [];
 
-  // Service type may not be known at creation — ASM/Engineer/Manager/Admin
-  // can set/update it any time before the ticket is closed.
-  const canUpdateServiceType =
-    (role === "ASM" || role === "ENGINEER" || role === "MANAGER" || role === "ADMIN") && ticket.status !== "CLOSED";
-
-  // ASM/Manager: assign an engineer (covers OPEN and ASSIGNED per tickets.service.ts assign()).
-  if ((role === "ASM" || role === "MANAGER") && ticket.status !== "CLOSED" && !ticket.assignedEngineer) {
-    buttons.push(
-      <div key="assign" className="flex flex-wrap items-center gap-2">
-        <select
-          value={engineerId}
-          onChange={(e) => setEngineerId(e.target.value)}
-          className="rounded-md border border-line px-3 py-2 text-sm"
-        >
-          <option value="">Select engineer…</option>
-          {candidates.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.fullName} — {c.openLoad} open{c.territoryMatch ? " · territory match" : ""}
-            </option>
-          ))}
-        </select>
-        <ActionButton
-          label="Assign"
-          busy={busy || !engineerId}
-          onClick={() => runAction(() => assignTicket(ticket.id, engineerId), "Engineer assigned.")}
-        />
-      </div>,
-    );
-  }
-
-  // Engineer: Accept / Reject
-  if (role === "ENGINEER" && ticket.status === "ENGINEER_ASSIGNED") {
-    buttons.push(
-      <ActionButton key="accept" label="Accept" busy={busy} onClick={() => runAction(() => acceptTicket(ticket.id), "Accepted.")} />,
-    );
-    buttons.push(
-      <ActionButton key="reject" label="Reject" variant="danger" busy={busy} onClick={() => setShowReject(true)} />,
-    );
-  }
-
-  // Engineer: Reached Site — remark optional (§ client request: remarks on
-  // each stage from Accepted onward)
-  if (role === "ENGINEER" && ticket.status === "ACCEPTED") {
-    buttons.push(
-      <RemarkedAction
-        key="reached"
-        label="Reached Site"
-        busy={busy}
-        value={reachedComment}
-        onChange={setReachedComment}
-        onSubmit={() =>
-          runAction(() => reachedSite(ticket.id, reachedComment.trim() || undefined), "Marked as reached site.")
-        }
-      />,
-    );
-  }
-
-  // Engineer: Start Working
-  if (role === "ENGINEER" && ticket.status === "REACHED_SITE") {
-    buttons.push(
-      <RemarkedAction
-        key="start"
-        label="Start Working"
-        busy={busy}
-        value={startComment}
-        onChange={setStartComment}
-        onSubmit={() => runAction(() => startWorking(ticket.id, startComment.trim() || undefined), "Work started.")}
-      />,
-    );
-  }
-
-  // Engineer: Mark Pending (WORKING only — this is a ticket-status transition).
-  if (role === "ENGINEER" && ticket.status === "WORKING") {
-    buttons.push(<ActionButton key="pending" label="Mark Pending" variant="secondary" busy={busy} onClick={() => setShowPending(true)} />);
-  }
-
-  // Engineer: start/continue a Field Service Visit — multiple visits per
-  // ticket are supported (each submit locks that visit and bumps
-  // visitNumber; a new one can still be opened afterward for a follow-up
-  // visit on the same ticket). Not tied to WORKING only — a follow-up visit
-  // may be needed after the ticket's already moved past Engineer Resolved
-  // (e.g. an ASM reject-and-reassign cycle), so this covers the whole
-  // active window up to Closed.
-  const FSV_ELIGIBLE_STATUSES: TicketStatus[] = [
-    "REACHED_SITE",
-    "WORKING",
-    "PENDING",
-    "ENGINEER_RESOLVED",
-    "ASM_RESOLVED",
-  ];
-  if (role === "ENGINEER" && FSV_ELIGIBLE_STATUSES.includes(ticket.status)) {
-    buttons.push(
-      <ActionButton
-        key="fsv"
-        label={fsvList.some((v) => v.status === "DRAFT") ? "Continue Field Service Visit" : "Start Field Service Visit"}
-        busy={fsvBusy}
-        onClick={onOpenFsv}
-      />,
-    );
-  }
-
-  // Engineer: Resume
-  if (role === "ENGINEER" && ticket.status === "PENDING") {
-    buttons.push(
-      <ActionButton key="resume" label="Resume Work" busy={busy} onClick={() => runAction(() => resumeTicket(ticket.id), "Resumed.")} />,
-    );
-  }
+  // Engineer's Accept/Reject/Reached Site/Start Working/Mark Pending/FSV/
+  // Resume actions now live in the sidebar's EngineerActionCard instead —
+  // not relevant to surface twice, and the sidebar is the more prominent
+  // spot for "what do I do next" for that role specifically.
 
   // ASM/Manager: confirm resolution
   if ((role === "ASM" || role === "MANAGER") && ticket.status === "ENGINEER_RESOLVED") {
@@ -715,242 +1041,155 @@ function TicketActions({
     );
   }
 
-  // Admin/Call Center: regularize (force to any state, always reasoned)
-  if (role === "ADMIN" || role === "CALL_CENTER") {
-    buttons.push(
-      <ActionButton
-        key="regularize"
-        label="Regularize"
-        variant="secondary"
-        busy={busy}
-        onClick={() => setShowRegularize(true)}
-      />,
-    );
-  }
-
   return (
     <div className="space-y-3">
-      {canUpdateServiceType && (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-white p-3">
-          <p className="text-xs font-bold uppercase text-muted">Service Type</p>
-          <select
-            value={serviceType}
-            onChange={(e) => setServiceType(e.target.value as ServiceType | "")}
-            className="h-9 rounded-md border border-line px-2 text-sm text-navy"
-          >
-            <option value="">Not yet determined</option>
-            {Object.entries(SERVICE_TYPE_LABEL).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-          </select>
-          <ActionButton
-            label={serviceTypeSaving ? "Saving…" : "Update"}
-            busy={serviceTypeSaving || !serviceType || serviceType === ticket.serviceType}
-            variant="secondary"
-            onClick={async () => {
-              if (!serviceType) return;
-              setServiceTypeSaving(true);
-              try {
-                await runAction(() => updateServiceType(ticket.id, serviceType), "Service type updated.");
-              } finally {
-                setServiceTypeSaving(false);
-              }
-            }}
-          />
-        </div>
-      )}
+      {buttons.length > 0 && <div className="flex flex-wrap gap-2">{buttons}</div>}
+    </div>
+  );
+}
 
-      {(role === "CALL_CENTER" || role === "ASM" || role === "MANAGER" || role === "ADMIN") && (
-        <div className="rounded-lg border border-line bg-white p-3">
-          <p className="mb-2 text-xs font-bold uppercase text-muted">Commercial</p>
-          {chargeability === null ? (
-            <p className="text-xs text-muted">Checking chargeable status…</p>
-          ) : quotations.length === 0 && deliveries.length === 0 ? (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted">
-                {chargeability.chargeable
-                  ? "This ticket is chargeable."
-                  : chargeability.reason === "WARRANTY"
-                    ? `Covered by Warranty${chargeability.warrantyEndDate ? ` (until ${new Date(chargeability.warrantyEndDate).toLocaleDateString()})` : ""} — not chargeable.`
-                    : chargeability.reason === "AMC"
-                      ? `Covered by AMC ${chargeability.amcContractRef}${chargeability.amcEndDate ? ` (until ${new Date(chargeability.amcEndDate).toLocaleDateString()})` : ""} — not chargeable.`
-                      : "Not chargeable."}
-              </span>
-              {fsvList.length === 0 ? (
-                <span className="text-xs italic text-muted">
-                  (available once a Field Service Visit has started)
-                </span>
-              ) : (
-              <ActionButton
-                label={chargeability.chargeable ? "Create Quotation" : "Create Direct Sales Order"}
-                busy={commercialBusy}
-                variant="secondary"
-                onClick={async () => {
-                  setCommercialBusy(true);
-                  try {
-                    if (chargeability.chargeable) {
-                      const validUntil = new Date();
-                      validUntil.setDate(validUntil.getDate() + 14);
-                      const q = await createQuotation(ticket.id, { validUntil: validUntil.toISOString().slice(0, 10) });
-                      router.push(`/dashboard/quotations/${q.id}`);
-                    } else {
-                      await createDirectSalesOrder(ticket.id);
-                      setDeliveries(await listDeliveriesForTicket(ticket.id));
-                    }
-                  } finally {
-                    setCommercialBusy(false);
-                  }
-                }}
-              />
-              )}
-            </div>
+/**
+ * Commercial (Quotation/Direct Sales Order) panel, extracted into its own
+ * tab — was previously an always-visible card in the main action list,
+ * moved here per client feedback for a cleaner, more organized layout.
+ */
+function CommercialTab({ ticket }: { ticket: Ticket }) {
+  const [chargeability, setChargeability] = useState<Chargeability | null>(null);
+  const [quotations, setQuotations] = useState<QuotationRecord[]>([]);
+  const [deliveries, setDeliveries] = useState<DeliveryRecord[]>([]);
+  const [commercialBusy, setCommercialBusy] = useState(false);
+  const [fsvExists, setFsvExists] = useState(false);
+  const [resultModal, setResultModal] = useState<{ title: string; message: string; success: boolean } | null>(null);
+  const router = useRouter();
+
+  function extractErrorMessage(err: unknown): string {
+    if (err instanceof ApiError) {
+      const body = err.body as { message?: string | string[] } | null;
+      return Array.isArray(body?.message) ? body!.message.join(", ") : body?.message ?? "Something went wrong.";
+    }
+    return "Could not reach the server.";
+  }
+
+  useEffect(() => {
+    listFsvForTicket(ticket.id).then((list) => setFsvExists(list.length > 0)).catch(() => setFsvExists(false));
+  }, [ticket.id]);
+
+  useEffect(() => {
+    isTicketChargeable(ticket.id).then(setChargeability).catch(() => setChargeability(null));
+    listQuotationsForTicket(ticket.id).then(setQuotations).catch(() => setQuotations([]));
+    listDeliveriesForTicket(ticket.id).then(setDeliveries).catch(() => setDeliveries([]));
+  }, [ticket.id]);
+
+  return (
+    <div className="rounded-lg border border-line bg-white p-3">
+      {chargeability === null ? (
+        <p className="text-xs text-muted">Checking chargeable status…</p>
+      ) : quotations.length === 0 && deliveries.length === 0 ? (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted">
+            {chargeability.chargeable
+              ? "This ticket is chargeable."
+              : chargeability.reason === "WARRANTY"
+                ? `Covered by Warranty${chargeability.warrantyEndDate ? ` (until ${new Date(chargeability.warrantyEndDate).toLocaleDateString()})` : ""} — not chargeable.`
+                : chargeability.reason === "AMC"
+                  ? `Covered by AMC ${chargeability.amcContractRef}${chargeability.amcEndDate ? ` (until ${new Date(chargeability.amcEndDate).toLocaleDateString()})` : ""} — not chargeable.`
+                  : "Not chargeable."}
+          </span>
+          {!fsvExists ? (
+            <span className="text-xs italic text-muted">(available once a Field Service Visit has started)</span>
           ) : (
-            <div className="space-y-1">
-              {quotations.map((q) => (
-                <a key={q.id} href={`/dashboard/quotations/${q.id}`} className="block text-xs font-bold text-navy hover:underline">
-                  {q.quotationNo} — {q.status}
-                </a>
-              ))}
-              {deliveries.map((d) => (
-                <div key={d.id} className="text-xs text-muted">
-                  <p>
-                    {d.quotationId ? "Sales Order via Quotation" : "Direct Sales Order (warranty/AMC)"} — delivery: {d.status}
-                  </p>
-                  {d.erpnextSalesOrderId ? (
-                    <p className="text-brand-green">ERPNext Sales Order: {d.erpnextSalesOrderId}</p>
-                  ) : (
-                    <div className="flex items-center gap-2 text-brand-red">
-                      <span>{d.erpnextSyncNote ?? "Not yet synced to ERPNext"}</span>
-                      {!d.quotationId && (
-                        <button
-                          type="button"
-                          className="font-bold underline"
-                          onClick={async () => {
-                            setCommercialBusy(true);
-                            try {
-                              await retryDirectSalesOrderErpSync(d.id);
-                              setDeliveries(await listDeliveriesForTicket(ticket.id));
-                            } finally {
-                              setCommercialBusy(false);
-                            }
-                          }}
-                        >
-                          Retry
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
+            <ActionButton
+              label={chargeability.chargeable ? "Create Quotation" : "Create Direct Sales Order"}
+              busy={commercialBusy}
+              variant="secondary"
+              onClick={async () => {
+                setCommercialBusy(true);
+                try {
+                  if (chargeability.chargeable) {
+                    const validUntil = new Date();
+                    validUntil.setDate(validUntil.getDate() + 14);
+                    const q = await createQuotation(ticket.id, { validUntil: validUntil.toISOString().slice(0, 10) });
+                    router.push(`/dashboard/quotations/${q.id}`);
+                  } else {
+                    const created = await createDirectSalesOrder(ticket.id);
+                    setDeliveries(await listDeliveriesForTicket(ticket.id));
+                    setResultModal({
+                      title: "Direct Sales Order created",
+                      message: created.erpnextSalesOrderId
+                        ? `Synced to ERPNext — Sales Order ${created.erpnextSalesOrderId}.`
+                        : (created.erpnextSyncNote ?? "Created, but not yet synced to ERPNext."),
+                      success: !!created.erpnextSalesOrderId,
+                    });
+                  }
+                } catch (err) {
+                  setResultModal({ title: "Could not create", message: extractErrorMessage(err), success: false });
+                } finally {
+                  setCommercialBusy(false);
+                }
+              }}
+            />
           )}
         </div>
-      )}
-
-      {buttons.length > 0 && <div className="flex flex-wrap gap-2">{buttons}</div>}
-
-      {showReject && (
-        <div className="rounded-lg border border-line bg-white p-4">
-          <p className="mb-2 text-xs font-bold uppercase text-navy">Rejection reason</p>
-          <textarea
-            value={rejectReason}
-            onChange={(e) => setRejectReason(e.target.value)}
-            className="mb-2 h-20 w-full rounded-md border border-line p-2 text-sm"
-          />
-          <div className="flex gap-2">
-            <ActionButton
-              label="Submit Rejection"
-              variant="danger"
-              busy={busy || !rejectReason}
-              onClick={() => {
-                runAction(() => rejectTicket(ticket.id, rejectReason), "Ticket rejected.");
-                setShowReject(false);
-                setRejectReason("");
-              }}
-            />
-            <ActionButton label="Cancel" variant="secondary" busy={false} onClick={() => setShowReject(false)} />
-          </div>
+      ) : (
+        <div className="space-y-1">
+          {quotations.map((q) => (
+            <a key={q.id} href={`/dashboard/quotations/${q.id}`} className="block text-xs font-bold text-navy hover:underline">
+              {q.quotationNo} — {q.status}
+            </a>
+          ))}
+          {deliveries.map((d) => (
+            <div key={d.id} className="text-xs text-muted">
+              <p>
+                {d.quotationId ? "Sales Order via Quotation" : "Direct Sales Order (warranty/AMC)"} — delivery: {d.status}
+              </p>
+              {d.erpnextSalesOrderId ? (
+                <p className="text-brand-green">ERPNext Sales Order: {d.erpnextSalesOrderId}</p>
+              ) : (
+                <div className="flex items-center gap-2 text-brand-red">
+                  <span>{d.erpnextSyncNote ?? "Not yet synced to ERPNext"}</span>
+                  {!d.quotationId && (
+                    <button
+                      type="button"
+                      className="font-bold underline"
+                      onClick={async () => {
+                        setCommercialBusy(true);
+                        try {
+                          const retried = await retryDirectSalesOrderErpSync(d.id);
+                          setDeliveries(await listDeliveriesForTicket(ticket.id));
+                          setResultModal({
+                            title: "Retry complete",
+                            message: retried.erpnextSalesOrderId
+                              ? `Synced to ERPNext — Sales Order ${retried.erpnextSalesOrderId}.`
+                              : (retried.erpnextSyncNote ?? "Still not synced — no reason given."),
+                            success: !!retried.erpnextSalesOrderId,
+                          });
+                        } catch (err) {
+                          setResultModal({ title: "Retry failed", message: extractErrorMessage(err), success: false });
+                        } finally {
+                          setCommercialBusy(false);
+                        }
+                      }}
+                    >
+                      Retry
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       )}
 
-      {showPending && (
-        <div className="rounded-lg border border-line bg-white p-4">
-          <p className="mb-2 text-xs font-bold uppercase text-navy">Pending reason</p>
-          <select
-            value={pendingReason}
-            onChange={(e) => setPendingReason(e.target.value as PendingReason)}
-            className="mb-2 w-full rounded-md border border-line px-3 py-2 text-sm"
-          >
-            {Object.entries(PENDING_REASON_LABEL).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-          </select>
-          <textarea
-            value={pendingNotes}
-            onChange={(e) => setPendingNotes(e.target.value)}
-            placeholder="Notes (optional)"
-            className="mb-2 h-16 w-full rounded-md border border-line p-2 text-sm"
-          />
-          <div className="flex gap-2">
-            <ActionButton
-              label="Mark Pending"
-              busy={busy}
-              onClick={() => {
-                runAction(() => markPending(ticket.id, pendingReason, pendingNotes || undefined), "Marked pending.");
-                setShowPending(false);
-              }}
-            />
-            <ActionButton label="Cancel" variant="secondary" busy={false} onClick={() => setShowPending(false)} />
-          </div>
-        </div>
-      )}
-
-      {showRegularize && (
-        <div className="rounded-lg border border-line bg-white p-4">
-          <p className="mb-2 text-xs font-bold uppercase text-navy">Regularize — force to any status</p>
-          <p className="mb-2 text-xs text-muted">
-            Bypasses the normal workflow rules. Always audit-logged with the reason below.
+      {resultModal && (
+        <Modal title={resultModal.title} onClose={() => setResultModal(null)}>
+          <p className={`text-sm ${resultModal.success ? "text-brand-green" : "text-brand-red"}`}>
+            {resultModal.message}
           </p>
-          <select
-            value={regularizeTarget}
-            onChange={(e) => setRegularizeTarget(e.target.value as TicketStatus)}
-            className="mb-2 w-full rounded-md border border-line px-3 py-2 text-sm"
-          >
-            {Object.entries(STATUS_LABEL).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-          </select>
-          <textarea
-            value={regularizeReason}
-            onChange={(e) => setRegularizeReason(e.target.value)}
-            placeholder="Reason (required, audit-logged)"
-            className="mb-2 h-20 w-full rounded-md border border-line p-2 text-sm"
-          />
-          <div className="flex gap-2">
-            <ActionButton
-              label="Confirm Regularize"
-              variant="danger"
-              busy={busy || !regularizeReason.trim()}
-              onClick={() => {
-                runAction(
-                  () => regularizeTicket(ticket.id, regularizeTarget, regularizeReason.trim()),
-                  "Ticket regularized.",
-                );
-                setShowRegularize(false);
-                setRegularizeReason("");
-              }}
-            />
-            <ActionButton label="Cancel" variant="secondary" busy={false} onClick={() => setShowRegularize(false)} />
+          <div className="mt-3">
+            <ActionButton label="OK" busy={false} onClick={() => setResultModal(null)} />
           </div>
-        </div>
+        </Modal>
       )}
-
     </div>
   );
 }
