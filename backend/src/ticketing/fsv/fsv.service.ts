@@ -169,13 +169,22 @@ export class FsvService {
       data: { status: 'SUBMITTED', submittedAt: new Date(), submittedBy: actor.userId },
     });
 
-    await this.workflow.transition({
-      ticketId: visit.ticketId,
-      targetStatus: 'ENGINEER_RESOLVED',
-      actorUserId: actor.userId,
-      actorRole: actor.role,
-      resolutionSummary: visit.workPerformed,
-    });
+    // Only the *first* visit's submit drives the ticket to Engineer Resolved
+    // (the only status WORKING can legally move to ENGINEER_RESOLVED from,
+    // per TICKET_TRANSITIONS). A follow-up visit submitted later — e.g. after
+    // an ASM reject-and-reassign cycle sends the ticket back for a second
+    // site visit — locks that visit the same way, but doesn't re-force a
+    // transition the workflow engine wouldn't allow from wherever the ticket
+    // currently sits (already ENGINEER_RESOLVED/ASM_RESOLVED/PENDING).
+    if (visit.ticket.status === 'WORKING') {
+      await this.workflow.transition({
+        ticketId: visit.ticketId,
+        targetStatus: 'ENGINEER_RESOLVED',
+        actorUserId: actor.userId,
+        actorRole: actor.role,
+        resolutionSummary: visit.workPerformed,
+      });
+    }
 
     return submitted;
   }

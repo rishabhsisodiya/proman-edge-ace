@@ -126,7 +126,7 @@ export default function FsvDetailPage({ params }: { params: Promise<{ id: string
         />
       </div>
 
-      <PartsSection fsv={fsv} readOnly={readOnly} onSave={saveField} reload={load} />
+      <PartsSection fsv={fsv} readOnly={readOnly} onSave={saveField} reload={load} onError={setError} />
 
       <PhotosSection fsv={fsv} readOnly={readOnly} reload={load} onError={setError} />
 
@@ -247,11 +247,13 @@ function PartsSection({
   readOnly,
   onSave,
   reload,
+  onError,
 }: {
   fsv: FieldServiceVisit;
   readOnly: boolean;
   onSave: (patch: Record<string, unknown>) => void;
   reload: () => void;
+  onError: (message: string | null) => void;
 }) {
   const [showAdd, setShowAdd] = useState(false);
   const [itemQuery, setItemQuery] = useState("");
@@ -283,6 +285,7 @@ function PartsSection({
   async function onAddPart() {
     if (!selectedItem) return;
     setBusy(true);
+    onError(null);
     try {
       await addFsvPart(fsv.id, {
         itemCode: selectedItem.itemCode,
@@ -298,6 +301,8 @@ function PartsSection({
       setSelectedItem(null);
       setItemQuery("");
       setQty("1");
+    } catch (err) {
+      onError(err instanceof ApiError ? (err.body as { message?: string | string[] })?.message?.toString() ?? "Could not add part." : "Could not add part.");
     } finally {
       setBusy(false);
     }
@@ -350,7 +355,11 @@ function PartsSection({
                 {!readOnly && (
                   <td className="px-2 py-1.5 text-right">
                     <button
-                      onClick={() => removeFsvPart(fsv.id, p.id).then(reload)}
+                      onClick={() =>
+                        removeFsvPart(fsv.id, p.id)
+                          .then(reload)
+                          .catch(() => onError("Could not remove part."))
+                      }
                       className="font-bold text-brand-red"
                     >
                       Remove

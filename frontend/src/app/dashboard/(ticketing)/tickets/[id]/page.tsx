@@ -195,6 +195,10 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
               </div>
               {showMergeReason && (
                 <div className="mt-2">
+                  <p className="mb-2 text-xs text-muted">
+                    This ticket is currently at "{STATUS_LABEL[ticket.status]}" — if real work has already happened
+                    on it, make sure that's actually intended before confirming.
+                  </p>
                   <textarea
                     value={mergeReason}
                     onChange={(e) => setMergeReason(e.target.value)}
@@ -207,6 +211,13 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                       variant="danger"
                       busy={busy || !mergeReason.trim()}
                       onClick={() => {
+                        const alreadyActive = ticket.status !== "OPEN";
+                        const confirmed = window.confirm(
+                          alreadyActive
+                            ? `This ticket is already at "${STATUS_LABEL[ticket.status]}" — it looks like real work may have happened on it. Merging will close it immediately and cannot be undone. Continue?`
+                            : `Merge this ticket into ${ticket.possibleDuplicateOf!.ticketNo} and close it? This cannot be undone.`,
+                        );
+                        if (!confirmed) return;
                         runAction(
                           () => resolveDuplicate(ticket.id, "MERGE", mergeReason.trim()),
                           "Ticket merged and closed.",
@@ -624,10 +635,26 @@ function TicketActions({
     );
   }
 
-  // Engineer: Mark Pending / Field Service Visit (submitting the FSV is what
-  // moves the ticket to Engineer Resolved — see fsv.service.ts's submit()).
+  // Engineer: Mark Pending (WORKING only — this is a ticket-status transition).
   if (role === "ENGINEER" && ticket.status === "WORKING") {
     buttons.push(<ActionButton key="pending" label="Mark Pending" variant="secondary" busy={busy} onClick={() => setShowPending(true)} />);
+  }
+
+  // Engineer: start/continue a Field Service Visit — multiple visits per
+  // ticket are supported (each submit locks that visit and bumps
+  // visitNumber; a new one can still be opened afterward for a follow-up
+  // visit on the same ticket). Not tied to WORKING only — a follow-up visit
+  // may be needed after the ticket's already moved past Engineer Resolved
+  // (e.g. an ASM reject-and-reassign cycle), so this covers the whole
+  // active window up to Closed.
+  const FSV_ELIGIBLE_STATUSES: TicketStatus[] = [
+    "REACHED_SITE",
+    "WORKING",
+    "PENDING",
+    "ENGINEER_RESOLVED",
+    "ASM_RESOLVED",
+  ];
+  if (role === "ENGINEER" && FSV_ELIGIBLE_STATUSES.includes(ticket.status)) {
     buttons.push(
       <ActionButton
         key="fsv"
@@ -751,6 +778,11 @@ function TicketActions({
                       ? `Covered by AMC ${chargeability.amcContractRef}${chargeability.amcEndDate ? ` (until ${new Date(chargeability.amcEndDate).toLocaleDateString()})` : ""} — not chargeable.`
                       : "Not chargeable."}
               </span>
+              {fsvList.length === 0 ? (
+                <span className="text-xs italic text-muted">
+                  (available once a Field Service Visit has started)
+                </span>
+              ) : (
               <ActionButton
                 label={chargeability.chargeable ? "Create Quotation" : "Create Direct Sales Order"}
                 busy={commercialBusy}
@@ -772,6 +804,7 @@ function TicketActions({
                   }
                 }}
               />
+              )}
             </div>
           ) : (
             <div className="space-y-1">
