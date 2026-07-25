@@ -270,7 +270,6 @@ function ItemsSection({
   const [selected, setSelected] = useState<ItemListItem | null>(null);
   const [qty, setQty] = useState("1");
   const [unitPrice, setUnitPrice] = useState("0");
-  const [taxAmount, setTaxAmount] = useState("0");
 
   useEffect(() => {
     if (query.trim().length < 2) {
@@ -361,7 +360,7 @@ function ItemsSection({
           ) : (
             <>
               <p className="text-sm font-bold text-navy">{selected.itemName}</p>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-xs text-muted">Qty</label>
                   <input type="number" value={qty} onChange={(e) => setQty(e.target.value)} className="h-9 w-full rounded-md border border-line px-2 text-sm" />
@@ -369,10 +368,6 @@ function ItemsSection({
                 <div>
                   <label className="text-xs text-muted">Unit Price</label>
                   <input type="number" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} className="h-9 w-full rounded-md border border-line px-2 text-sm" />
-                </div>
-                <div>
-                  <label className="text-xs text-muted">Tax</label>
-                  <input type="number" value={taxAmount} onChange={(e) => setTaxAmount(e.target.value)} className="h-9 w-full rounded-md border border-line px-2 text-sm" />
                 </div>
               </div>
               <div className="flex gap-2">
@@ -385,7 +380,6 @@ function ItemsSection({
                         qty: Number(qty),
                         uom: selected.uom,
                         unitPrice: Number(unitPrice),
-                        taxAmount: Number(taxAmount),
                       }),
                     );
                     setShowAdd(false);

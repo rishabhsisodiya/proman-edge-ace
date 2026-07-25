@@ -254,6 +254,9 @@ export class TicketsService {
     if (filters.status) where.status = filters.status as any;
     if (filters.priority) where.priority = filters.priority as any;
     if (filters.region) where.customer = { ...(where.customer as object), region: filters.region as any };
+    if (filters.serviceType) where.serviceType = filters.serviceType as any;
+    if (filters.assigned === 'true') where.assignedEngineerId = { not: null };
+    if (filters.assigned === 'false') where.assignedEngineerId = null;
 
     return this.prisma.ticket.findMany({
       where,

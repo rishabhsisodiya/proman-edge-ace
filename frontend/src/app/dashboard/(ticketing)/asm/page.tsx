@@ -3,7 +3,20 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
-import { PRIORITY_STYLE, STATUS_LABEL, STATUS_STYLE, Ticket } from "@/lib/ticketing/types";
+import {
+  PRIORITY_STYLE,
+  STATUS_LABEL,
+  STATUS_STYLE,
+  SERVICE_TYPE_LABEL,
+  Ticket,
+  TicketStatus,
+  Priority,
+  ServiceType,
+} from "@/lib/ticketing/types";
+
+const PRIORITIES: Priority[] = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
+const STATUSES: TicketStatus[] = Object.keys(STATUS_LABEL) as TicketStatus[];
+const SERVICE_TYPES: ServiceType[] = Object.keys(SERVICE_TYPE_LABEL) as ServiceType[];
 
 function Tile({ label, value, accent }: { label: string; value: string | number; accent?: string }) {
   return (
@@ -14,37 +27,63 @@ function Tile({ label, value, accent }: { label: string; value: string | number;
   );
 }
 
-// §6.1 ASM dashboard: territory open tickets, pending acceptance. Engineer
-// availability map and today's AMC visits are skipped — no location data is
-// populated yet (§8.6/User.currentGpsLat) and no AMC engine exists yet
-// (Days 4-10, T2). List itself is already territory-scoped server-side
-// (TicketsService.list — ASM sees only their regions, §15.2).
+// §6.1 ASM dashboard: territory tickets, consolidated + filterable (Ashwath
+// feedback, 25 Jul 2026). List itself is already territory-scoped
+// server-side (TicketsService.list — ASM sees only their regions, §15.2), so
+// no region filter here. Stat tiles are intentionally sourced from a
+// separate unfiltered fetch — they must stay accurate regardless of the
+// active filters, confirmed with the client.
 export default function AsmDashboardPage() {
   const router = useRouter();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [allTickets, setAllTickets] = useState<Ticket[]>([]);
+
+  const [status, setStatus] = useState("");
+  const [priority, setPriority] = useState("");
+  const [serviceType, setServiceType] = useState("");
+  const [assigned, setAssigned] = useState("");
+
   useEffect(() => {
-    apiFetch<Ticket[]>("/tickets")
-      .then(setTickets)
-      .catch(() => setError("Could not load tickets. Is the backend running and seeded?"))
-      .finally(() => setLoading(false));
+    apiFetch<Ticket[]>("/tickets").then(setAllTickets).catch(() => {});
   }, []);
 
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+    const params = new URLSearchParams();
+    if (status) params.set("status", status);
+    if (priority) params.set("priority", priority);
+    if (serviceType) params.set("serviceType", serviceType);
+    if (assigned) params.set("assigned", assigned);
+
+    // Default view excludes Closed tickets unless a status is explicitly chosen.
+    apiFetch<Ticket[]>(`/tickets?${params.toString()}`)
+      .then((res) => setTickets(status ? res : res.filter((t) => t.status !== "CLOSED")))
+      .catch(() => setError("Could not load tickets. Is the backend running and seeded?"))
+      .finally(() => setLoading(false));
+  }, [status, priority, serviceType, assigned]);
+
   const stats = useMemo(() => {
-    const open = tickets.filter((t) => t.status !== "CLOSED").length;
-    const pendingAcceptance = tickets.filter((t) => t.status === "ENGINEER_ASSIGNED");
-    const unassigned = tickets.filter((t) => !t.assignedEngineer && t.status !== "CLOSED");
+    const open = allTickets.filter((t) => t.status !== "CLOSED").length;
+    const pendingAcceptance = allTickets.filter((t) => t.status === "ENGINEER_ASSIGNED").length;
+    const unassigned = allTickets.filter((t) => !t.assignedEngineer && t.status !== "CLOSED").length;
     return { open, pendingAcceptance, unassigned };
-  }, [tickets]);
+  }, [allTickets]);
+
+  function quickFilter(preset: "unassigned" | "pending" | "all") {
+    setStatus(preset === "pending" ? "ENGINEER_ASSIGNED" : "");
+    setAssigned(preset === "unassigned" ? "false" : "");
+  }
 
   return (
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-[22px] font-black text-navy">ASM Dashboard</h2>
-          <p className="text-sm text-muted">Your territory's open tickets and pending acceptances</p>
+          <p className="text-sm text-muted">Your territory's tickets</p>
         </div>
         <button
           onClick={() => router.push("/dashboard/tickets/new")}
@@ -56,38 +95,88 @@ export default function AsmDashboardPage() {
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
         <Tile label="Open tickets (territory)" value={stats.open} />
-        <Tile label="Unassigned" value={stats.unassigned.length} accent={stats.unassigned.length > 0 ? "text-brand-amber" : undefined} />
-        <Tile label="Pending engineer acceptance" value={stats.pendingAcceptance.length} />
+        <Tile label="Unassigned" value={stats.unassigned} accent={stats.unassigned > 0 ? "text-brand-amber" : undefined} />
+        <Tile label="Pending engineer acceptance" value={stats.pendingAcceptance} />
       </div>
 
-      <div>
-        <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-navy">Unassigned — needs an engineer</h3>
-        <TicketTable tickets={stats.unassigned} loading={loading} error={error} onRowClick={(id) => router.push(`/dashboard/tickets/${id}`)} emptyText="Nothing unassigned right now." />
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-white p-3 shadow-[0_1px_4px_rgba(42,47,105,.06)]">
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => quickFilter("unassigned")}
+            className="rounded-md bg-navy-tint px-3 py-1.5 text-xs font-bold text-navy hover:bg-navy hover:text-white"
+          >
+            Unassigned
+          </button>
+          <button
+            onClick={() => quickFilter("pending")}
+            className="rounded-md bg-navy-tint px-3 py-1.5 text-xs font-bold text-navy hover:bg-navy hover:text-white"
+          >
+            Pending Acceptance
+          </button>
+          <button
+            onClick={() => quickFilter("all")}
+            className="rounded-md bg-navy-tint px-3 py-1.5 text-xs font-bold text-navy hover:bg-navy hover:text-white"
+          >
+            Clear
+          </button>
+        </div>
+
+        <div className="ml-auto flex flex-wrap gap-3">
+          <select
+            value={assigned}
+            onChange={(e) => setAssigned(e.target.value)}
+            className="rounded-lg border border-line px-3 py-1.5 text-sm"
+          >
+            <option value="">Assigned + Unassigned</option>
+            <option value="true">Assigned</option>
+            <option value="false">Unassigned</option>
+          </select>
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            className="rounded-lg border border-line px-3 py-1.5 text-sm"
+          >
+            <option value="">All statuses (excl. Closed)</option>
+            {STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {STATUS_LABEL[s]}
+              </option>
+            ))}
+          </select>
+          <select
+            value={priority}
+            onChange={(e) => setPriority(e.target.value)}
+            className="rounded-lg border border-line px-3 py-1.5 text-sm"
+          >
+            <option value="">All priorities</option>
+            {PRIORITIES.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+          <select
+            value={serviceType}
+            onChange={(e) => setServiceType(e.target.value)}
+            className="rounded-lg border border-line px-3 py-1.5 text-sm"
+          >
+            <option value="">All service types</option>
+            {SERVICE_TYPES.map((s) => (
+              <option key={s} value={s}>
+                {SERVICE_TYPE_LABEL[s]}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
-      <div>
-        <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-navy">Pending engineer acceptance</h3>
-        <TicketTable
-          tickets={stats.pendingAcceptance}
-          loading={loading}
-          error={null}
-          onRowClick={(id) => router.push(`/dashboard/tickets/${id}`)}
-          emptyText="No tickets awaiting acceptance."
-        />
-      </div>
-
-      <div>
-        <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-navy">
-          All open tickets in your territory
-        </h3>
-        <TicketTable
-          tickets={tickets.filter((t) => t.status !== "CLOSED")}
-          loading={loading}
-          error={error}
-          onRowClick={(id) => router.push(`/dashboard/tickets/${id}`)}
-          emptyText="Nothing open in your territory."
-        />
-      </div>
+      <TicketTable
+        tickets={tickets}
+        loading={loading}
+        error={error}
+        onRowClick={(id) => router.push(`/dashboard/tickets/${id}`)}
+        emptyText="No tickets match these filters."
+      />
     </div>
   );
 }

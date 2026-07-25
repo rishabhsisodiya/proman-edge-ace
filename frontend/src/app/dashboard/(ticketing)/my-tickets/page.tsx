@@ -68,7 +68,7 @@ export default function MyTicketsPage() {
   const recentlyResolved = tickets.filter((t) => ["ENGINEER_RESOLVED", "ASM_RESOLVED"].includes(t.status));
 
   return (
-    <div className="mx-auto max-w-md space-y-6 p-6">
+    <div className="mx-auto max-w-6xl space-y-6 p-6">
       <div>
         <h2 className="text-xl font-black text-navy">My Tickets</h2>
         <p className="text-sm text-muted">Assigned to you, waiting on your action</p>
@@ -83,46 +83,62 @@ export default function MyTicketsPage() {
         </p>
       )}
 
-      <div className="space-y-3">
+      <div className="divide-y divide-line rounded-lg border border-line bg-white">
         {needsAction.map((t) => (
-          <div key={t.id} className="rounded-lg border border-line bg-white p-4 shadow-[0_1px_4px_rgba(42,47,105,.06)]">
-            <div className="mb-1 flex items-center justify-between">
-              <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${PRIORITY_STYLE[t.priority]}`}>{t.priority}</span>
-              <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${STATUS_STYLE[t.status]}`}>
-                {STATUS_LABEL[t.status]}
-              </span>
-            </div>
-            <p
-              className="cursor-pointer text-sm font-bold text-navy"
-              onClick={() => router.push(`/dashboard/tickets/${t.id}`)}
-            >
-              {t.subject}
-            </p>
-            <p className="mb-3 text-xs text-muted">
-              {t.customer.customerName} {t.site?.siteName ? `· ${t.site.siteName}` : ""}
-            </p>
-
-            {t.status === "ENGINEER_ASSIGNED" && rejectingId !== t.id && (
-              <div className="flex gap-2">
-                <button
-                  onClick={() => onAccept(t.id)}
-                  disabled={busyId === t.id}
-                  className="flex-1 rounded-md bg-brand-green-bg py-2 text-xs font-bold text-brand-green disabled:opacity-50"
+          <div key={t.id} className="p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 flex-1">
+                <div className="mb-1 flex flex-wrap items-center gap-2">
+                  <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${PRIORITY_STYLE[t.priority]}`}>
+                    {t.priority}
+                  </span>
+                  <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${STATUS_STYLE[t.status]}`}>
+                    {STATUS_LABEL[t.status]}
+                  </span>
+                  <span className="font-mono text-[11px] text-muted">{t.ticketNo}</span>
+                </div>
+                <p
+                  className="cursor-pointer break-words text-sm font-bold text-navy hover:underline"
+                  onClick={() => router.push(`/dashboard/tickets/${t.id}`)}
                 >
-                  Accept
-                </button>
-                <button
-                  onClick={() => setRejectingId(t.id)}
-                  disabled={busyId === t.id}
-                  className="flex-1 rounded-md bg-brand-red-bg py-2 text-xs font-bold text-brand-red disabled:opacity-50"
-                >
-                  Reject
-                </button>
+                  {t.subject}
+                </p>
+                <p className="text-xs text-muted">
+                  {t.customer.customerName} {t.site?.siteName ? `· ${t.site.siteName}` : ""}
+                </p>
               </div>
-            )}
+
+              {t.status === "ENGINEER_ASSIGNED" && rejectingId !== t.id && (
+                <div className="flex shrink-0 gap-2">
+                  <button
+                    onClick={() => onAccept(t.id)}
+                    disabled={busyId === t.id}
+                    className="rounded-md bg-brand-green-bg px-4 py-2 text-xs font-bold text-brand-green disabled:opacity-50"
+                  >
+                    Accept
+                  </button>
+                  <button
+                    onClick={() => setRejectingId(t.id)}
+                    disabled={busyId === t.id}
+                    className="rounded-md bg-brand-red-bg px-4 py-2 text-xs font-bold text-brand-red disabled:opacity-50"
+                  >
+                    Reject
+                  </button>
+                </div>
+              )}
+
+              {t.status !== "ENGINEER_ASSIGNED" && rejectingId !== t.id && (
+                <button
+                  onClick={() => router.push(`/dashboard/tickets/${t.id}`)}
+                  className="shrink-0 rounded-md bg-navy px-4 py-2 text-xs font-bold text-white"
+                >
+                  Open Ticket
+                </button>
+              )}
+            </div>
 
             {rejectingId === t.id && (
-              <div>
+              <div className="mt-3">
                 <textarea
                   value={rejectReason}
                   onChange={(e) => setRejectReason(e.target.value)}
@@ -133,27 +149,18 @@ export default function MyTicketsPage() {
                   <button
                     onClick={() => onReject(t.id)}
                     disabled={busyId === t.id || !rejectReason}
-                    className="flex-1 rounded-md bg-brand-red-bg py-2 text-xs font-bold text-brand-red disabled:opacity-50"
+                    className="rounded-md bg-brand-red-bg px-4 py-2 text-xs font-bold text-brand-red disabled:opacity-50"
                   >
                     Submit
                   </button>
                   <button
                     onClick={() => setRejectingId(null)}
-                    className="flex-1 rounded-md bg-navy-tint py-2 text-xs font-bold text-navy"
+                    className="rounded-md bg-navy-tint px-4 py-2 text-xs font-bold text-navy"
                   >
                     Cancel
                   </button>
                 </div>
               </div>
-            )}
-
-            {t.status !== "ENGINEER_ASSIGNED" && rejectingId !== t.id && (
-              <button
-                onClick={() => router.push(`/dashboard/tickets/${t.id}`)}
-                className="w-full rounded-md bg-navy py-2 text-xs font-bold text-white"
-              >
-                Open Ticket
-              </button>
             )}
           </div>
         ))}
@@ -162,20 +169,20 @@ export default function MyTicketsPage() {
       {recentlyResolved.length > 0 && (
         <div>
           <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-navy">Recently resolved</h3>
-          <div className="space-y-2">
+          <div className="divide-y divide-line rounded-lg border border-line bg-white">
             {recentlyResolved.map((t) => (
               <div
                 key={t.id}
                 onClick={() => router.push(`/dashboard/tickets/${t.id}`)}
-                className="cursor-pointer rounded-lg border border-line bg-white p-3 hover:bg-navy-tint"
+                className="flex cursor-pointer flex-col gap-1 p-3 hover:bg-navy-tint sm:flex-row sm:items-center sm:justify-between"
               >
-                <div className="mb-1 flex items-center justify-between">
-                  <span className="font-mono text-[11px] text-muted">{t.ticketNo}</span>
-                  <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${STATUS_STYLE[t.status]}`}>
-                    {STATUS_LABEL[t.status]}
-                  </span>
+                <div className="min-w-0">
+                  <span className="mr-2 font-mono text-[11px] text-muted">{t.ticketNo}</span>
+                  <span className="truncate text-xs font-medium text-navy">{t.subject}</span>
                 </div>
-                <p className="truncate text-xs font-medium text-navy">{t.subject}</p>
+                <span className={`shrink-0 self-start rounded-full px-2.5 py-0.5 text-[10px] font-bold sm:self-auto ${STATUS_STYLE[t.status]}`}>
+                  {STATUS_LABEL[t.status]}
+                </span>
               </div>
             ))}
           </div>

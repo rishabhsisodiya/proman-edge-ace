@@ -59,7 +59,7 @@ export default function TopBar({ title, onMenuClick }: { title: string; onMenuCl
           </button>
 
           {menuOpen && (
-            <div className="absolute right-0 top-12 w-40 rounded-lg border border-line bg-white py-1 shadow-lg">
+            <div className="absolute right-0 top-12 z-[100] w-40 rounded-lg border border-line bg-white py-1 shadow-lg">
               <Link
                 href="/account"
                 onClick={() => setMenuOpen(false)}
