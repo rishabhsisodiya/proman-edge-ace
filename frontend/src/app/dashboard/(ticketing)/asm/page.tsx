@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import {
+  Paginated,
   PRIORITY_STYLE,
   STATUS_LABEL,
   STATUS_STYLE,
@@ -13,6 +14,7 @@ import {
   Priority,
   ServiceType,
 } from "@/lib/ticketing/types";
+import { Pagination } from "@/components/Pagination";
 
 const PRIORITIES: Priority[] = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 const STATUSES: TicketStatus[] = Object.keys(STATUS_LABEL) as TicketStatus[];
@@ -45,26 +47,40 @@ export default function AsmDashboardPage() {
   const [priority, setPriority] = useState("");
   const [serviceType, setServiceType] = useState("");
   const [assigned, setAssigned] = useState("");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const pageSize = 25;
 
   useEffect(() => {
-    apiFetch<Ticket[]>("/tickets").then(setAllTickets).catch(() => {});
+    apiFetch<Paginated<Ticket>>("/tickets?pageSize=500")
+      .then((res) => setAllTickets(res.data))
+      .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    setPage(1);
+  }, [status, priority, serviceType, assigned]);
 
   useEffect(() => {
     setLoading(true);
     setError(null);
     const params = new URLSearchParams();
     if (status) params.set("status", status);
+    else params.set("excludeClosed", "true"); // default view excludes Closed unless explicitly chosen
     if (priority) params.set("priority", priority);
     if (serviceType) params.set("serviceType", serviceType);
     if (assigned) params.set("assigned", assigned);
+    params.set("page", String(page));
+    params.set("pageSize", String(pageSize));
 
-    // Default view excludes Closed tickets unless a status is explicitly chosen.
-    apiFetch<Ticket[]>(`/tickets?${params.toString()}`)
-      .then((res) => setTickets(status ? res : res.filter((t) => t.status !== "CLOSED")))
+    apiFetch<Paginated<Ticket>>(`/tickets?${params.toString()}`)
+      .then((res) => {
+        setTickets(res.data);
+        setTotal(res.total);
+      })
       .catch(() => setError("Could not load tickets. Is the backend running and seeded?"))
       .finally(() => setLoading(false));
-  }, [status, priority, serviceType, assigned]);
+  }, [status, priority, serviceType, assigned, page]);
 
   const stats = useMemo(() => {
     const open = allTickets.filter((t) => t.status !== "CLOSED").length;
@@ -177,6 +193,8 @@ export default function AsmDashboardPage() {
         onRowClick={(id) => router.push(`/dashboard/tickets/${id}`)}
         emptyText="No tickets match these filters."
       />
+
+      <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} />
     </div>
   );
 }

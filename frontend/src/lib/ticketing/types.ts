@@ -1,3 +1,10 @@
+export interface Paginated<T> {
+  data: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 export type TicketStatus =
   | "OPEN"
   | "ASSIGNED"

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { ApiError } from "@/lib/api";
 import { acceptTicket, rejectTicket } from "@/lib/ticketing/actions";
-import { PRIORITY_STYLE, STATUS_LABEL, STATUS_STYLE, Ticket } from "@/lib/ticketing/types";
+import { Paginated, PRIORITY_STYLE, STATUS_LABEL, STATUS_STYLE, Ticket } from "@/lib/ticketing/types";
 
 // Engineer's ticket inbox — not one of §6.1's 5 KPI dashboards (Engineer
 // isn't a dashboard role in the FSD), this is the §10.2/Q15 engineer web flow
@@ -23,8 +23,10 @@ export default function MyTicketsPage() {
 
   function load() {
     setLoading(true);
-    apiFetch<Ticket[]>("/tickets")
-      .then(setTickets)
+    // Already scoped to this engineer's own assignments server-side, so the
+    // set is naturally small — pageSize=500 just guards against truncation.
+    apiFetch<Paginated<Ticket>>("/tickets?pageSize=500")
+      .then((res) => setTickets(res.data))
       .catch(() => setError("Could not load your tickets."))
       .finally(() => setLoading(false));
   }

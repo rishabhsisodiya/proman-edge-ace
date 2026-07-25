@@ -252,17 +252,32 @@ export class TicketsService {
     // CALL_CENTER, MANAGER, ADMIN: unscoped (full visibility)
 
     if (filters.status) where.status = filters.status as any;
+    else if (filters.excludeClosed === 'true') where.status = { not: 'CLOSED' };
     if (filters.priority) where.priority = filters.priority as any;
     if (filters.region) where.customer = { ...(where.customer as object), region: filters.region as any };
     if (filters.serviceType) where.serviceType = filters.serviceType as any;
     if (filters.assigned === 'true') where.assignedEngineerId = { not: null };
     if (filters.assigned === 'false') where.assignedEngineerId = null;
 
-    return this.prisma.ticket.findMany({
-      where,
-      include: { customer: true, equipment: true, assignedEngineer: true, assignedAsm: true },
-      orderBy: { createdAt: 'desc' },
-    });
+    // Capped at 500 rather than 100 — a couple of dashboards (Call Center,
+    // My Tickets) still need one unbounded-ish fetch for their own
+    // client-side aggregate stats until they get a real server-side stats
+    // endpoint; true paginated list views (ASM, Manager) use the default 25.
+    const page = Math.max(1, parseInt(filters.page ?? '1', 10) || 1);
+    const pageSize = Math.min(500, Math.max(1, parseInt(filters.pageSize ?? '25', 10) || 25));
+
+    const [data, total] = await Promise.all([
+      this.prisma.ticket.findMany({
+        where,
+        include: { customer: true, equipment: true, assignedEngineer: true, assignedAsm: true },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.ticket.count({ where }),
+    ]);
+
+    return { data, total, page, pageSize };
   }
 
   async findOne(id: string, actor: RequestUser) {

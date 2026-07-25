@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
-import { PRIORITY_STYLE, SOURCE_LABEL, STATUS_LABEL, STATUS_STYLE, Source, Ticket } from "@/lib/ticketing/types";
+import { Paginated, PRIORITY_STYLE, SOURCE_LABEL, STATUS_LABEL, STATUS_STYLE, Source, Ticket } from "@/lib/ticketing/types";
 
 function Tile({ label, value, accent }: { label: string; value: string | number; accent?: string }) {
   return (
@@ -32,8 +32,11 @@ export default function CallCenterDashboardPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    apiFetch<Ticket[]>("/tickets")
-      .then(setTickets)
+    // pageSize=500: this dashboard computes its own stats client-side over
+    // the whole set (no server-side aggregate endpoint yet) — not a
+    // paginated list view, so it needs the full-ish dataset, not page 1.
+    apiFetch<Paginated<Ticket>>("/tickets?pageSize=500")
+      .then((res) => setTickets(res.data))
       .catch(() => setError("Could not load tickets. Is the backend running and seeded?"))
       .finally(() => setLoading(false));
   }, []);

@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
+import { AuthUser, getCurrentUser } from "@/lib/auth";
 
 // Static prefix-match, most-specific first — the TopBar title should reflect
 // what page you're actually on, not always the same brand name.
@@ -15,7 +16,6 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/dashboard/call-center", title: "Call Center Dashboard" },
   { prefix: "/dashboard/asm", title: "ASM Dashboard" },
   { prefix: "/dashboard/my-tickets", title: "My Tickets" },
-  { prefix: "/dashboard/service", title: "Manager Dashboard" },
   { prefix: "/dashboard/admin/security", title: "Login & Security" },
   { prefix: "/dashboard/admin/region-mapping", title: "Regions & Territories" },
   { prefix: "/dashboard/admin/sync-monitor", title: "Sync Monitor" },
@@ -26,7 +26,13 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/dashboard/dashboards", title: "Dashboards" },
 ];
 
-function titleForPath(pathname: string): string {
+// /dashboard/service is shared by Admin and Manager/Service-Aftersales-Head
+// (Sidebar.tsx's ticketingNavItem) — the title should reflect which one is
+// actually looking, not always say "Manager Dashboard".
+function titleForPath(pathname: string, role: AuthUser["role"] | undefined): string {
+  if (pathname.startsWith("/dashboard/service")) {
+    return role === "ADMIN" ? "Tickets" : "Manager Dashboard";
+  }
   const match = PAGE_TITLES.find((p) => pathname.startsWith(p.prefix));
   return match?.title ?? "Proman Edge - ACE Service";
 }
@@ -38,12 +44,17 @@ export default function DashboardLayout({
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const pathname = usePathname();
+  const [user, setUser] = useState<AuthUser | null>(null);
+
+  useEffect(() => {
+    setUser(getCurrentUser());
+  }, []);
 
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex flex-1 flex-col overflow-hidden bg-background">
-        <TopBar title={titleForPath(pathname)} onMenuClick={() => setSidebarOpen((v) => !v)} />
+        <TopBar title={titleForPath(pathname, user?.role)} onMenuClick={() => setSidebarOpen((v) => !v)} />
         <div className="flex-1 overflow-y-auto">{children}</div>
       </div>
     </div>

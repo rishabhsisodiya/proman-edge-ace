@@ -4,11 +4,24 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { AuthUser, getCurrentUser } from "@/lib/auth";
-import { PRIORITY_STYLE, STATUS_LABEL, STATUS_STYLE, Ticket, TicketStatus, Priority, Region } from "@/lib/ticketing/types";
+import {
+  Paginated,
+  PRIORITY_STYLE,
+  STATUS_LABEL,
+  STATUS_STYLE,
+  SERVICE_TYPE_LABEL,
+  Ticket,
+  TicketStatus,
+  Priority,
+  Region,
+  ServiceType,
+} from "@/lib/ticketing/types";
+import { Pagination } from "@/components/Pagination";
 
 const REGIONS: Region[] = ["NORTH", "SOUTH", "EAST", "WEST", "CENTRAL", "BANGLADESH"];
 const PRIORITIES: Priority[] = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 const STATUSES: TicketStatus[] = Object.keys(STATUS_LABEL) as TicketStatus[];
+const SERVICE_TYPES: ServiceType[] = Object.keys(SERVICE_TYPE_LABEL) as ServiceType[];
 
 function Tile({ label, value, accent }: { label: string; value: string | number; accent?: string }) {
   return (
@@ -33,6 +46,24 @@ export default function ManagerDashboardPage() {
   const [region, setRegion] = useState("");
   const [priority, setPriority] = useState("");
   const [status, setStatus] = useState("");
+  const [serviceType, setServiceType] = useState("");
+  const [assigned, setAssigned] = useState("");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const pageSize = 25;
+
+  // Stat tiles must reflect the whole board regardless of active filters —
+  // sourced from a separate unfiltered fetch, same pattern as the ASM page.
+  const [allTickets, setAllTickets] = useState<Ticket[]>([]);
+  useEffect(() => {
+    apiFetch<Paginated<Ticket>>("/tickets?pageSize=500")
+      .then((res) => setAllTickets(res.data))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    setPage(1);
+  }, [region, priority, status, serviceType, assigned]);
 
   useEffect(() => {
     setLoading(true);
@@ -41,31 +72,38 @@ export default function ManagerDashboardPage() {
     if (region) params.set("region", region);
     if (priority) params.set("priority", priority);
     if (status) params.set("status", status);
+    if (serviceType) params.set("serviceType", serviceType);
+    if (assigned) params.set("assigned", assigned);
+    params.set("page", String(page));
+    params.set("pageSize", String(pageSize));
 
-    apiFetch<Ticket[]>(`/tickets?${params.toString()}`)
-      .then(setTickets)
+    apiFetch<Paginated<Ticket>>(`/tickets?${params.toString()}`)
+      .then((res) => {
+        setTickets(res.data);
+        setTotal(res.total);
+      })
       .catch(() => setError("Could not load tickets. Is the backend running and seeded?"))
       .finally(() => setLoading(false));
-  }, [region, priority, status]);
+  }, [region, priority, status, serviceType, assigned, page]);
 
   const now = Date.now();
   const stats = useMemo(() => {
-    const open = tickets.filter((t) => t.status !== "CLOSED").length;
-    const unassigned = tickets.filter((t) => !t.assignedEngineer && t.status !== "CLOSED").length;
-    const slaAtRisk = tickets.filter(
+    const open = allTickets.filter((t) => t.status !== "CLOSED").length;
+    const unassigned = allTickets.filter((t) => !t.assignedEngineer && t.status !== "CLOSED").length;
+    const slaAtRisk = allTickets.filter(
       (t) =>
         t.slaResolutionDue &&
         t.status !== "CLOSED" &&
         new Date(t.slaResolutionDue).getTime() - now < 2 * 60 * 60 * 1000,
     ).length;
-    const breached = tickets.filter(
+    const breached = allTickets.filter(
       (t) => t.slaResolutionDue && t.status !== "CLOSED" && new Date(t.slaResolutionDue).getTime() < now,
     ).length;
     return { open, unassigned, slaAtRisk, breached };
-  }, [tickets, now]);
+  }, [allTickets, now]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-[22px] font-black text-navy">Manager Dashboard</h2>
@@ -124,6 +162,27 @@ export default function ManagerDashboardPage() {
               {STATUS_LABEL[s]}
             </option>
           ))}
+        </select>
+        <select
+          value={serviceType}
+          onChange={(e) => setServiceType(e.target.value)}
+          className="rounded-lg border border-line px-3 py-1.5 text-sm"
+        >
+          <option value="">All service types</option>
+          {SERVICE_TYPES.map((s) => (
+            <option key={s} value={s}>
+              {SERVICE_TYPE_LABEL[s]}
+            </option>
+          ))}
+        </select>
+        <select
+          value={assigned}
+          onChange={(e) => setAssigned(e.target.value)}
+          className="rounded-lg border border-line px-3 py-1.5 text-sm"
+        >
+          <option value="">Assigned + Unassigned</option>
+          <option value="true">Assigned</option>
+          <option value="false">Unassigned</option>
         </select>
       </div>
 
@@ -190,6 +249,8 @@ export default function ManagerDashboardPage() {
           </tbody>
         </table>
       </div>
+
+      <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} />
     </div>
   );
 }
