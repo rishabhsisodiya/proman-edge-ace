@@ -2,7 +2,13 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RequestUser } from '../tickets/tickets.service';
 import { ErpWritebackService } from '../erp-writeback/erp-writeback.service';
-import { AddQuotationItemDto, CreateQuotationDto, UpdateDeliveryDto, UpdateQuotationDto } from './dto/quotation.dto';
+import {
+  AddQuotationItemDto,
+  CreateQuotationDto,
+  UpdateDeliveryDto,
+  UpdateQuotationDto,
+  UpdateQuotationItemDto,
+} from './dto/quotation.dto';
 
 async function nextQuotationNo(prisma: PrismaService): Promise<string> {
   const year = new Date().getFullYear();
@@ -149,6 +155,21 @@ export class QuotationService {
     const taxAmount = dto.taxAmount ?? 0;
     const lineTotal = dto.qty * dto.unitPrice + taxAmount;
     await this.prisma.quotationItem.create({ data: { quotationId: id, ...dto, taxAmount, lineTotal } });
+    return this.recomputeTotals(id);
+  }
+
+  async updateItem(id: string, itemId: string, dto: UpdateQuotationItemDto) {
+    const quotation = await this.prisma.quotation.findUniqueOrThrow({ where: { id } });
+    this.assertEditable(quotation);
+    const existing = await this.prisma.quotationItem.findUniqueOrThrow({ where: { id: itemId } });
+    const qty = dto.qty ?? Number(existing.qty);
+    const unitPrice = dto.unitPrice ?? Number(existing.unitPrice);
+    const taxAmount = dto.taxAmount ?? Number(existing.taxAmount);
+    const lineTotal = qty * unitPrice + taxAmount;
+    await this.prisma.quotationItem.update({
+      where: { id: itemId },
+      data: { qty, unitPrice, taxAmount, lineTotal, uom: dto.uom ?? existing.uom },
+    });
     return this.recomputeTotals(id);
   }
 

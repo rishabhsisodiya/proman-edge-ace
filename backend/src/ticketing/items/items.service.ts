@@ -7,7 +7,14 @@ export class ItemsService {
 
   list(search?: string) {
     return this.prisma.item.findMany({
-      where: search ? { itemName: { contains: search, mode: 'insensitive' } } : undefined,
+      where: search
+        ? {
+            OR: [
+              { itemName: { contains: search, mode: 'insensitive' } },
+              { itemCode: { contains: search, mode: 'insensitive' } },
+            ],
+          }
+        : undefined,
       take: 100,
     });
   }

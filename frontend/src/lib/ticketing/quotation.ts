@@ -104,6 +104,12 @@ export const addQuotationItem = (
   input: { itemCode: string; itemName: string; qty: number; uom: string; unitPrice: number; taxAmount?: number },
 ) => post<Quotation>(`/quotations/${id}/items`, input);
 
+export const updateQuotationItem = (
+  id: string,
+  itemId: string,
+  input: { qty?: number; uom?: string; unitPrice?: number; taxAmount?: number },
+) => apiFetch<Quotation>(`/quotations/${id}/items/${itemId}`, { method: "PATCH", body: JSON.stringify(input) });
+
 export const removeQuotationItem = (id: string, itemId: string) =>
   apiFetch<Quotation>(`/quotations/${id}/items/${itemId}`, { method: "DELETE" });
 

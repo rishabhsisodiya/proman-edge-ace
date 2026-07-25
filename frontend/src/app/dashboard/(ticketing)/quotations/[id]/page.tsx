@@ -7,8 +7,10 @@ import {
   getQuotation,
   pushQuotationToErpNext,
   Quotation,
+  QuotationItem,
   removeQuotationItem,
   updateQuotation,
+  updateQuotationItem,
 } from "@/lib/ticketing/quotation";
 import { ItemListItem, listItems } from "@/lib/ticketing/masters";
 
@@ -270,6 +272,15 @@ function ItemsSection({
   const [selected, setSelected] = useState<ItemListItem | null>(null);
   const [qty, setQty] = useState("1");
   const [unitPrice, setUnitPrice] = useState("0");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editQty, setEditQty] = useState("");
+  const [editUnitPrice, setEditUnitPrice] = useState("");
+
+  function startEdit(it: QuotationItem) {
+    setEditingId(it.id);
+    setEditQty(String(it.qty));
+    setEditUnitPrice(String(it.unitPrice));
+  }
 
   useEffect(() => {
     if (query.trim().length < 2) {
@@ -307,26 +318,71 @@ function ItemsSection({
             </tr>
           </thead>
           <tbody>
-            {quotation.items.map((it) => (
-              <tr key={it.id} className="border-b border-line last:border-0">
-                <td className="px-2 py-1.5 text-navy">{it.itemName}</td>
-                <td className="px-2 py-1.5 text-muted">
-                  {it.qty} {it.uom}
-                </td>
-                <td className="px-2 py-1.5 text-muted">₹{it.unitPrice}</td>
-                <td className="px-2 py-1.5 text-muted">₹{it.lineTotal}</td>
-                {editable && (
-                  <td className="px-2 py-1.5 text-right">
+            {quotation.items.map((it) =>
+              editingId === it.id ? (
+                <tr key={it.id} className="border-b border-line last:border-0 bg-navy-soft">
+                  <td className="px-2 py-1.5 text-navy">{it.itemName}</td>
+                  <td className="px-2 py-1.5">
+                    <input
+                      type="number"
+                      value={editQty}
+                      onChange={(e) => setEditQty(e.target.value)}
+                      className="h-8 w-16 rounded-md border border-line px-1.5 text-xs"
+                    />
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <input
+                      type="number"
+                      value={editUnitPrice}
+                      onChange={(e) => setEditUnitPrice(e.target.value)}
+                      className="h-8 w-20 rounded-md border border-line px-1.5 text-xs"
+                    />
+                  </td>
+                  <td className="px-2 py-1.5 text-muted">₹{it.lineTotal}</td>
+                  <td className="px-2 py-1.5 text-right whitespace-nowrap">
                     <button
-                      onClick={() => run(() => removeQuotationItem(quotation.id, it.id))}
-                      className="font-bold text-brand-red"
+                      onClick={() => {
+                        run(() =>
+                          updateQuotationItem(quotation.id, it.id, {
+                            qty: Number(editQty),
+                            unitPrice: Number(editUnitPrice),
+                          }),
+                        );
+                        setEditingId(null);
+                      }}
+                      className="mr-2 font-bold text-brand-green"
                     >
-                      Remove
+                      Save
+                    </button>
+                    <button onClick={() => setEditingId(null)} className="font-bold text-muted">
+                      Cancel
                     </button>
                   </td>
-                )}
-              </tr>
-            ))}
+                </tr>
+              ) : (
+                <tr key={it.id} className="border-b border-line last:border-0">
+                  <td className="px-2 py-1.5 text-navy">{it.itemName}</td>
+                  <td className="px-2 py-1.5 text-muted">
+                    {it.qty} {it.uom}
+                  </td>
+                  <td className="px-2 py-1.5 text-muted">₹{it.unitPrice}</td>
+                  <td className="px-2 py-1.5 text-muted">₹{it.lineTotal}</td>
+                  {editable && (
+                    <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                      <button onClick={() => startEdit(it)} className="mr-2 font-bold text-navy">
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => run(() => removeQuotationItem(quotation.id, it.id))}
+                        className="font-bold text-brand-red"
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  )}
+                </tr>
+              ),
+            )}
           </tbody>
         </table>
       )}

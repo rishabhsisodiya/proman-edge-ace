@@ -340,7 +340,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         timeline={timeline}
         visits={visits}
         ticket={ticket}
-        showCommercial={role === "CALL_CENTER" || role === "ASM" || role === "MANAGER" || role === "ADMIN"}
+        showCommercial={role === "CALL_CENTER" || role === "ASM" || role === "MANAGER" || role === "ADMIN" || role === "ENGINEER"}
       />
         </div>
 

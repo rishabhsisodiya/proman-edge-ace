@@ -66,6 +66,27 @@ export class AddQuotationItemDto {
   taxAmount?: number;
 }
 
+export class UpdateQuotationItemDto {
+  @IsOptional()
+  @IsNumber()
+  @Min(0.001)
+  qty?: number;
+
+  @IsOptional()
+  @IsString()
+  uom?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  unitPrice?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  taxAmount?: number;
+}
+
 export class UpdateDeliveryDto {
   @IsOptional()
   @IsDateString()
