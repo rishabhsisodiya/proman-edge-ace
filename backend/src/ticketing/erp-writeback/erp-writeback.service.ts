@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { FrappeRpcService } from '../../erp/frappe-rpc.service';
 
 export interface ErpDocStatus {
@@ -33,8 +33,20 @@ export class ErpWritebackService {
 
   constructor(private readonly frappe: FrappeRpcService) {}
 
+  // A blank/missing ACE_ERP_COMPANY used to fail silently — the resulting
+  // empty `company: ''` field on the ERPNext doc doesn't match any real
+  // Company, and a third-party GST override (india_compliance) crashes with
+  // a raw, unhelpful "TypeError: cannot unpack non-iterable NoneType
+  // object" trying to look it up. Failing loudly here instead, right where
+  // the actual misconfiguration is, rather than three services downstream.
   private company(): string {
-    return process.env.ACE_ERP_COMPANY ?? '';
+    const company = process.env.ACE_ERP_COMPANY;
+    if (!company) {
+      throw new InternalServerErrorException(
+        'ACE_ERP_COMPANY is not configured on this server — cannot write to ERPNext without it.',
+      );
+    }
+    return company;
   }
 
   private sellingPriceList(): string {
