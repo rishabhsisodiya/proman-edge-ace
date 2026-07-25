@@ -20,6 +20,10 @@ export class CreateQuotationDto {
   @IsOptional()
   @IsUUID()
   amcContractId?: string;
+
+  @IsOptional()
+  @IsString()
+  priceListName?: string;
 }
 
 export class UpdateQuotationDto {
@@ -64,6 +68,10 @@ export class AddQuotationItemDto {
   @IsNumber()
   @Min(0)
   taxAmount?: number;
+
+  @IsOptional()
+  @IsString()
+  priceListName?: string;
 }
 
 export class UpdateQuotationItemDto {

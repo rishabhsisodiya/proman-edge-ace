@@ -20,6 +20,7 @@ export interface QuotationItem {
   unitPrice: string | number;
   taxAmount: string | number;
   lineTotal: string | number;
+  priceListName?: string | null;
 }
 
 export interface Delivery {
@@ -83,7 +84,13 @@ export const listDeliveriesForTicket = (ticketId: string) =>
 
 export const createQuotation = (
   ticketId: string,
-  input: { validUntil: string; labourCharges?: number; notesToCustomer?: string; termsAndConditions?: string },
+  input: {
+    validUntil: string;
+    labourCharges?: number;
+    notesToCustomer?: string;
+    termsAndConditions?: string;
+    priceListName?: string;
+  },
 ) => post<Quotation>(`/tickets/${ticketId}/quotation`, input);
 
 export const createDirectSalesOrder = (ticketId: string) =>
@@ -101,7 +108,15 @@ export const updateQuotation = (
 
 export const addQuotationItem = (
   id: string,
-  input: { itemCode: string; itemName: string; qty: number; uom: string; unitPrice: number; taxAmount?: number },
+  input: {
+    itemCode: string;
+    itemName: string;
+    qty: number;
+    uom: string;
+    unitPrice: number;
+    taxAmount?: number;
+    priceListName?: string;
+  },
 ) => post<Quotation>(`/quotations/${id}/items`, input);
 
 export const updateQuotationItem = (
@@ -115,6 +130,11 @@ export const removeQuotationItem = (id: string, itemId: string) =>
 
 /** Creates the DRAFT Quotation in ERPNext — negotiation happens there from this point on, not in ACE. */
 export const pushQuotationToErpNext = (id: string) => post<Quotation>(`/quotations/${id}/push-to-erpnext`);
+
+/** Manual buttons replacing the removed 5-minute polling cron (2026-07-25) — live ERPNext status check on click. */
+export const createSalesOrderFromQuotation = (id: string) => post<Quotation>(`/quotations/${id}/create-sales-order`);
+export const createInvoiceFromQuotation = (id: string) => post<Quotation>(`/quotations/${id}/create-invoice`);
+export const checkDeliveryNoteForQuotation = (id: string) => post<Quotation>(`/quotations/${id}/check-delivery-note`);
 
 export const updateDelivery = (
   id: string,

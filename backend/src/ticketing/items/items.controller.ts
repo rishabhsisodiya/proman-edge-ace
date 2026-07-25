@@ -8,8 +8,8 @@ export class ItemsController {
   constructor(private readonly items: ItemsService) {}
 
   @Get()
-  list(@Query('search') search?: string) {
-    return this.items.list(search);
+  list(@Query('search') search?: string, @Query('priceListName') priceListName?: string) {
+    return this.items.list(search, priceListName);
   }
 
   @Get(':itemCode')

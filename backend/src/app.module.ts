@@ -16,6 +16,7 @@ import { TicketSourcesModule } from './ticketing/ticket-sources/ticket-sources.m
 import { FsvModule } from './ticketing/fsv/fsv.module';
 import { QuotationModule } from './ticketing/quotations/quotation.module';
 import { BillingRateModule } from './ticketing/billing-rates/billing-rate.module';
+import { PriceListModule } from './ticketing/price-lists/price-list.module';
 import { ErpWebhooksModule } from './ticketing/erp-webhooks/erp-webhooks.module';
 import { ErpModule } from './erp/erp.module';
 import { ManufacturingModule } from './dashboards/manufacturing/manufacturing.module';
@@ -45,6 +46,7 @@ import { DispatchModule } from './dashboards/dispatch/dispatch.module';
     FsvModule,
     QuotationModule,
     BillingRateModule,
+    PriceListModule,
     ErpWebhooksModule,
     ManufacturingModule,
     SalesModule,

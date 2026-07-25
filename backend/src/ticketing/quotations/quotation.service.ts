@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RequestUser } from '../tickets/tickets.service';
 import { ErpWritebackService } from '../erp-writeback/erp-writeback.service';
+import { PriceListService } from '../price-lists/price-list.service';
 import {
   AddQuotationItemDto,
   CreateQuotationDto,
@@ -21,11 +22,12 @@ async function nextQuotationNo(prisma: PrismaService): Promise<string> {
  * Per Shivam's ACE_ERPNext_Writeback_Integration_final.md (2026-07-23):
  * ACE's job shrinks to creating an initial DRAFT Quotation — all negotiation
  * (price/qty edits) happens IN ERPNEXT from that point on, not in this
- * screen. Once negotiated and submitted there, a webhook/poll auto-creates
- * the Sales Order; a manual Delivery Note in ERPNext then auto-creates a
- * draft Sales Invoice once the SO reaches status "To Bill". None of that is
- * a button click in ACE anymore — see handleQuotationSubmitted/
- * handleDeliveryNoteSubmitted/pollPending below.
+ * screen. Once negotiated and submitted there, the webhook auto-creates the
+ * Sales Order; a manual Delivery Note in ERPNext then either auto-creates
+ * (webhook) or is manually triggered (createInvoice, 2026-07-25 — the
+ * 5-minute polling cron was removed) a draft Sales Invoice once the SO
+ * reaches status "To Bill" — see handleQuotationSubmitted/
+ * handleDeliveryNoteSubmitted/createSalesOrder/createInvoice below.
  */
 @Injectable()
 export class QuotationService {
@@ -34,6 +36,7 @@ export class QuotationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly erpWriteback: ErpWritebackService,
+    private readonly priceLists: PriceListService,
   ) {}
 
   /**
@@ -101,6 +104,7 @@ export class QuotationService {
     }
 
     const quotationNo = await nextQuotationNo(this.prisma);
+    const sellingPriceList = dto.priceListName ?? (await this.priceLists.defaultName());
     return this.prisma.quotation.create({
       data: {
         quotationNo,
@@ -112,6 +116,7 @@ export class QuotationService {
         notesToCustomer: dto.notesToCustomer,
         termsAndConditions: dto.termsAndConditions,
         amcContractId: dto.amcContractId,
+        sellingPriceList,
       },
     });
   }
@@ -215,6 +220,7 @@ export class QuotationService {
       quotation.customer.erpnextCustomerId,
       quotation.items.map((it) => ({ itemCode: it.itemCode, qty: Number(it.qty), rate: Number(it.unitPrice), uom: it.uom })),
       quotation.validUntil.toISOString().slice(0, 10),
+      quotation.sellingPriceList ?? undefined,
     );
 
     return this.prisma.quotation.update({
@@ -269,40 +275,77 @@ export class QuotationService {
   }
 
   /**
-   * Polling fallback (webhook backstop) — same two steps as the webhook
-   * handlers above, driven by re-checking ERPNext status directly instead
-   * of waiting for a push. Same idempotency guards apply.
+   * Manual "Create Sales Order" button (client instruction 2026-07-25 —
+   * replaces the removed 5-minute polling cron). Does a live ERPNext status
+   * check on click rather than waiting for the next poll cycle; the webhook
+   * path above still handles the common case automatically and immediately.
+   * Same idempotency guard as the webhook handler.
    */
-  async pollPending() {
-    const awaitingSalesOrder = await this.prisma.quotation.findMany({
-      where: { erpnextQuotationId: { not: null }, erpnextSalesOrderId: null },
-    });
-    for (const q of awaitingSalesOrder) {
-      try {
-        const status = await this.erpWriteback.getDocStatus('Quotation', q.erpnextQuotationId!);
-        if (status.docstatus === 1 && status.status !== 'Ordered') {
-          await this.handleQuotationSubmitted(q.erpnextQuotationId!);
-        }
-      } catch (err: any) {
-        this.logger.error(`Poll (Quotation->SO) failed for ${q.quotationNo}`, err?.message ?? err);
-      }
+  async createSalesOrder(id: string) {
+    const quotation = await this.prisma.quotation.findUniqueOrThrow({ where: { id } });
+    if (!quotation.erpnextQuotationId) {
+      throw new BadRequestException('This quotation has not been pushed to ERPNext yet');
     }
+    if (quotation.erpnextSalesOrderId) {
+      throw new BadRequestException('A Sales Order already exists for this quotation');
+    }
+    const status = await this.erpWriteback.getDocStatus('Quotation', quotation.erpnextQuotationId);
+    if (status.docstatus !== 1) {
+      throw new BadRequestException('Quotation is not yet submitted in ERPNext — ask the client to submit it there first');
+    }
+    const erpnextSalesOrderId = await this.erpWriteback.salesOrderFromQuotation(quotation.erpnextQuotationId);
+    return this.prisma.quotation.update({
+      where: { id },
+      data: { status: 'CONVERTED_TO_SALES_ORDER', erpnextSalesOrderId },
+    });
+  }
 
-    const awaitingInvoice = await this.prisma.quotation.findMany({
-      where: { erpnextSalesOrderId: { not: null }, erpnextInvoiceId: null },
-    });
-    for (const q of awaitingInvoice) {
-      try {
-        const status = await this.erpWriteback.getDocStatus('Sales Order', q.erpnextSalesOrderId!);
-        if (status.status === 'To Bill' && (status.per_billed ?? 0) === 0) {
-          const erpnextInvoiceId = await this.erpWriteback.draftSalesInvoiceFromSalesOrder(q.erpnextSalesOrderId!);
-          await this.prisma.quotation.update({ where: { id: q.id }, data: { erpnextInvoiceId } });
-          await this.prisma.ticket.update({ where: { id: q.ticketId }, data: { erpnextInvoiceId } });
-        }
-      } catch (err: any) {
-        this.logger.error(`Poll (SO->Invoice) failed for ${q.quotationNo}`, err?.message ?? err);
-      }
+  /**
+   * Manual "Check Delivery Note" button (2026-07-25) — the Delivery Note
+   * itself is always raised manually in ERPNext (never created by ACE); this
+   * only fetches its id back if one now exists, via the same item-level link
+   * the Quotation->SO relationship uses. Unlike createSalesOrder/
+   * createInvoice, this step was never poll-covered even before (webhook-only),
+   * so this is a new capability, not a cron replacement — and it only
+   * updates the Delivery Note id, it does not itself trigger invoice
+   * creation (that's still the separate "Create Invoice" button).
+   */
+  async checkDeliveryNote(id: string) {
+    const quotation = await this.prisma.quotation.findUniqueOrThrow({ where: { id } });
+    if (!quotation.erpnextSalesOrderId) {
+      throw new BadRequestException('This quotation has no Sales Order yet');
     }
+    if (quotation.erpnextDeliveryNoteId) {
+      throw new BadRequestException('A Delivery Note is already recorded for this quotation');
+    }
+    const deliveryNoteName = await this.erpWriteback.findDeliveryNoteForSalesOrder(quotation.erpnextSalesOrderId);
+    if (!deliveryNoteName) {
+      throw new BadRequestException('No Delivery Note has been raised against this Sales Order in ERPNext yet');
+    }
+    return this.prisma.quotation.update({ where: { id }, data: { erpnextDeliveryNoteId: deliveryNoteName } });
+  }
+
+  /**
+   * Manual "Create Invoice" button — same replacement for the SO->Invoice
+   * half of the removed polling cron. Gate on docstatus==1 + per_billed==0,
+   * NOT status=="To Bill" (workflow-customised instances can leave status
+   * as Draft even when submitted, per Shivam's gotcha #6).
+   */
+  async createInvoice(id: string) {
+    const quotation = await this.prisma.quotation.findUniqueOrThrow({ where: { id } });
+    if (!quotation.erpnextSalesOrderId) {
+      throw new BadRequestException('This quotation has no Sales Order yet');
+    }
+    if (quotation.erpnextInvoiceId) {
+      throw new BadRequestException('A Sales Invoice already exists for this quotation');
+    }
+    const status = await this.erpWriteback.getDocStatus('Sales Order', quotation.erpnextSalesOrderId);
+    if (status.docstatus !== 1 || (status.per_billed ?? 0) !== 0) {
+      throw new BadRequestException('Sales Order is not yet ready to bill in ERPNext');
+    }
+    const erpnextInvoiceId = await this.erpWriteback.draftSalesInvoiceFromSalesOrder(quotation.erpnextSalesOrderId);
+    await this.prisma.ticket.update({ where: { id: quotation.ticketId }, data: { erpnextInvoiceId } });
+    return this.prisma.quotation.update({ where: { id }, data: { erpnextInvoiceId } });
   }
 
   /**

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ErpDbService } from '../../erp/erp-db.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { PriceListService } from '../price-lists/price-list.service';
 
 // Field-for-field per ACE_Master_Data_SQL_Queries.md §5.1.3, minus the
 // warehouse-scoped Bin join — that's handled separately per-warehouse
@@ -61,6 +62,7 @@ export class ItemSyncService {
   constructor(
     private readonly erpDb: ErpDbService,
     private readonly prisma: PrismaService,
+    private readonly priceLists: PriceListService,
   ) {}
 
   /** @param force Ignores the modified-since watermark and re-pulls every ERPNext item. */
@@ -83,6 +85,7 @@ export class ItemSyncService {
         if (ok) recordsOk++;
         else recordsFailed++;
       }
+      await this.syncPriceListRates();
     } catch (err: any) {
       errorMessage = err?.message ?? String(err);
       this.logger.error('Item sync run failed', err);
@@ -133,6 +136,38 @@ export class ItemSyncService {
       }
     }
     return byItem;
+  }
+
+  /**
+   * ERPNext's real selling rates live in `tabItem Price`, not `Item.standard_rate`
+   * (which is empty for almost every item — confirmed live, 2/40,657 non-zero).
+   * Scoped to whichever price lists Admin has actually added in ACE
+   * (SellingPriceList table) rather than pulling every price list that
+   * exists in ERPNext, most of which aren't used here.
+   */
+  private async syncPriceListRates(): Promise<void> {
+    const priceLists = await this.priceLists.list();
+    if (priceLists.length === 0) return;
+
+    for (const pl of priceLists) {
+      const rows = await this.erpDb.query<{ item_code: string; price_list_rate: string | number }>(
+        `SELECT item_code, price_list_rate FROM \`tabItem Price\` WHERE price_list = ? AND selling = 1`,
+        [pl.name],
+      );
+      for (const row of rows) {
+        try {
+          await this.prisma.itemPriceListRate.upsert({
+            where: { itemCode_priceListName: { itemCode: row.item_code, priceListName: pl.name } },
+            create: { itemCode: row.item_code, priceListName: pl.name, rate: row.price_list_rate },
+            update: { rate: row.price_list_rate, lastSyncedAt: new Date() },
+          });
+        } catch (err) {
+          // Item may not exist locally yet (race with the Item upsert loop
+          // above, or a stale/renamed item_code) — skip, not fatal to the run.
+          this.logger.warn(`Skipped price rate for ${row.item_code}/${pl.name}`, err);
+        }
+      }
+    }
   }
 
   private async syncOne(row: ErpItemRow, bins: ErpBinRow[]): Promise<boolean> {

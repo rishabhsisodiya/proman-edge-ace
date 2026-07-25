@@ -90,4 +90,25 @@ export class QuotationController {
   updateDelivery(@Param('id') id: string, @Body() dto: UpdateDeliveryDto) {
     return this.quotations.updateDelivery(id, dto);
   }
+
+  /** Manual button — replaces the removed 5-minute polling cron (2026-07-25). */
+  @Roles('CALL_CENTER', 'ASM', 'MANAGER', 'ENGINEER')
+  @Post('quotations/:id/create-sales-order')
+  createSalesOrder(@Param('id') id: string) {
+    return this.quotations.createSalesOrder(id);
+  }
+
+  /** Manual button — replaces the removed 5-minute polling cron (2026-07-25). */
+  @Roles('CALL_CENTER', 'ASM', 'MANAGER', 'ENGINEER')
+  @Post('quotations/:id/create-invoice')
+  createInvoice(@Param('id') id: string) {
+    return this.quotations.createInvoice(id);
+  }
+
+  /** Manual button — Delivery Note is always raised manually in ERPNext; this just fetches its id (2026-07-25). */
+  @Roles('CALL_CENTER', 'ASM', 'MANAGER', 'ENGINEER')
+  @Post('quotations/:id/check-delivery-note')
+  checkDeliveryNote(@Param('id') id: string) {
+    return this.quotations.checkDeliveryNote(id);
+  }
 }

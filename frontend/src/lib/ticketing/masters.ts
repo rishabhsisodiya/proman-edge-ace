@@ -27,10 +27,16 @@ export interface ItemListItem {
   itemName: string;
   itemGroup: string;
   uom: string;
+  rate?: number | null;
 }
 
-export const listItems = (search?: string) =>
-  apiFetch<ItemListItem[]>(`/items${search ? `?search=${encodeURIComponent(search)}` : ""}`);
+export const listItems = (search?: string, priceListName?: string) => {
+  const params = new URLSearchParams();
+  if (search) params.set("search", search);
+  if (priceListName) params.set("priceListName", priceListName);
+  const qs = params.toString();
+  return apiFetch<ItemListItem[]>(`/items${qs ? `?${qs}` : ""}`);
+};
 
 export interface CustomerSiteListItem {
   id: string;

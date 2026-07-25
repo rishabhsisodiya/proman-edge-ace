@@ -53,6 +53,11 @@ const SECTIONS = [
     description: "engineer_level → hourly rate, used for labour billing on chargeable tickets",
     href: "/dashboard/admin/billing-rates",
   },
+  {
+    label: "Selling Price Lists",
+    description: "ERPNext price list names selectable when creating a Quotation, plus the default",
+    href: "/dashboard/admin/price-lists",
+  },
   { label: "Predictive Rules", description: "Time-since-service / breakdown-frequency / hours thresholds", href: null },
   { label: "User Management", description: "Full user CRUD (roles, regions, skill tags)", href: null },
 ];

@@ -27,6 +27,30 @@ export class FrappeRpcService {
     return (process.env.FRAPPE_BASE_URL ?? '').replace(/\/$/, '');
   }
 
+  /**
+   * Shared error-message cleanup for any failed ERPNext response — priority:
+   * _server_messages (Frappe's own user-facing message, best) > exc (raw
+   * Python traceback, take the last non-empty line) > exception (often just
+   * a bare class name like "PermissionError", least useful — fallback only).
+   * Reused by post() and getResource() so no caller gets a raw traceback
+   * dump — see the 2026-07-25 fix for the same problem in post().
+   */
+  private cleanErrorMessage(errJson: Record<string, unknown>, httpStatus: number): string {
+    let msg = `HTTP ${httpStatus}`;
+    if (errJson.exception) msg = String(errJson.exception);
+    if (errJson.exc) msg = String(errJson.exc).split('\n').filter(Boolean).pop() ?? msg;
+    if (errJson._server_messages) {
+      try {
+        const parsed = JSON.parse(String(errJson._server_messages));
+        const inner = JSON.parse(Array.isArray(parsed) ? parsed[0] : parsed);
+        if (inner.message) msg = inner.message;
+      } catch {
+        /* ignore parse errors */
+      }
+    }
+    return msg.replace(/<[^>]+>/g, '').trim();
+  }
+
   private assertOk<T>(msg: T, method: string): T {
     if (msg && typeof msg === 'object' && (msg as Record<string, unknown>).ok === false) {
       const err = (msg as Record<string, unknown>).error as { code?: string; message?: string } | undefined;
@@ -88,29 +112,43 @@ export class FrappeRpcService {
     };
 
     if (!res.ok) {
-      const errJson = json as Record<string, unknown>;
-      // Priority: _server_messages (Frappe's own user-facing message, best)
-      // > exc (raw Python traceback, take the last non-empty line — most
-      // specific when there's no server message) > exception (often just a
-      // bare class name like "TypeError", least useful — fallback only).
-      let msg = `HTTP ${res.status}`;
-      if (errJson.exception) msg = String(errJson.exception);
-      if (errJson.exc) msg = String(errJson.exc).split('\n').filter(Boolean).pop() ?? msg;
-      if (errJson._server_messages) {
-        try {
-          const parsed = JSON.parse(String(errJson._server_messages));
-          const inner = JSON.parse(Array.isArray(parsed) ? parsed[0] : parsed);
-          if (inner.message) msg = inner.message;
-        } catch {
-          /* ignore parse errors */
-        }
-      }
-      const cleanMsg = msg.replace(/<[^>]+>/g, '').trim();
+      const cleanMsg = this.cleanErrorMessage(json as Record<string, unknown>, res.status);
       this.logger.error(`POST ${method} failed: ${cleanMsg}`);
       throw new BadGatewayException(`ERPNext ${method} failed: ${cleanMsg}`);
     }
 
     this.logger.log(`POST ${method.split('.').pop()} — ${ms}ms`);
     return this.assertOk(json.message, method);
+  }
+
+  /**
+   * GET against ERPNext's standard REST resource API (/api/resource/...) —
+   * distinct from get()/post() above, which call whitelisted RPC methods
+   * (/api/method/...). Used for doc status checks and item-level lookups
+   * (e.g. Delivery Note Item filtered by against_sales_order) that have no
+   * custom whitelisted method. Same clean-error-message handling as post()
+   * — a caller who bypassed this with a raw fetch() used to get a dumped
+   * traceback instead of a one-line message (fixed 2026-07-25).
+   */
+  async getResource<T = unknown>(resourcePath: string, params: Record<string, string> = {}): Promise<T> {
+    const qs = new URLSearchParams(params).toString();
+    const url = `${this.baseUrl()}/api/resource/${resourcePath}${qs ? `?${qs}` : ''}`;
+
+    const t0 = Date.now();
+    const res = await fetch(url, {
+      headers: { Authorization: this.buildToken(), Accept: 'application/json' },
+    });
+    const ms = Date.now() - t0;
+
+    const json = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      const cleanMsg = this.cleanErrorMessage(json as Record<string, unknown>, res.status);
+      this.logger.error(`GET ${resourcePath} failed: ${cleanMsg}`);
+      throw new BadGatewayException(`ERPNext ${resourcePath} failed: ${cleanMsg}`);
+    }
+
+    this.logger.log(`GET ${resourcePath.split('/')[0]} — ${ms}ms`);
+    return (json as { data: T }).data;
   }
 }

@@ -1099,7 +1099,8 @@ function CommercialTab({ ticket }: { ticket: Ticket }) {
           {!fsvExists ? (
             <span className="text-xs italic text-muted">(available once a Field Service Visit has started)</span>
           ) : (
-            <ActionButton
+            <>
+              <ActionButton
               label={chargeability.chargeable ? "Create Quotation" : "Create Direct Sales Order"}
               busy={commercialBusy}
               variant="secondary"
@@ -1109,7 +1110,9 @@ function CommercialTab({ ticket }: { ticket: Ticket }) {
                   if (chargeability.chargeable) {
                     const validUntil = new Date();
                     validUntil.setDate(validUntil.getDate() + 14);
-                    const q = await createQuotation(ticket.id, { validUntil: validUntil.toISOString().slice(0, 10) });
+                    const q = await createQuotation(ticket.id, {
+                      validUntil: validUntil.toISOString().slice(0, 10),
+                    });
                     router.push(`/dashboard/quotations/${q.id}`);
                   } else {
                     const created = await createDirectSalesOrder(ticket.id);
@@ -1128,7 +1131,8 @@ function CommercialTab({ ticket }: { ticket: Ticket }) {
                   setCommercialBusy(false);
                 }
               }}
-            />
+              />
+            </>
           )}
         </div>
       ) : (

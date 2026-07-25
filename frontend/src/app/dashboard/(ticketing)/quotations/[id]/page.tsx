@@ -4,6 +4,9 @@ import { use, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
 import {
   addQuotationItem,
+  checkDeliveryNoteForQuotation,
+  createInvoiceFromQuotation,
+  createSalesOrderFromQuotation,
   getQuotation,
   pushQuotationToErpNext,
   Quotation,
@@ -13,6 +16,7 @@ import {
   updateQuotationItem,
 } from "@/lib/ticketing/quotation";
 import { ItemListItem, listItems } from "@/lib/ticketing/masters";
+import { listPriceLists, PriceList } from "@/lib/ticketing/price-lists";
 
 const STATUS_LABEL: Record<Quotation["status"], string> = {
   DRAFT: "Draft (in ACE)",
@@ -167,12 +171,78 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
       )}
 
       {!editable && (
-        <div className="space-y-1 rounded-lg border border-line bg-white p-4 text-sm">
+        <div className="space-y-2 rounded-lg border border-line bg-white p-4 text-sm">
           <p className="text-xs font-bold uppercase text-muted">ERPNext Pipeline Status</p>
           <StatusRow label="Quotation" value={quotation.erpnextQuotationId} />
-          <StatusRow label="Sales Order" value={quotation.erpnextSalesOrderId} pending="Awaiting negotiation & submission in ERPNext" />
-          <StatusRow label="Delivery Note" value={quotation.erpnextDeliveryNoteId} pending="Awaiting manual Delivery Note in ERPNext" />
-          <StatusRow label="Sales Invoice (draft)" value={quotation.erpnextInvoiceId} pending="Awaiting Sales Order status “To Bill”" />
+          <div className="flex items-center justify-between">
+            <StatusRow label="Sales Order" value={quotation.erpnextSalesOrderId} pending="Awaiting negotiation & submission in ERPNext" />
+            {!quotation.erpnextSalesOrderId && (
+              <button
+                onClick={async () => {
+                  setBusy(true);
+                  try {
+                    await createSalesOrderFromQuotation(quotation.id);
+                    load();
+                    setResultModal({ title: "Sales Order created", message: "Submitted in ERPNext.", success: true });
+                  } catch (err) {
+                    setResultModal({ title: "Could not create Sales Order", message: extractErrorMessage(err), success: false });
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+                disabled={busy}
+                className="ml-3 shrink-0 rounded-md bg-orange px-3 py-1 text-xs font-bold text-navy disabled:opacity-50"
+              >
+                Create Sales Order
+              </button>
+            )}
+          </div>
+          <div className="flex items-center justify-between">
+            <StatusRow label="Delivery Note" value={quotation.erpnextDeliveryNoteId} pending="Awaiting manual Delivery Note in ERPNext" />
+            {quotation.erpnextSalesOrderId && !quotation.erpnextDeliveryNoteId && (
+              <button
+                onClick={async () => {
+                  setBusy(true);
+                  try {
+                    await checkDeliveryNoteForQuotation(quotation.id);
+                    load();
+                    setResultModal({ title: "Delivery Note found", message: "Fetched from ERPNext.", success: true });
+                  } catch (err) {
+                    setResultModal({ title: "Could not check Delivery Note", message: extractErrorMessage(err), success: false });
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+                disabled={busy}
+                className="ml-3 shrink-0 rounded-md bg-orange px-3 py-1 text-xs font-bold text-navy disabled:opacity-50"
+              >
+                Check Delivery Note
+              </button>
+            )}
+          </div>
+          <div className="flex items-center justify-between">
+            <StatusRow label="Sales Invoice (draft)" value={quotation.erpnextInvoiceId} pending="Awaiting Sales Order status “To Bill”" />
+            {quotation.erpnextSalesOrderId && !quotation.erpnextInvoiceId && (
+              <button
+                onClick={async () => {
+                  setBusy(true);
+                  try {
+                    await createInvoiceFromQuotation(quotation.id);
+                    load();
+                    setResultModal({ title: "Sales Invoice created", message: "Draft created in ERPNext.", success: true });
+                  } catch (err) {
+                    setResultModal({ title: "Could not create Invoice", message: extractErrorMessage(err), success: false });
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+                disabled={busy}
+                className="ml-3 shrink-0 rounded-md bg-orange px-3 py-1 text-xs font-bold text-navy disabled:opacity-50"
+              >
+                Create Invoice
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -275,6 +345,8 @@ function ItemsSection({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editQty, setEditQty] = useState("");
   const [editUnitPrice, setEditUnitPrice] = useState("");
+  const [priceLists, setPriceLists] = useState<PriceList[]>([]);
+  const [linePriceListName, setLinePriceListName] = useState("");
 
   function startEdit(it: QuotationItem) {
     setEditingId(it.id);
@@ -283,15 +355,31 @@ function ItemsSection({
   }
 
   useEffect(() => {
+    listPriceLists()
+      .then((all) => {
+        const active = all.filter((p) => p.isActive);
+        setPriceLists(active);
+        setLinePriceListName(active.find((p) => p.isDefault)?.name ?? active[0]?.name ?? "");
+      })
+      .catch(() => setPriceLists([]));
+  }, []);
+
+  // Per-line price list (client confirmed 2026-07-25 a single quotation can
+  // genuinely mix rates from different price lists across its lines) — the
+  // rate lookup and the search itself are both scoped to whichever price
+  // list is currently picked for this line, re-querying when it changes.
+  useEffect(() => {
     if (query.trim().length < 2) {
       setResults([]);
       return;
     }
     const handle = setTimeout(() => {
-      listItems(query.trim()).then(setResults).catch(() => setResults([]));
+      listItems(query.trim(), linePriceListName || undefined)
+        .then(setResults)
+        .catch(() => setResults([]));
     }, 250);
     return () => clearTimeout(handle);
-  }, [query]);
+  }, [query, linePriceListName]);
 
   return (
     <div>
@@ -389,6 +477,22 @@ function ItemsSection({
 
       {showAdd && (
         <div className="mt-2 space-y-2 rounded-md border border-line bg-navy-soft p-3">
+          {priceLists.length > 0 && (
+            <div>
+              <label className="text-xs text-muted">Price List</label>
+              <select
+                value={linePriceListName}
+                onChange={(e) => setLinePriceListName(e.target.value)}
+                className="h-9 w-full rounded-md border border-line px-2 text-sm text-navy"
+              >
+                {priceLists.map((p) => (
+                  <option key={p.id} value={p.name}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           {!selected ? (
             <div className="relative">
               <input
@@ -404,10 +508,14 @@ function ItemsSection({
                     <button
                       key={it.itemCode}
                       type="button"
-                      onClick={() => setSelected(it)}
+                      onClick={() => {
+                        setSelected(it);
+                        if (it.rate != null) setUnitPrice(String(it.rate));
+                      }}
                       className="block w-full px-3 py-2 text-left text-sm text-navy hover:bg-navy-tint"
                     >
                       {it.itemCode} — {it.itemName}
+                      {it.rate != null && <span className="ml-2 text-xs text-muted">₹{it.rate}</span>}
                     </button>
                   ))}
                 </div>
@@ -436,18 +544,26 @@ function ItemsSection({
                         qty: Number(qty),
                         uom: selected.uom,
                         unitPrice: Number(unitPrice),
+                        priceListName: linePriceListName || undefined,
                       }),
                     );
                     setShowAdd(false);
                     setSelected(null);
                     setQuery("");
                     setQty("1");
+                    setUnitPrice("0");
                   }}
                   className="rounded-md bg-orange px-3 py-1.5 text-xs font-bold text-navy"
                 >
                   Add
                 </button>
-                <button onClick={() => setSelected(null)} className="text-xs font-bold text-muted">
+                <button
+                  onClick={() => {
+                    setSelected(null);
+                    setUnitPrice("0");
+                  }}
+                  className="text-xs font-bold text-muted"
+                >
                   Change item
                 </button>
               </div>

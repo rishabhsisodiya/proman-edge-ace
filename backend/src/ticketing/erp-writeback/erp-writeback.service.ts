@@ -53,6 +53,10 @@ export class ErpWritebackService {
     return process.env.ACE_SELLING_PRICE_LIST ?? 'ACE Pricing';
   }
 
+  private salesPerson(): string {
+    return process.env.ACE_SALES_PERSON ?? 'ACE Service';
+  }
+
   private remarks(ticketId: string): string {
     return `ACE Ticket: ${ticketId}`;
   }
@@ -100,6 +104,15 @@ export class ErpWritebackService {
    * negotiated version in ERPNext is authoritative at this point).
    * delivery_date is mandatory in ERPNext; the mapper returns it as null,
    * so it must be set here on the header and every item line.
+   *
+   * sales_team is ALSO mandatory on the PISPL Sales Order and the mapper
+   * doesn't set it — confirmed the exact cause of the "Data missing in
+   * table: Sales Team" blocker. Defaulted to ACE_SALES_PERSON @ 100% so the
+   * submit never fails with MandatoryError: sales_team (per Shivam's
+   * ace_erpnext_writeback_final2.py, verified live on 187).
+   *
+   * api_call=1 is passed on the submit call so the PISPL
+   * prevent_so_creation_for_acepl hook allows the one restricted customer.
    */
   async salesOrderFromQuotation(erpnextQuotationName: string, deliveryDate?: string): Promise<string> {
     const dd = deliveryDate ?? new Date().toISOString().slice(0, 10);
@@ -108,8 +121,12 @@ export class ErpWritebackService {
     });
     so.delivery_date = dd;
     for (const it of so.items ?? []) it.delivery_date = dd;
+    so.sales_team = [{ sales_person: this.salesPerson(), allocated_percentage: 100 }];
     this.logger.log(`Submitting Sales Order from Quotation ${erpnextQuotationName}`);
-    const result = await this.frappe.post<{ name: string }>('frappe.client.submit', { doc: JSON.stringify(so) });
+    const result = await this.frappe.post<{ name: string }>('frappe.client.submit', {
+      doc: JSON.stringify(so),
+      api_call: 1,
+    });
     return result.name;
   }
 
@@ -117,11 +134,15 @@ export class ErpWritebackService {
    * Sales Order status = "To Bill" (fully delivered via the manual Delivery
    * Note, not yet billed) -> a DRAFT Sales Invoice via make_sales_invoice.
    * Finance reviews and submits it in ERPNext — ACE never submits this doc.
+   * `hypothecation` is a mandatory Small Text field on the PISPL Sales
+   * Invoice that the mapper doesn't fill (per Shivam's gotcha #5) — defaults
+   * to "N/A" pending Finance confirming the real per-customer clause.
    */
   async draftSalesInvoiceFromSalesOrder(erpnextSalesOrderName: string): Promise<string> {
     const si = await this.frappe.post<Record<string, any>>('erpnext.selling.doctype.sales_order.sales_order.make_sales_invoice', {
       source_name: erpnextSalesOrderName,
     });
+    si.hypothecation = process.env.ACE_INVOICE_HYPOTHECATION ?? 'N/A';
     this.logger.log(`Creating draft Sales Invoice from Sales Order ${erpnextSalesOrderName}`);
     const result = await this.frappe.post<{ name: string }>('frappe.client.insert', { doc: JSON.stringify(si) });
     return result.name;
@@ -158,20 +179,29 @@ export class ErpWritebackService {
     return result.name;
   }
 
-  /** Read one document's status/docstatus/per_billed — used by the polling fallback. */
+  /** Read one document's status/docstatus/per_billed — used by the manual status-check buttons. */
   async getDocStatus(doctype: string, name: string): Promise<ErpDocStatus> {
-    const base = (process.env.FRAPPE_BASE_URL ?? '').replace(/\/$/, '');
-    const key = process.env.FRAPPE_API_KEY ?? '';
-    const secret = process.env.FRAPPE_API_SECRET ?? '';
-    const fields = encodeURIComponent(JSON.stringify(['status', 'docstatus', 'per_billed']));
-    const url = `${base}/api/resource/${encodeURIComponent(doctype)}/${encodeURIComponent(name)}?fields=${fields}`;
-    const res = await fetch(url, { headers: { Authorization: `token ${key}:${secret}` } });
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      throw new Error(`getDocStatus ${doctype}/${name} -> HTTP ${res.status}${body ? ` — ${body.slice(0, 300)}` : ''}`);
-    }
-    const json = (await res.json()) as { data: ErpDocStatus };
-    return json.data;
+    return this.frappe.getResource<ErpDocStatus>(`${encodeURIComponent(doctype)}/${encodeURIComponent(name)}`, {
+      fields: JSON.stringify(['status', 'docstatus', 'per_billed']),
+    });
+  }
+
+  /**
+   * Delivery Note is raised MANUALLY in ERPNext against the Sales Order
+   * (never created by ACE) — this looks up whether one exists yet, via the
+   * link at the item level (Delivery Note Item.against_sales_order), same
+   * as how the Quotation->SO link works (§5 of Shivam's integration guide).
+   * Manual "Check Delivery Note" button (2026-07-25) — this step was never
+   * poll-covered even before (webhook-only), so this is a new capability,
+   * not a cron replacement.
+   */
+  async findDeliveryNoteForSalesOrder(erpnextSalesOrderName: string): Promise<string | null> {
+    const rows = await this.frappe.getResource<{ parent: string }[]>('Delivery Note Item', {
+      filters: JSON.stringify([['against_sales_order', '=', erpnextSalesOrderName]]),
+      fields: JSON.stringify(['parent']),
+      limit_page_length: '1',
+    });
+    return rows[0]?.parent ?? null;
   }
 
   /**

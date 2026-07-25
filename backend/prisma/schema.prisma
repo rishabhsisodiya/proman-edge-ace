@@ -328,6 +328,19 @@ model BillingRate {
   updatedAt  DateTime @updatedAt
 }
 
+/// Admin-managed list of ERPNext Selling Price List names quotations can be
+/// created against (e.g. "Test price", "ACE Pricing") — client has multiple,
+/// engineer/CS picks one per quotation instead of one hardcoded env default.
+/// Only names are stored here; the actual rates/rows stay ERPNext-owned.
+model SellingPriceList {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  isDefault Boolean  @default(false)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 /// Genuine technical sync failures (DB error, constraint violation, timeout)
 /// for a specific ERPNext customer record — distinct from needsReview, which
 /// is a data-quality issue, not a failure. Capped retry (5 nightly attempts)
@@ -395,6 +408,7 @@ model Item {
   minimumStockLevel             Float?
   lastSyncedAt                  DateTime?
   warehouseStock                ItemWarehouseStock[]
+  priceListRates                ItemPriceListRate[]
 }
 
 /// Per-warehouse stock breakdown (§5.1.3 Q4) — lets an engineer/ASM pick
@@ -410,6 +424,21 @@ model ItemWarehouseStock {
   lastSyncedAt  DateTime @default(now())
 
   @@unique([itemCode, warehouse])
+}
+
+/// Per-item, per-price-list selling rate (§ Ashwath feedback 2026-07-25 —
+/// quotation item rates auto-fill from ERPNext's Item Price, not the empty
+/// Item.standard_rate field) — synced nightly, scoped to the active
+/// SellingPriceList entries Admin has added in ACE.
+model ItemPriceListRate {
+  id            String   @id @default(uuid())
+  itemCode      String
+  item          Item     @relation(fields: [itemCode], references: [itemCode])
+  priceListName String
+  rate          Decimal
+  lastSyncedAt  DateTime @default(now())
+
+  @@unique([itemCode, priceListName])
 }
 
 model Equipment {
@@ -735,6 +764,11 @@ model Quotation {
   grandTotal            Decimal?
   notesToCustomer       String?
   termsAndConditions    String?
+  /// Name of the SellingPriceList picked at creation (e.g. "Test price") —
+  /// stored as a plain string, not a FK: if Admin later deactivates/deletes
+  /// that price list, existing quotations keep referencing it unaffected,
+  /// same as how ERPNext's own selling_price_list field behaves.
+  sellingPriceList      String?
   status                QuotationStatus @default(DRAFT)
   sentAt                DateTime?
   customerPoNumber      String?
@@ -768,6 +802,10 @@ model QuotationItem {
   unitPrice   Decimal
   taxAmount   Decimal   @default(0)
   lineTotal   Decimal
+  /// Price list this line's rate was pulled from — per-line, not per-quotation
+  /// (client confirmed 2026-07-25 a single quotation can genuinely mix rates
+  /// from different price lists across its lines).
+  priceListName String?
 }
 
 enum DeliveryStatus {
