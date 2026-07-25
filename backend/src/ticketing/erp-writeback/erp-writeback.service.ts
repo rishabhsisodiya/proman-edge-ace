@@ -41,44 +41,12 @@ export class ErpWritebackService {
     return process.env.ACE_SELLING_PRICE_LIST ?? 'ACE Pricing';
   }
 
-  // Mitigation for a live "TypeError: cannot unpack non-iterable NoneType
-  // object" crash inside frappe.client.insert on Quotation — a known Frappe
-  // failure mode when the price list's currency needs converting against the
-  // Company's currency and no Currency Exchange record exists for that pair.
-  // We already always pass an explicit rate per line, so we don't need
-  // Frappe to derive/convert a currency at all — pinning it here removes
-  // that lookup from the equation. Real root cause is still an ERPNext-side
-  // Price List/Currency Exchange config gap — see shivam.md.
-  private currency(): string {
-    return process.env.ACE_CURRENCY ?? 'INR';
-  }
-
   private remarks(ticketId: string): string {
     return `ACE Ticket: ${ticketId}`;
   }
 
-  // The desk UI auto-fills item_name/conversion_factor/stock_uom via a
-  // get_item_details call before the doc ever reaches the server —
-  // frappe.client.insert skips that client-side step entirely, so a raw
-  // minimal row (just item_code/qty/uom/rate) can leave server-side
-  // validation assuming a field exists that's actually still None. Filling
-  // these in explicitly is the fix for that gap (confirmed: the same
-  // Company/Customer/Price List config saves fine from the desk UI, so the
-  // crash is specific to what our API payload was missing, not ERPNext
-  // config).
-  private line(
-    item: { itemCode: string; itemName?: string; qty: number; rate?: number; uom?: string },
-    deliveryDate?: string,
-  ) {
-    const uom = item.uom ?? 'Nos';
-    const line: Record<string, unknown> = {
-      item_code: item.itemCode,
-      item_name: item.itemName ?? item.itemCode,
-      qty: item.qty,
-      uom,
-      stock_uom: uom,
-      conversion_factor: 1,
-    };
+  private line(item: { itemCode: string; qty: number; rate?: number; uom?: string }, deliveryDate?: string) {
+    const line: Record<string, unknown> = { item_code: item.itemCode, qty: item.qty, uom: item.uom ?? 'Nos' };
     if (item.rate != null) line.rate = item.rate;
     if (deliveryDate) line.delivery_date = deliveryDate;
     return line;
@@ -93,7 +61,7 @@ export class ErpWritebackService {
   async quotationDraft(
     ticketId: string,
     erpnextCustomerId: string,
-    items: { itemCode: string; itemName?: string; qty: number; rate?: number; uom?: string }[],
+    items: { itemCode: string; qty: number; rate?: number; uom?: string }[],
     validTill?: string,
     priceList?: string,
   ): Promise<string> {
@@ -102,11 +70,7 @@ export class ErpWritebackService {
       quotation_to: 'Customer',
       party_name: erpnextCustomerId,
       company: this.company(),
-      currency: this.currency(),
-      conversion_rate: 1,
       selling_price_list: priceList ?? this.sellingPriceList(),
-      price_list_currency: this.currency(),
-      plc_conversion_rate: 1,
       custom_ace_ticket: ticketId,
       remarks: this.remarks(ticketId),
       items: items.map((i) => this.line(i)),
@@ -162,7 +126,7 @@ export class ErpWritebackService {
   async salesOrderDirect(
     ticketId: string,
     erpnextCustomerId: string,
-    items: { itemCode: string; itemName?: string; qty: number; rate: number; uom?: string }[],
+    items: { itemCode: string; qty: number; rate: number; uom?: string }[],
     poNo: string,
     poDate: string,
     deliveryDate: string,
@@ -171,12 +135,6 @@ export class ErpWritebackService {
       doctype: 'Sales Order',
       customer: erpnextCustomerId,
       company: this.company(),
-      // Same currency-unpack crash risk as quotationDraft() — this doc is
-      // hand-built by us too (not via a Frappe mapper that would otherwise
-      // propagate already-resolved currency fields from an upstream doc),
-      // so it needs the same explicit pinning.
-      currency: this.currency(),
-      conversion_rate: 1,
       custom_ace_ticket: ticketId,
       po_no: poNo,
       po_date: poDate,

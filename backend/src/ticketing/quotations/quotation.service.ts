@@ -192,13 +192,7 @@ export class QuotationService {
     const erpnextQuotationId = await this.erpWriteback.quotationDraft(
       quotation.ticketId,
       quotation.customer.erpnextCustomerId,
-      quotation.items.map((it) => ({
-        itemCode: it.itemCode,
-        itemName: it.itemName,
-        qty: Number(it.qty),
-        rate: Number(it.unitPrice),
-        uom: it.uom,
-      })),
+      quotation.items.map((it) => ({ itemCode: it.itemCode, qty: Number(it.qty), rate: Number(it.unitPrice), uom: it.uom })),
       quotation.validUntil.toISOString().slice(0, 10),
     );
 
@@ -334,7 +328,7 @@ export class QuotationService {
       const erpnextSalesOrderId = await this.erpWriteback.salesOrderDirect(
         ticketId,
         ticket.customer.erpnextCustomerId,
-        parts.map((p) => ({ itemCode: p.itemCode, itemName: p.itemName, qty: Number(p.qty), rate: 0, uom: p.uom })),
+        parts.map((p) => ({ itemCode: p.itemCode, qty: Number(p.qty), rate: 0, uom: p.uom })),
         `WARRANTY-AMC-${ticket.ticketNo}`,
         today,
         deliveryDate.toISOString().slice(0, 10),

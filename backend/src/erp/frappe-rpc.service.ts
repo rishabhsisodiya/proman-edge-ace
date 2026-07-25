@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadGatewayException, Injectable, Logger } from '@nestjs/common';
 import { FrappeEnvelope } from './frappe-envelope.types';
 
 /**
@@ -30,7 +30,12 @@ export class FrappeRpcService {
   private assertOk<T>(msg: T, method: string): T {
     if (msg && typeof msg === 'object' && (msg as Record<string, unknown>).ok === false) {
       const err = (msg as Record<string, unknown>).error as { code?: string; message?: string } | undefined;
-      throw new Error(`Frappe ${method} → ${err?.code ?? 'ERROR'}: ${err?.message ?? 'Unknown error'}`);
+      // BadGatewayException (not a plain Error) — Nest's default exception
+      // filter replaces any non-HttpException with a generic "Internal
+      // server error" in the actual API response, even though we already
+      // extracted the real ERPNext message here. Throwing a proper
+      // HttpException subclass lets that real message reach the client.
+      throw new BadGatewayException(`Frappe ${method} → ${err?.code ?? 'ERROR'}: ${err?.message ?? 'Unknown error'}`);
     }
     return msg;
   }
@@ -52,7 +57,7 @@ export class FrappeRpcService {
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       this.logger.error(`GET ${method} failed: HTTP ${res.status}${body ? ` — ${body.slice(0, 500)}` : ''}`);
-      throw new Error(`Frappe ${method} → HTTP ${res.status}`);
+      throw new BadGatewayException(`Frappe ${method} → HTTP ${res.status}${body ? `: ${body.slice(0, 300)}` : ''}`);
     }
 
     const json = (await res.json()) as { message: T };
@@ -84,9 +89,13 @@ export class FrappeRpcService {
 
     if (!res.ok) {
       const errJson = json as Record<string, unknown>;
+      // Priority: _server_messages (Frappe's own user-facing message, best)
+      // > exc (raw Python traceback, take the last non-empty line — most
+      // specific when there's no server message) > exception (often just a
+      // bare class name like "TypeError", least useful — fallback only).
       let msg = `HTTP ${res.status}`;
-      if (errJson.exc) msg = String(errJson.exc).split('\n').filter(Boolean).pop() ?? msg;
       if (errJson.exception) msg = String(errJson.exception);
+      if (errJson.exc) msg = String(errJson.exc).split('\n').filter(Boolean).pop() ?? msg;
       if (errJson._server_messages) {
         try {
           const parsed = JSON.parse(String(errJson._server_messages));
@@ -98,7 +107,7 @@ export class FrappeRpcService {
       }
       const cleanMsg = msg.replace(/<[^>]+>/g, '').trim();
       this.logger.error(`POST ${method} failed: ${cleanMsg}`);
-      throw new Error(cleanMsg);
+      throw new BadGatewayException(`ERPNext ${method} failed: ${cleanMsg}`);
     }
 
     this.logger.log(`POST ${method.split('.').pop()} — ${ms}ms`);
