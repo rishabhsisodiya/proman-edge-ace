@@ -35,6 +35,15 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [resultModal, setResultModal] = useState<{ title: string; message: string; success: boolean } | null>(null);
+
+  function extractErrorMessage(err: unknown): string {
+    if (err instanceof ApiError) {
+      const body = err.body as { message?: string | string[] } | null;
+      return Array.isArray(body?.message) ? body!.message.join(", ") : body?.message ?? "Something went wrong.";
+    }
+    return "Could not reach the server.";
+  }
 
   function load() {
     getQuotation(id)
@@ -116,12 +125,43 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
 
       {editable && (
         <button
-          onClick={() => run(() => pushQuotationToErpNext(quotation.id), "Draft Quotation created in ERPNext.")}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await pushQuotationToErpNext(quotation.id);
+              load();
+              setResultModal({
+                title: "Pushed to ERPNext",
+                message: "Draft Quotation created in ERPNext.",
+                success: true,
+              });
+            } catch (err) {
+              setResultModal({ title: "Could not push to ERPNext", message: extractErrorMessage(err), success: false });
+            } finally {
+              setBusy(false);
+            }
+          }}
           disabled={busy || quotation.items.length === 0}
           className="rounded-md bg-orange px-4 py-2 text-sm font-bold text-navy disabled:opacity-50"
         >
           {busy ? "Pushing…" : "Push to ERPNext"}
         </button>
+      )}
+
+      {resultModal && (
+        <Modal title={resultModal.title} onClose={() => setResultModal(null)}>
+          <p className={`text-sm ${resultModal.success ? "text-brand-green" : "text-brand-red"}`}>
+            {resultModal.message}
+          </p>
+          <div className="mt-3">
+            <button
+              onClick={() => setResultModal(null)}
+              className="rounded-md bg-orange px-4 py-2 text-sm font-bold text-navy"
+            >
+              OK
+            </button>
+          </div>
+        </Modal>
       )}
 
       {!editable && (
@@ -133,6 +173,22 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
           <StatusRow label="Sales Invoice (draft)" value={quotation.erpnextInvoiceId} pending="Awaiting Sales Order status “To Bill”" />
         </div>
       )}
+    </div>
+  );
+}
+
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-bold uppercase text-navy">{title}</h3>
+          <button type="button" onClick={onClose} className="text-lg leading-none text-muted hover:text-navy">
+            ×
+          </button>
+        </div>
+        {children}
+      </div>
     </div>
   );
 }
