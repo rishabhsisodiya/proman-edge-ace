@@ -151,6 +151,12 @@ export class ErpWritebackService {
       doctype: 'Sales Order',
       customer: erpnextCustomerId,
       company: this.company(),
+      // Same currency-unpack crash risk as quotationDraft() — this doc is
+      // hand-built by us too (not via a Frappe mapper that would otherwise
+      // propagate already-resolved currency fields from an upstream doc),
+      // so it needs the same explicit pinning.
+      currency: this.currency(),
+      conversion_rate: 1,
       custom_ace_ticket: ticketId,
       po_no: poNo,
       po_date: poDate,
