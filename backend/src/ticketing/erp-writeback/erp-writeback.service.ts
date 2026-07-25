@@ -41,6 +41,18 @@ export class ErpWritebackService {
     return process.env.ACE_SELLING_PRICE_LIST ?? 'ACE Pricing';
   }
 
+  // Mitigation for a live "TypeError: cannot unpack non-iterable NoneType
+  // object" crash inside frappe.client.insert on Quotation — a known Frappe
+  // failure mode when the price list's currency needs converting against the
+  // Company's currency and no Currency Exchange record exists for that pair.
+  // We already always pass an explicit rate per line, so we don't need
+  // Frappe to derive/convert a currency at all — pinning it here removes
+  // that lookup from the equation. Real root cause is still an ERPNext-side
+  // Price List/Currency Exchange config gap — see shivam.md.
+  private currency(): string {
+    return process.env.ACE_CURRENCY ?? 'INR';
+  }
+
   private remarks(ticketId: string): string {
     return `ACE Ticket: ${ticketId}`;
   }
@@ -70,7 +82,11 @@ export class ErpWritebackService {
       quotation_to: 'Customer',
       party_name: erpnextCustomerId,
       company: this.company(),
+      currency: this.currency(),
+      conversion_rate: 1,
       selling_price_list: priceList ?? this.sellingPriceList(),
+      price_list_currency: this.currency(),
+      plc_conversion_rate: 1,
       custom_ace_ticket: ticketId,
       remarks: this.remarks(ticketId),
       items: items.map((i) => this.line(i)),
