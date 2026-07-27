@@ -17,6 +17,8 @@ import {
 } from "@/lib/ticketing/quotation";
 import { AuthUser, getCurrentUser } from "@/lib/auth";
 import {
+  CUSTOMER_CATEGORY_LABEL,
+  CustomerCategory,
   PENDING_REASON_LABEL,
   PRIORITY_STYLE,
   SELECTABLE_SERVICE_TYPES,
@@ -47,8 +49,11 @@ import {
   startWorking,
   TicketAuditEntry,
   ticketTimeline,
+  updateCustomerCategory,
   updateServiceType,
 } from "@/lib/ticketing/actions";
+
+const CUSTOMER_CATEGORIES: CustomerCategory[] = ["WARRANTY", "NON_WARRANTY", "AMC"];
 
 // Ticket Detail (§10.1 W-08) — one shared screen for all roles; the action
 // buttons shown below the status depend on (a) current status and (b) the
@@ -302,6 +307,33 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         <div className="min-w-0">
           <p className="text-xs font-bold uppercase text-muted">Equipment</p>
           <p className="break-words text-navy">{ticket.equipment?.itemName ?? "—"}</p>
+        </div>
+        <div className="min-w-0">
+          <p className="text-xs font-bold uppercase text-muted">Customer Category</p>
+          {role === "CALL_CENTER" || role === "ASM" || role === "MANAGER" || role === "ADMIN" ? (
+            <select
+              value={ticket.customerCategory ?? ""}
+              disabled={busy}
+              onChange={(e) =>
+                runAction(
+                  () => updateCustomerCategory(ticket.id, e.target.value as CustomerCategory),
+                  "Customer category updated.",
+                )
+              }
+              className="h-8 w-full max-w-[180px] rounded-md border border-line px-2 text-sm text-navy disabled:opacity-50"
+            >
+              <option value="">Not set</option>
+              {CUSTOMER_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {CUSTOMER_CATEGORY_LABEL[c]}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <p className="break-words text-navy">
+              {ticket.customerCategory ? CUSTOMER_CATEGORY_LABEL[ticket.customerCategory] : "—"}
+            </p>
+          )}
         </div>
         {ticket.status === "PENDING" && (
           <div className="min-w-0 sm:col-span-2">

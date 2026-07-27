@@ -6,6 +6,8 @@ import { ApiError } from "@/lib/api";
 import { createTicket } from "@/lib/ticketing/actions";
 import { CustomerListItem, EquipmentListItem, equipmentForCustomer, listCustomers } from "@/lib/ticketing/masters";
 import {
+  CUSTOMER_CATEGORY_LABEL,
+  CustomerCategory,
   MANUAL_SOURCES,
   Priority,
   SELECTABLE_SERVICE_TYPES,
@@ -14,6 +16,8 @@ import {
   ServiceType,
   Source,
 } from "@/lib/ticketing/types";
+
+const CUSTOMER_CATEGORIES: CustomerCategory[] = ["WARRANTY", "NON_WARRANTY", "AMC"];
 
 const PRIORITIES: Priority[] = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 
@@ -24,6 +28,7 @@ export default function NewTicketPage() {
   const router = useRouter();
 
   const [source, setSource] = useState<string>("CUSTOMER_CALL");
+  const [customerCategory, setCustomerCategory] = useState<CustomerCategory | "">("");
   const [serviceType, setServiceType] = useState<ServiceType | "">("");
   const [priority, setPriority] = useState<Priority>("MEDIUM");
 
@@ -94,6 +99,7 @@ export default function NewTicketPage() {
     try {
       const ticket = await createTicket({
         source,
+        customerCategory: customerCategory || undefined,
         serviceType: serviceType || undefined,
         priority,
         customerId: selectedCustomer.id,
@@ -132,6 +138,23 @@ export default function NewTicketPage() {
               {MANUAL_SOURCES.map((s) => (
                 <option key={s} value={s}>
                   {SOURCE_LABEL[s]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-bold text-navy">
+              Customer Category <span className="font-normal text-muted">(optional)</span>
+            </label>
+            <select
+              value={customerCategory}
+              onChange={(e) => setCustomerCategory(e.target.value as CustomerCategory | "")}
+              className="h-11 w-full rounded-md border border-line px-3 text-sm text-navy"
+            >
+              <option value="">Not set</option>
+              {CUSTOMER_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {CUSTOMER_CATEGORY_LABEL[c]}
                 </option>
               ))}
             </select>

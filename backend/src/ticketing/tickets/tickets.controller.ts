@@ -11,6 +11,7 @@ import { MarkPendingDto } from './dto/mark-pending.dto';
 import { RegularizeTicketDto } from './dto/regularize-ticket.dto';
 import { CommentDto } from './dto/comment.dto';
 import { UpdateServiceTypeDto } from './dto/update-service-type.dto';
+import { UpdateCustomerCategoryDto } from './dto/update-customer-category.dto';
 import { ResolveDuplicateDto } from './dto/resolve-duplicate.dto';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -66,6 +67,14 @@ export class TicketsController {
   @Post(':id/service-type')
   updateServiceType(@Param('id') id: string, @Body() dto: UpdateServiceTypeDto, @Req() req: any) {
     return this.tickets.updateServiceType(id, dto.serviceType, { userId: req.user.userId, role: req.user.role });
+  }
+
+  // Client request (2026-07-25): set at creation by Call Center, editable
+  // anytime after by ASM/Manager — same edit-permission shape as Service Type.
+  @Roles('CALL_CENTER', 'ASM', 'MANAGER', 'ADMIN')
+  @Post(':id/customer-category')
+  updateCustomerCategory(@Param('id') id: string, @Body() dto: UpdateCustomerCategoryDto, @Req() req: any) {
+    return this.tickets.updateCustomerCategory(id, dto.customerCategory, { userId: req.user.userId, role: req.user.role });
   }
 
   @Roles('ENGINEER')

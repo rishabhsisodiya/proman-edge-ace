@@ -57,6 +57,16 @@ export const SOURCE_LABEL: Record<Source, string> = {
 // Manual-creation sources only (§7.1 — the rest are auto/system sources).
 export const MANUAL_SOURCES: Source[] = ["CUSTOMER_CALL", "CUSTOMER_WHATSAPP", "CUSTOMER_PORTAL", "CUSTOMER_EMAIL", "INTERNAL"];
 
+// Manual "Customer Category" dropdown (Ashwath feedback 2026-07-25) — a
+// separate, manually-set field alongside the existing auto-calculated
+// warranty/AMC chargeability check, not an override of it.
+export type CustomerCategory = "WARRANTY" | "NON_WARRANTY" | "AMC";
+export const CUSTOMER_CATEGORY_LABEL: Record<CustomerCategory, string> = {
+  WARRANTY: "Warranty",
+  NON_WARRANTY: "Non-Warranty",
+  AMC: "AMC",
+};
+
 // §2.2 — 5 of 7 FSD service types exist in the schema today (AMC and Spares
 // Supply are enum-only, not yet exercised by ticket creation validation).
 export type ServiceType =
@@ -120,6 +130,7 @@ export interface Ticket {
   priority: Priority;
   source: Source;
   serviceType: string;
+  customerCategory?: CustomerCategory | null;
   warrantyEligible: boolean;
   slaResolutionDue: string | null;
   slaResolutionMet: boolean;

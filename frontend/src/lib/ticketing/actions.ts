@@ -1,5 +1,5 @@
 import { apiFetch, ApiError } from "@/lib/api";
-import { PendingReason, ServiceType, Ticket, TicketStatus } from "./types";
+import { CustomerCategory, PendingReason, ServiceType, Ticket, TicketStatus } from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4100/api/v1";
 
@@ -9,6 +9,7 @@ function post<T>(path: string, body?: unknown): Promise<T> {
 
 export interface CreateTicketInput {
   source: string;
+  customerCategory?: string;
   serviceType?: string;
   priority?: string;
   description: string;
@@ -33,6 +34,8 @@ export const regularizeTicket = (id: string, targetStatus: TicketStatus, reason:
   post<Ticket>(`/tickets/${id}/regularize`, { targetStatus, reason });
 export const updateServiceType = (id: string, serviceType: ServiceType) =>
   post<Ticket>(`/tickets/${id}/service-type`, { serviceType });
+export const updateCustomerCategory = (id: string, customerCategory: CustomerCategory) =>
+  post<Ticket>(`/tickets/${id}/customer-category`, { customerCategory });
 export const resolveDuplicate = (id: string, action: "MERGE" | "DISMISS", reason?: string) =>
   post<Ticket>(`/tickets/${id}/duplicate/resolve`, { action, reason });
 

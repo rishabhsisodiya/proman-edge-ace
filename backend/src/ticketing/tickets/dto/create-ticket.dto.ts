@@ -1,9 +1,15 @@
 import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
-import { Source, ServiceType, Priority } from '@prisma/client';
+import { Source, ServiceType, Priority, CustomerCategory } from '@prisma/client';
 
 export class CreateTicketDto {
   @IsEnum(Source)
   source!: Source;
+
+  // Manual field, separate from the auto-calculated warranty/AMC chargeability
+  // check — see CustomerCategory enum doc in schema.prisma.
+  @IsOptional()
+  @IsEnum(CustomerCategory)
+  customerCategory?: CustomerCategory;
 
   @IsOptional()
   @IsEnum(ServiceType)

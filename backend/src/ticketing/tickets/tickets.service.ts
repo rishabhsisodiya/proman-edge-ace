@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, Role, ServiceType, Priority, Source, PendingReason, TicketStatus } from '@prisma/client';
+import { Prisma, Role, ServiceType, Priority, Source, PendingReason, TicketStatus, CustomerCategory } from '@prisma/client';
 import { parse } from 'csv-parse/sync';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
@@ -165,6 +165,7 @@ export class TicketsService {
         data: {
           ticketNo,
           source: dto.source,
+          customerCategory: dto.customerCategory,
           serviceType,
           priority,
           subject,
@@ -524,6 +525,25 @@ export class TicketsService {
         fieldName: 'serviceType',
         oldValue: serviceTypeLabel(ticket.serviceType),
         newValue: serviceTypeLabel(serviceType),
+        changedByUserId: actor.userId,
+        changeSource: 'WEB_UI',
+      },
+    });
+
+    return updated;
+  }
+
+  /** Manual "Customer Category" field — separate from the auto-calculated warranty/AMC chargeability check. */
+  async updateCustomerCategory(id: string, customerCategory: CustomerCategory, actor: RequestUser) {
+    const ticket = await this.prisma.ticket.findUniqueOrThrow({ where: { id } });
+    const updated = await this.prisma.ticket.update({ where: { id }, data: { customerCategory } });
+
+    await this.prisma.ticketAuditLog.create({
+      data: {
+        ticketId: id,
+        fieldName: 'customerCategory',
+        oldValue: ticket.customerCategory,
+        newValue: customerCategory,
         changedByUserId: actor.userId,
         changeSource: 'WEB_UI',
       },

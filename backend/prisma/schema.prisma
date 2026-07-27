@@ -115,6 +115,18 @@ enum ServiceType {
   SPARES_SUPPLY_INSTALLATION
 }
 
+/// Manual "Customer Category" dropdown (Ashwath feedback 2026-07-25) — a
+/// separate, manually-set field alongside the existing auto-calculated
+/// chargeability (Ticket.warrantyEligible / live AMC check). Not an override
+/// of the real billing-determining value — purely a displayed data point,
+/// per client decision to keep the existing auto-calc pill as-is and just
+/// add this as one additional field on the info card.
+enum CustomerCategory {
+  WARRANTY
+  NON_WARRANTY
+  AMC
+}
+
 enum Priority {
   CRITICAL
   HIGH
@@ -485,6 +497,9 @@ model Ticket {
   // (Call Center hasn't diagnosed it yet). Set later by ASM/Engineer/Manager/
   // Admin via updateServiceType() once it's actually known.
   serviceType              ServiceType?
+  /// Manual dropdown, separate from the auto-calculated warranty/AMC check
+  /// (see CustomerCategory enum doc) — settable at creation, editable after.
+  customerCategory         CustomerCategory?
   priority                 Priority
   status                   TicketStatus        @default(OPEN)
   subject                  String

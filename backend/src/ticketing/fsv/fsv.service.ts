@@ -5,6 +5,7 @@ import { RequestUser } from '../tickets/tickets.service';
 import { CreateFsvDto, UpdateFsvDto, AddFsvPartDto, AddFsvPhotoDto } from './dto/fsv.dto';
 
 const MIN_WORK_PERFORMED_LENGTH = 20;
+const MAX_PHOTOS = 5;
 
 /** FSV-YYYY-NNNNNN, sequential per year — same pattern as ticket numbering. */
 async function nextVisitNo(prisma: PrismaService): Promise<string> {
@@ -94,6 +95,23 @@ export class FsvService {
     return this.prisma.fieldServiceVisit.update({
       where: { id },
       data: { customerSignatureUrl: url },
+      include: { parts: true, photos: true, ticket: true },
+    });
+  }
+
+  /**
+   * Scanned Service Report attachment (Ashwath feedback 2026-07-25 — required
+   * before resolving, all service types). `visitReportUrl` already existed on
+   * the schema but was unwired until now.
+   */
+  async setReport(id: string, url: string) {
+    const visit = await this.prisma.fieldServiceVisit.findUniqueOrThrow({ where: { id } });
+    if (visit.status === 'SUBMITTED') {
+      throw new BadRequestException('This Field Service Visit has already been submitted and is immutable');
+    }
+    return this.prisma.fieldServiceVisit.update({
+      where: { id },
+      data: { visitReportUrl: url },
       include: { parts: true, photos: true, ticket: true },
     });
   }
