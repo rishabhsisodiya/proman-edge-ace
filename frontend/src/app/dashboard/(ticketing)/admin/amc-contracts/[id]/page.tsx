@@ -22,7 +22,7 @@ export default function EditAmcContractPage({ params }: { params: Promise<{ id: 
   if (error || !contract) return <p className="p-8 text-sm text-brand-red">{error ?? "Not found."}</p>;
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-10">
+    <div className="mx-auto max-w-6xl px-6 py-10">
       <a
         href="/dashboard/admin/amc-contracts"
         className="mb-4 inline-block text-xs font-medium text-muted hover:text-navy"

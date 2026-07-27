@@ -705,6 +705,8 @@ enum RenewalStatus {
 
 enum VisitStatus {
   SCHEDULED_PENDING
+  /// Nightly AMC cron (2026-07-27) auto-created a real Ticket for this visit.
+  TICKET_RAISED
   COMPLETED
   RESCHEDULED
 }

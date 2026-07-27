@@ -12,6 +12,27 @@ export const PARTS_COVERAGE_LABEL: Record<PartsCoverage, string> = {
 
 export type RenewalStatus = "ACTIVE" | "RENEWAL_DUE" | "FINAL_NOTICE" | "LAPSED" | "RENEWED";
 
+export type VisitStatus = "SCHEDULED_PENDING" | "TICKET_RAISED" | "COMPLETED" | "RESCHEDULED";
+
+export const VISIT_STATUS_LABEL: Record<VisitStatus, string> = {
+  SCHEDULED_PENDING: "Scheduled",
+  TICKET_RAISED: "Ticket Raised",
+  COMPLETED: "Completed",
+  RESCHEDULED: "Rescheduled",
+};
+
+export interface AmcScheduledVisit {
+  id: string;
+  contractId: string;
+  visitSeqNo: number;
+  plannedDate: string;
+  equipmentId: string;
+  notes: string | null;
+  status: VisitStatus;
+  linkedTicketId: string | null;
+  actualDate: string | null;
+}
+
 export interface AmcContractRecord {
   id: string;
   contractReferenceNo: string;
@@ -30,6 +51,7 @@ export interface AmcContractRecord {
   signedAgreementUrl: string | null;
   termsAndConditions: string | null;
   coveredEquipment?: { id: string; serialNo: string; itemName: string }[];
+  scheduledVisits?: AmcScheduledVisit[];
 }
 
 export interface AmcContractFormInput {
@@ -47,6 +69,8 @@ export interface AmcContractFormInput {
   signedAgreementUrl?: string;
   termsAndConditions?: string;
   coveredEquipmentIds: string[];
+  /** One planned date per visit, from the Visit Schedule editor (2026-07-27). */
+  visitDates?: string[];
 }
 
 export interface OverlapWarning {
@@ -70,6 +94,30 @@ export const createAmcContract = (input: AmcContractFormInput) =>
 
 export const updateAmcContract = (id: string, input: AmcContractFormInput) =>
   apiFetch<AmcContractSaveResult>(`/amc-contracts/${id}`, { method: "PATCH", body: JSON.stringify(input) });
+
+export const rescheduleAmcVisit = (visitId: string, plannedDate: string, notes?: string) =>
+  apiFetch<AmcScheduledVisit>(`/amc-contracts/scheduled-visits/${visitId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ plannedDate, notes }),
+  });
+
+/** Backfill for a contract with zero scheduled visits yet (2026-07-27). */
+export const generateAmcSchedule = (id: string, visitDates: string[]) =>
+  apiFetch<AmcContractRecord>(`/amc-contracts/${id}/generate-schedule`, {
+    method: "POST",
+    body: JSON.stringify({ visitDates }),
+  });
+
+/** Covers Visits Included being increased after the schedule already exists. */
+export const addAmcVisit = (contractId: string, equipmentId: string, plannedDate: string) =>
+  apiFetch<AmcContractRecord>(`/amc-contracts/${contractId}/scheduled-visits`, {
+    method: "POST",
+    body: JSON.stringify({ equipmentId, plannedDate }),
+  });
+
+/** Covers Visits Included being decreased — blocked once a real ticket exists for the visit. */
+export const removeAmcVisit = (visitId: string) =>
+  apiFetch<AmcContractRecord>(`/amc-contracts/scheduled-visits/${visitId}`, { method: "DELETE" });
 
 /** Uploads the actual contract document file (2026-07-27), mirroring uploadFsvReport. */
 export async function uploadAmcContractDocument(id: string, file: File): Promise<AmcContractRecord> {

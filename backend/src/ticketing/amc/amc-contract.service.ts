@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAmcContractDto, UpdateAmcContractDto } from './dto/amc-contract.dto';
 
@@ -42,7 +42,124 @@ export class AmcContractService {
       include: { customer: true, coveredEquipment: true },
     });
     const overlapWarnings = await this.findOverlaps(contract.id, dto.coveredEquipmentIds, dto.startDate, dto.endDate);
+    await this.generateScheduledVisits(contract.id, dto.visitsIncluded, dto.startDate, dto.endDate, dto.coveredEquipmentIds, dto.visitDates);
     return { contract, overlapWarnings };
+  }
+
+  /**
+   * Build plan's "scheduled_visits → auto-generate from visits_included"
+   * decision, refined per client feedback (2026-07-27): the frontend now
+   * sends explicit `visitDates` (one per visit, from the Visit Schedule
+   * editor's Monthly/Quarterly-cadence-or-fully-custom picker) — used
+   * verbatim if provided. Falls back to even-spacing across the contract
+   * period only if the caller omits visitDates (API robustness, not the
+   * normal UI path anymore). Equipment assignment is round-robin across
+   * covered equipment either way. Only called at creation — an update()
+   * doesn't regenerate (would silently discard any actualDate/status/
+   * linkedTicketId already recorded on existing rows).
+   */
+  private async generateScheduledVisits(
+    contractId: string,
+    visitsIncluded: number,
+    startDate: string,
+    endDate: string,
+    coveredEquipmentIds: string[],
+    visitDates?: string[],
+  ) {
+    if (visitsIncluded <= 0 || coveredEquipmentIds.length === 0) return;
+
+    let plannedDates: Date[];
+    if (visitDates && visitDates.length === visitsIncluded) {
+      plannedDates = visitDates.map((d) => new Date(d));
+    } else {
+      const start = new Date(startDate).getTime();
+      const end = new Date(endDate).getTime();
+      const intervalMs = (end - start) / (visitsIncluded + 1);
+      plannedDates = Array.from({ length: visitsIncluded }, (_, i) => new Date(start + intervalMs * (i + 1)));
+    }
+
+    const rows = plannedDates.map((plannedDate, i) => ({
+      contractId,
+      visitSeqNo: i + 1,
+      plannedDate,
+      equipmentId: coveredEquipmentIds[i % coveredEquipmentIds.length],
+    }));
+    await this.prisma.amcScheduledVisit.createMany({ data: rows });
+  }
+
+  /**
+   * Manual "Generate Schedule" for contracts with zero AmcScheduledVisit rows
+   * (either created before auto-generation existed, or created before this
+   * client-driven Visit Schedule editor existed) — same Visit Schedule
+   * editor UI submits explicit visitDates here too, reusing the exact same
+   * generation logic as create(). Guarded: errors if visits already exist —
+   * this is a one-time backfill, not a regenerate-and-replace action.
+   */
+  async generateScheduleForExisting(id: string, visitDates: string[]) {
+    const contract = await this.prisma.amcContract.findUniqueOrThrow({
+      where: { id },
+      include: { coveredEquipment: true, scheduledVisits: true },
+    });
+    if (contract.scheduledVisits.length > 0) {
+      throw new BadRequestException('This contract already has scheduled visits');
+    }
+    if (visitDates.length !== contract.visitsIncluded) {
+      throw new BadRequestException(`Expected ${contract.visitsIncluded} visit dates, got ${visitDates.length}`);
+    }
+    await this.generateScheduledVisits(
+      contract.id,
+      contract.visitsIncluded,
+      contract.startDate.toISOString(),
+      contract.endDate.toISOString(),
+      contract.coveredEquipment.map((e) => e.id),
+      visitDates,
+    );
+    return this.findOne(id);
+  }
+
+  /** Manual reschedule of one visit (Admin/Manager) — date/notes only, doesn't touch status/linkedTicketId. */
+  rescheduleVisit(visitId: string, plannedDate: string, notes?: string) {
+    return this.prisma.amcScheduledVisit.update({
+      where: { id: visitId },
+      data: { plannedDate: new Date(plannedDate), notes, status: 'RESCHEDULED' },
+    });
+  }
+
+  /**
+   * Manually add one more scheduled visit to an existing contract (2026-07-27)
+   * — covers "Visits Included / Year" being increased after the schedule
+   * already exists, where the original count no longer matches. Appends at
+   * the next visitSeqNo.
+   */
+  async addVisit(contractId: string, equipmentId: string, plannedDate: string) {
+    const maxSeq = await this.prisma.amcScheduledVisit.aggregate({
+      where: { contractId },
+      _max: { visitSeqNo: true },
+    });
+    await this.prisma.amcScheduledVisit.create({
+      data: {
+        contractId,
+        visitSeqNo: (maxSeq._max.visitSeqNo ?? 0) + 1,
+        plannedDate: new Date(plannedDate),
+        equipmentId,
+      },
+    });
+    return this.findOne(contractId);
+  }
+
+  /**
+   * Removes one scheduled visit — covers "Visits Included / Year" being
+   * decreased. Blocked once a real Ticket exists for it (TICKET_RAISED) or
+   * it's COMPLETED — deleting those would silently orphan real downstream
+   * work; only SCHEDULED_PENDING/RESCHEDULED visits are safe to remove.
+   */
+  async removeVisit(visitId: string) {
+    const visit = await this.prisma.amcScheduledVisit.findUniqueOrThrow({ where: { id: visitId } });
+    if (visit.status === 'TICKET_RAISED' || visit.status === 'COMPLETED') {
+      throw new BadRequestException(`Cannot remove a visit that's already ${visit.status === 'TICKET_RAISED' ? 'raised a ticket' : 'completed'}`);
+    }
+    await this.prisma.amcScheduledVisit.delete({ where: { id: visitId } });
+    return this.findOne(visit.contractId);
   }
 
   async update(id: string, dto: UpdateAmcContractDto) {

@@ -7,7 +7,7 @@ export default function NewAmcContractPage() {
   const router = useRouter();
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-10">
+    <div className="mx-auto max-w-6xl px-6 py-10">
       <a
         href="/dashboard/admin/amc-contracts"
         className="mb-4 inline-block text-xs font-medium text-muted hover:text-navy"

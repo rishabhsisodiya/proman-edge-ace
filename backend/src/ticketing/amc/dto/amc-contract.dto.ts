@@ -55,6 +55,16 @@ export class CreateAmcContractDto {
   @IsArray()
   @IsUUID('4', { each: true })
   coveredEquipmentIds!: string[];
+
+  // One planned date per visit, from the Visit Schedule editor's
+  // Monthly/Quarterly-cadence-or-custom picker — length must equal
+  // visitsIncluded (checked in the service, not here, since it's a
+  // cross-field rule). Optional for API robustness (falls back to
+  // even-spacing if omitted), though the UI always sends it now.
+  @IsOptional()
+  @IsArray()
+  @IsDateString({}, { each: true })
+  visitDates?: string[];
 }
 
 export class UpdateAmcContractDto extends CreateAmcContractDto {}

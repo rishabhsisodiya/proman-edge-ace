@@ -847,4 +847,40 @@ export class TicketsService {
 
     return this.create(dto, { userId: actorUserId, role: 'ADMIN' });
   }
+
+  /**
+   * AMC nightly cron entry point (2026-07-27, build plan's "AMC engine:
+   * nightly auto-ticket job") — a scheduled visit's planned date has
+   * arrived, so raise a real Ticket for it via the same create() engine
+   * every other source uses (dedup/auto-routing/priority matrix all apply
+   * identically), tagged source=AMC_SCHEDULED, serviceType=AMC. Same
+   * no-logged-in-user problem as the partner webhook — attributes to
+   * PARTNER_ACTOR_USER_ID (falls back to the first ADMIN) since a cron has
+   * no actual user either.
+   */
+  async createFromAmcSchedule(params: {
+    contractId: string;
+    customerId: string;
+    equipmentId: string;
+    visitSeqNo: number;
+    contractReferenceNo: string;
+  }) {
+    let actorUserId = process.env.PARTNER_ACTOR_USER_ID;
+    if (!actorUserId) {
+      const admin = await this.prisma.user.findFirst({ where: { role: 'ADMIN' } });
+      if (!admin) throw new BadRequestException('No PARTNER_ACTOR_USER_ID configured and no ADMIN user exists to attribute this ticket to');
+      actorUserId = admin.id;
+    }
+
+    const dto: CreateTicketDto = {
+      source: 'AMC_SCHEDULED',
+      serviceType: 'AMC',
+      customerCategory: 'AMC',
+      description: `Scheduled AMC visit #${params.visitSeqNo} for contract ${params.contractReferenceNo}`,
+      customerId: params.customerId,
+      equipmentId: params.equipmentId,
+    };
+
+    return this.create(dto, { userId: actorUserId, role: 'ADMIN' });
+  }
 }

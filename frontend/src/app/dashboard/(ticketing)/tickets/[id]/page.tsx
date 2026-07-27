@@ -18,6 +18,7 @@ import {
 import { AuthUser, getCurrentUser } from "@/lib/auth";
 import {
   CUSTOMER_CATEGORY_LABEL,
+  SOURCE_LABEL,
   CustomerCategory,
   PENDING_REASON_LABEL,
   PRIORITY_STYLE,
@@ -335,6 +336,10 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
               {ticket.customerCategory ? CUSTOMER_CATEGORY_LABEL[ticket.customerCategory] : "—"}
             </p>
           )}
+        </div>
+        <div className="min-w-0">
+          <p className="text-xs font-bold uppercase text-muted">Source</p>
+          <p className="break-words text-navy">{SOURCE_LABEL[ticket.source] ?? ticket.source}</p>
         </div>
         {ticket.status === "PENDING" && (
           <div className="min-w-0 sm:col-span-2">

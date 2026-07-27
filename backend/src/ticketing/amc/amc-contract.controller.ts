@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -22,6 +23,9 @@ import { RolesGuard } from '../../auth/roles.guard';
 import { Roles } from '../../auth/roles.decorator';
 import { AmcContractService } from './amc-contract.service';
 import { CreateAmcContractDto, UpdateAmcContractDto } from './dto/amc-contract.dto';
+import { RescheduleVisitDto } from './dto/reschedule-visit.dto';
+import { GenerateScheduleDto } from './dto/generate-schedule.dto';
+import { AddVisitDto } from './dto/add-visit.dto';
 
 const AMC_DOCUMENT_UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'amc-documents');
 const ALLOWED_DOCUMENT_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'application/pdf']);
@@ -79,5 +83,37 @@ export class AmcContractController {
     if (!file) throw new BadRequestException('No file uploaded');
     const url = `${req.protocol}://${req.get('host')}/uploads/amc-documents/${file.filename}`;
     return this.amc.uploadDocument(id, url);
+  }
+
+  /** Manual reschedule of one auto-generated scheduled visit. */
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'MANAGER')
+  @Patch('scheduled-visits/:visitId')
+  rescheduleVisit(@Param('visitId') visitId: string, @Body() dto: RescheduleVisitDto) {
+    return this.amc.rescheduleVisit(visitId, dto.plannedDate, dto.notes);
+  }
+
+  /** Backfill for a contract with zero scheduled visits (2026-07-27). */
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'MANAGER')
+  @Post(':id/generate-schedule')
+  generateSchedule(@Param('id') id: string, @Body() dto: GenerateScheduleDto) {
+    return this.amc.generateScheduleForExisting(id, dto.visitDates);
+  }
+
+  /** Covers Visits Included being increased after the schedule already exists. */
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'MANAGER')
+  @Post(':id/scheduled-visits')
+  addVisit(@Param('id') id: string, @Body() dto: AddVisitDto) {
+    return this.amc.addVisit(id, dto.equipmentId, dto.plannedDate);
+  }
+
+  /** Covers Visits Included being decreased. Blocked once a real ticket exists for the visit. */
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'MANAGER')
+  @Delete('scheduled-visits/:visitId')
+  removeVisit(@Param('visitId') visitId: string) {
+    return this.amc.removeVisit(visitId);
   }
 }

@@ -6,8 +6,15 @@ import {
   createAmcContract,
   updateAmcContract,
   uploadAmcContractDocument,
+  generateAmcSchedule,
+  addAmcVisit,
+  removeAmcVisit,
+  rescheduleAmcVisit,
+  getAmcContract,
   AmcContractFormInput,
   AmcContractRecord,
+  AmcScheduledVisit,
+  VISIT_STATUS_LABEL,
   PARTS_COVERAGE_LABEL,
   PartsCoverage,
 } from "@/lib/ticketing/amc";
@@ -51,6 +58,136 @@ export default function AmcContractForm({ existing, fixedCustomer, onSaved, onCa
     existing?.coveredEquipment?.map((e) => e.id) ?? [],
   );
 
+  // Visit Schedule editor (2026-07-27) — unified modal handling three cases
+  // at once: brand-new contract (no visits exist anywhere yet), an existing
+  // contract with some visits already (Visits Included changed since, so
+  // more/fewer are needed), and rescheduling/removing individual visits.
+  const [dayOfMonth, setDayOfMonth] = useState(
+    String(existing ? new Date(existing.startDate).getDate() : new Date().getDate()),
+  );
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [savingSchedule, setSavingSchedule] = useState(false);
+
+  // For a brand-new contract: one date per visit, submitted with the main
+  // Create button (unchanged from before).
+  const [visitDates, setVisitDates] = useState<string[]>(Array(Number(visitsIncluded) || 0).fill(""));
+  useEffect(() => {
+    if (existing) return;
+    const n = Number(visitsIncluded) || 0;
+    setVisitDates((prev) => {
+      const next = prev.slice(0, n);
+      while (next.length < n) next.push("");
+      return next;
+    });
+  }, [visitsIncluded, existing]);
+
+  // For an existing contract: local copy of its real visits (editable/
+  // removable in the modal) + a snapshot of their original dates so Save
+  // only reschedules ones actually changed.
+  const [visits, setVisits] = useState<AmcScheduledVisit[]>(
+    existing?.scheduledVisits ? [...existing.scheduledVisits].sort((a, b) => a.visitSeqNo - b.visitSeqNo) : [],
+  );
+  const [originalDates, setOriginalDates] = useState<Record<string, string>>({});
+  const [removedIds, setRemovedIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    const sorted = existing?.scheduledVisits ? [...existing.scheduledVisits].sort((a, b) => a.visitSeqNo - b.visitSeqNo) : [];
+    setVisits(sorted);
+    setOriginalDates(Object.fromEntries(sorted.map((v) => [v.id, v.plannedDate.slice(0, 10)])));
+    setRemovedIds(new Set());
+  }, [existing?.scheduledVisits]);
+
+  // New rows needed when Visits Included exceeds the existing visit count.
+  const [newRows, setNewRows] = useState<{ equipmentId: string; plannedDate: string }[]>([]);
+  useEffect(() => {
+    if (!existing) return;
+    const needed = Math.max(0, (Number(visitsIncluded) || 0) - visits.length);
+    setNewRows((prev) => {
+      const next = prev.slice(0, needed);
+      while (next.length < needed) {
+        const idx = visits.length + next.length;
+        next.push({ equipmentId: coveredEquipmentIds[idx % Math.max(1, coveredEquipmentIds.length)] ?? "", plannedDate: "" });
+      }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visitsIncluded, visits.length, existing]);
+
+  function applyCadence(monthsPerVisit: number) {
+    if (!startDate) return;
+    const day = Math.min(Math.max(Number(dayOfMonth) || 1, 1), 28);
+    const anchor = new Date(startDate);
+    const first = new Date(anchor.getFullYear(), anchor.getMonth(), day);
+    if (first < anchor) first.setMonth(first.getMonth() + 1);
+
+    if (!existing) {
+      const n = Number(visitsIncluded) || 0;
+      if (n === 0) return;
+      const dates = Array.from({ length: n }, (_, i) => {
+        const d = new Date(first);
+        d.setMonth(d.getMonth() + i * monthsPerVisit);
+        return d.toISOString().slice(0, 10);
+      });
+      setVisitDates(dates);
+    } else {
+      // Only fills the new rows — existing visits' dates are left as-is,
+      // edit those individually if they also need to move.
+      setNewRows((prev) =>
+        prev.map((row, i) => {
+          const d = new Date(first);
+          d.setMonth(d.getMonth() + (visits.length + i) * monthsPerVisit);
+          return { ...row, plannedDate: d.toISOString().slice(0, 10) };
+        }),
+      );
+    }
+  }
+
+  async function handleSaveSchedule() {
+    if (!existing) return;
+    setSavingSchedule(true);
+    setError(null);
+    try {
+      const input = buildInput();
+      if (!input) return;
+      await updateAmcContract(existing.id, input);
+
+      for (const v of visits) {
+        if (removedIds.has(v.id)) continue;
+        const current = v.plannedDate.slice(0, 10);
+        if (current !== originalDates[v.id]) {
+          await rescheduleAmcVisit(v.id, current);
+        }
+      }
+      for (const id of removedIds) {
+        await removeAmcVisit(id);
+      }
+
+      const remainingCount = visits.length - removedIds.size;
+      if (remainingCount === 0 && newRows.length > 0) {
+        if (newRows.some((r) => !r.plannedDate)) {
+          setError("Set a planned date for every scheduled visit.");
+          return;
+        }
+        await generateAmcSchedule(existing.id, newRows.map((r) => r.plannedDate));
+      } else {
+        for (const row of newRows) {
+          if (row.equipmentId && row.plannedDate) {
+            await addAmcVisit(existing.id, row.equipmentId, row.plannedDate);
+          }
+        }
+      }
+
+      const final = await getAmcContract(existing.id);
+      onSaved(final);
+      setShowScheduleModal(false);
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? ((err.body as { message?: string })?.message ?? "Could not save schedule") : "Could not reach the server.",
+      );
+    } finally {
+      setSavingSchedule(false);
+    }
+  }
+
   const [error, setError] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
@@ -78,21 +215,16 @@ export default function AmcContractForm({ existing, fixedCustomer, onSaved, onCa
     setCoveredEquipmentIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setWarnings([]);
-
+  function buildInput(): AmcContractFormInput | null {
     if (!selectedCustomer) {
       setError("Select a customer.");
-      return;
+      return null;
     }
     if (coveredEquipmentIds.length === 0) {
       setError("Select at least one covered equipment.");
-      return;
+      return null;
     }
-
-    const input: AmcContractFormInput = {
+    return {
       contractReferenceNo: contractReferenceNo.trim(),
       customerId: selectedCustomer.id,
       startDate,
@@ -104,7 +236,22 @@ export default function AmcContractForm({ existing, fixedCustomer, onSaved, onCa
       exclusions: exclusions.trim() || undefined,
       termsAndConditions: termsAndConditions.trim() || undefined,
       coveredEquipmentIds,
+      visitDates: !existing ? visitDates : undefined,
     };
+  }
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setWarnings([]);
+
+    if (!existing && visitDates.some((d) => !d)) {
+      setError("Set a planned date for every scheduled visit (use Monthly/Quarterly to fill them quickly).");
+      return;
+    }
+
+    const input = buildInput();
+    if (!input) return;
 
     setSaving(true);
     try {
@@ -238,6 +385,15 @@ export default function AmcContractForm({ existing, fixedCustomer, onSaved, onCa
             required
             className="h-10 w-full rounded-md border border-line px-3 text-sm text-navy"
           />
+          {Number(visitsIncluded) > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowScheduleModal(true)}
+              className="mt-1.5 text-xs font-bold text-navy underline hover:text-orange"
+            >
+              {(existing ? visits.length : visitDates.filter((d) => d).length) > 0 ? "Edit Visit Schedule" : "Configure Visit Schedule →"}
+            </button>
+          )}
         </div>
 
         <div>
@@ -298,6 +454,208 @@ export default function AmcContractForm({ existing, fixedCustomer, onSaved, onCa
           />
         </div>
       </div>
+
+      {showScheduleModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setShowScheduleModal(false)}
+        >
+          <div
+            className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-bold uppercase text-navy">Visit Schedule</h3>
+              <button
+                type="button"
+                onClick={() => setShowScheduleModal(false)}
+                className="text-lg leading-none text-muted hover:text-navy"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="mb-3 flex flex-wrap items-end gap-2">
+              <div>
+                <label className="text-xs text-muted">Day of month</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={28}
+                  value={dayOfMonth}
+                  onChange={(e) => setDayOfMonth(e.target.value)}
+                  className="h-9 w-20 rounded-md border border-line px-2 text-sm"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => applyCadence(1)}
+                className="h-9 rounded-md bg-navy-tint px-3 text-xs font-bold text-navy hover:bg-navy hover:text-white"
+              >
+                Monthly
+              </button>
+              <button
+                type="button"
+                onClick={() => applyCadence(3)}
+                className="h-9 rounded-md bg-navy-tint px-3 text-xs font-bold text-navy hover:bg-navy hover:text-white"
+              >
+                Quarterly
+              </button>
+              <span className="text-xs italic text-muted">
+                {existing ? "fills the new visit rows below" : "or set each date below manually"}
+              </span>
+            </div>
+
+            {!existing ? (
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {visitDates.map((d, i) => (
+                  <div key={i}>
+                    <label className="text-xs text-muted">Visit {i + 1}</label>
+                    <input
+                      type="date"
+                      value={d}
+                      onChange={(e) => setVisitDates((prev) => prev.map((v, idx) => (idx === i ? e.target.value : v)))}
+                      className="h-9 w-full rounded-md border border-line px-2 text-sm"
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {visits.filter((v) => !removedIds.has(v.id)).length > 0 && (
+                  <table className="w-full rounded-md border border-line text-xs">
+                    <thead>
+                      <tr className="border-b border-line text-left font-bold uppercase text-navy">
+                        <th className="px-2 py-1.5">#</th>
+                        <th className="px-2 py-1.5">Planned Date</th>
+                        <th className="px-2 py-1.5">Status</th>
+                        <th className="px-2 py-1.5">Linked Ticket</th>
+                        <th className="px-2 py-1.5" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visits
+                        .filter((v) => !removedIds.has(v.id))
+                        .map((v) => {
+                          const editable = v.status === "SCHEDULED_PENDING" || v.status === "RESCHEDULED";
+                          return (
+                            <tr key={v.id} className="border-b border-line last:border-0">
+                              <td className="px-2 py-1.5 text-navy">{v.visitSeqNo}</td>
+                              <td className="px-2 py-1.5">
+                                {editable ? (
+                                  <input
+                                    type="date"
+                                    value={v.plannedDate.slice(0, 10)}
+                                    onChange={(e) =>
+                                      setVisits((prev) =>
+                                        prev.map((x) => (x.id === v.id ? { ...x, plannedDate: e.target.value } : x)),
+                                      )
+                                    }
+                                    className="h-8 rounded-md border border-line px-2 text-xs"
+                                  />
+                                ) : (
+                                  new Date(v.plannedDate).toLocaleDateString()
+                                )}
+                              </td>
+                              <td className="px-2 py-1.5">
+                                <span className="rounded-full bg-navy-tint px-2 py-0.5 text-[10px] font-bold text-navy">
+                                  {VISIT_STATUS_LABEL[v.status]}
+                                </span>
+                              </td>
+                              <td className="px-2 py-1.5">
+                                {v.linkedTicketId ? (
+                                  <a href={`/dashboard/tickets/${v.linkedTicketId}`} className="font-bold text-navy underline">
+                                    View
+                                  </a>
+                                ) : (
+                                  "—"
+                                )}
+                              </td>
+                              <td className="px-2 py-1.5 text-right">
+                                {editable && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setRemovedIds((prev) => new Set(prev).add(v.id))}
+                                    className="font-bold text-brand-red"
+                                  >
+                                    Remove
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                )}
+
+                {newRows.length > 0 && (
+                  <div>
+                    <p className="mb-1.5 text-xs font-bold text-navy">New visits (Visits Included increased)</p>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {newRows.map((row, i) => (
+                        <div key={i} className="flex gap-2 rounded-md border border-line p-2">
+                          <select
+                            value={row.equipmentId}
+                            onChange={(e) =>
+                              setNewRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, equipmentId: e.target.value } : r)))
+                            }
+                            className="h-9 flex-1 rounded-md border border-line px-2 text-xs"
+                          >
+                            {customerEquipment
+                              .filter((eq) => coveredEquipmentIds.includes(eq.id))
+                              .map((eq) => (
+                                <option key={eq.id} value={eq.id}>
+                                  {eq.serialNo}
+                                </option>
+                              ))}
+                          </select>
+                          <input
+                            type="date"
+                            value={row.plannedDate}
+                            onChange={(e) =>
+                              setNewRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, plannedDate: e.target.value } : r)))
+                            }
+                            className="h-9 w-36 rounded-md border border-line px-2 text-xs"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="mt-4 flex gap-2">
+              {existing ? (
+                <button
+                  type="button"
+                  disabled={savingSchedule}
+                  onClick={handleSaveSchedule}
+                  className="rounded-md bg-orange px-4 py-2 text-sm font-bold text-navy disabled:opacity-50"
+                >
+                  {savingSchedule ? "Saving…" : "Save Schedule"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowScheduleModal(false)}
+                  className="rounded-md bg-orange px-4 py-2 text-sm font-bold text-navy"
+                >
+                  Done
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowScheduleModal(false)}
+                className="rounded-md bg-navy-tint px-4 py-2 text-sm font-bold text-navy"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div>
         <label className="mb-1.5 block text-xs font-bold text-navy">Terms &amp; Conditions (optional)</label>
