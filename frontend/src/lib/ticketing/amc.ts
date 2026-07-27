@@ -1,4 +1,6 @@
-import { apiFetch } from "@/lib/api";
+import { apiFetch, ApiError } from "@/lib/api";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4100/api/v1";
 
 export type PartsCoverage = "NONE" | "CONSUMABLES_ONLY" | "ALL_PARTS";
 
@@ -26,6 +28,7 @@ export interface AmcContractRecord {
   owningAsmId: string | null;
   previousContractId: string | null;
   signedAgreementUrl: string | null;
+  termsAndConditions: string | null;
   coveredEquipment?: { id: string; serialNo: string; itemName: string }[];
 }
 
@@ -42,6 +45,7 @@ export interface AmcContractFormInput {
   owningAsmId?: string;
   previousContractId?: string;
   signedAgreementUrl?: string;
+  termsAndConditions?: string;
   coveredEquipmentIds: string[];
 }
 
@@ -66,3 +70,27 @@ export const createAmcContract = (input: AmcContractFormInput) =>
 
 export const updateAmcContract = (id: string, input: AmcContractFormInput) =>
   apiFetch<AmcContractSaveResult>(`/amc-contracts/${id}`, { method: "PATCH", body: JSON.stringify(input) });
+
+/** Uploads the actual contract document file (2026-07-27), mirroring uploadFsvReport. */
+export async function uploadAmcContractDocument(id: string, file: File): Promise<AmcContractRecord> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const send = () =>
+    fetch(`${API_URL}/amc-contracts/${id}/document/upload`, {
+      method: "POST",
+      credentials: "include",
+      body: formData,
+    });
+
+  let res = await send();
+  if (res.status === 401) {
+    const refreshed = await fetch(`${API_URL}/auth/refresh`, { method: "POST", credentials: "include" });
+    if (refreshed.ok) res = await send();
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new ApiError(res.status, body);
+  }
+  return res.json() as Promise<AmcContractRecord>;
+}

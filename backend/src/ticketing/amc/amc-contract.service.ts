@@ -36,6 +36,7 @@ export class AmcContractService {
         owningAsmId: dto.owningAsmId,
         previousContractId: dto.previousContractId,
         signedAgreementUrl: dto.signedAgreementUrl,
+        termsAndConditions: dto.termsAndConditions,
         coveredEquipment: { connect: dto.coveredEquipmentIds.map((id) => ({ id })) },
       },
       include: { customer: true, coveredEquipment: true },
@@ -60,6 +61,7 @@ export class AmcContractService {
         owningAsmId: dto.owningAsmId,
         previousContractId: dto.previousContractId,
         signedAgreementUrl: dto.signedAgreementUrl,
+        termsAndConditions: dto.termsAndConditions,
         coveredEquipment: { set: dto.coveredEquipmentIds.map((eid) => ({ id: eid })) },
       },
       include: { customer: true, coveredEquipment: true },
@@ -99,5 +101,14 @@ export class AmcContractService {
       }
     }
     return warnings;
+  }
+
+  /** Uploaded AMC contract document (2026-07-27) — stored on the existing signedAgreementUrl field. */
+  uploadDocument(id: string, url: string) {
+    return this.prisma.amcContract.update({
+      where: { id },
+      data: { signedAgreementUrl: url },
+      include: { customer: true, coveredEquipment: true },
+    });
   }
 }

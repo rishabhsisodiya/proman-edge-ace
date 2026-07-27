@@ -2,7 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
-import { createAmcContract, updateAmcContract, AmcContractFormInput, AmcContractRecord, PARTS_COVERAGE_LABEL, PartsCoverage } from "@/lib/ticketing/amc";
+import {
+  createAmcContract,
+  updateAmcContract,
+  uploadAmcContractDocument,
+  AmcContractFormInput,
+  AmcContractRecord,
+  PARTS_COVERAGE_LABEL,
+  PartsCoverage,
+} from "@/lib/ticketing/amc";
 import { CustomerListItem, EquipmentListItem, equipmentForCustomer, listCustomers } from "@/lib/ticketing/masters";
 
 const PARTS_COVERAGE_OPTIONS: PartsCoverage[] = ["NONE", "CONSUMABLES_ONLY", "ALL_PARTS"];
@@ -34,6 +42,9 @@ export default function AmcContractForm({ existing, fixedCustomer, onSaved, onCa
   const [partsCoverage, setPartsCoverage] = useState<PartsCoverage>(existing?.partsCoverage ?? "CONSUMABLES_ONLY");
   const [scopeOfServices, setScopeOfServices] = useState(existing?.scopeOfServices ?? "");
   const [exclusions, setExclusions] = useState(existing?.exclusions ?? "");
+  const [termsAndConditions, setTermsAndConditions] = useState(existing?.termsAndConditions ?? "");
+  const [signedAgreementUrl, setSignedAgreementUrl] = useState(existing?.signedAgreementUrl ?? null);
+  const [uploadingDocument, setUploadingDocument] = useState(false);
 
   const [customerEquipment, setCustomerEquipment] = useState<EquipmentListItem[]>([]);
   const [coveredEquipmentIds, setCoveredEquipmentIds] = useState<string[]>(
@@ -91,6 +102,7 @@ export default function AmcContractForm({ existing, fixedCustomer, onSaved, onCa
       partsCoverage,
       scopeOfServices: scopeOfServices.trim() || undefined,
       exclusions: exclusions.trim() || undefined,
+      termsAndConditions: termsAndConditions.trim() || undefined,
       coveredEquipmentIds,
     };
 
@@ -285,6 +297,61 @@ export default function AmcContractForm({ existing, fixedCustomer, onSaved, onCa
             className="h-20 w-full rounded-md border border-line p-2 text-sm text-navy"
           />
         </div>
+      </div>
+
+      <div>
+        <label className="mb-1.5 block text-xs font-bold text-navy">Terms &amp; Conditions (optional)</label>
+        <textarea
+          value={termsAndConditions}
+          onChange={(e) => setTermsAndConditions(e.target.value)}
+          className="h-24 w-full rounded-md border border-line p-2 text-sm text-navy"
+        />
+      </div>
+
+      <div>
+        <label className="mb-1.5 block text-xs font-bold text-navy">Contract Document</label>
+        {signedAgreementUrl ? (
+          <a href={signedAgreementUrl} target="_blank" rel="noreferrer" className="text-sm font-bold text-navy underline">
+            View uploaded contract document
+          </a>
+        ) : (
+          <p className="text-xs text-muted">No document uploaded yet.</p>
+        )}
+        {existing ? (
+          <div className="mt-2">
+            <label className="flex h-9 w-fit cursor-pointer items-center rounded-md bg-navy-tint px-3 text-xs font-bold text-navy">
+              {uploadingDocument ? "Uploading…" : signedAgreementUrl ? "Replace Document" : "Upload Document"}
+              <input
+                type="file"
+                accept="image/jpeg,image/png,application/pdf"
+                disabled={uploadingDocument}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (!file) return;
+                  setUploadingDocument(true);
+                  setError(null);
+                  try {
+                    const updated = await uploadAmcContractDocument(existing.id, file);
+                    setSignedAgreementUrl(updated.signedAgreementUrl);
+                    onSaved(updated);
+                  } catch (err) {
+                    setError(
+                      err instanceof ApiError
+                        ? ((err.body as { message?: string })?.message ?? "Upload failed")
+                        : "Could not reach the server.",
+                    );
+                  } finally {
+                    setUploadingDocument(false);
+                  }
+                }}
+                className="hidden"
+              />
+            </label>
+          </div>
+        ) : (
+          <p className="mt-1 text-xs italic text-muted">Save the contract first, then upload its document.</p>
+        )}
       </div>
 
       {warnings.length > 0 && (

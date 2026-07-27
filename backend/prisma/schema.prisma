@@ -727,6 +727,9 @@ model AmcContract {
   owningAsmId         String?
   previousContractId  String?
   signedAgreementUrl  String?
+  /// Client request (2026-07-27) — a T&C text box on the AMC Contract form,
+  /// separate from signedAgreementUrl (the uploaded contract file itself).
+  termsAndConditions  String?
   // Many-to-many: coverage is per-equipment (≥1 required), and one equipment
   // can be covered by more than one contract over time (see Equipment.amcContracts).
   coveredEquipment    Equipment[]

@@ -45,6 +45,10 @@ export class CreateAmcContractDto {
   @IsString()
   signedAgreementUrl?: string;
 
+  @IsOptional()
+  @IsString()
+  termsAndConditions?: string;
+
   // ≥1 required per §5.1.5, enforced in the service (class-validator's
   // ArrayMinSize would also work, kept as a service-level check alongside
   // the overlapping-contract warning logic).
