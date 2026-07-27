@@ -87,7 +87,7 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
   const editable = !quotation.erpnextQuotationId;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 px-6 py-8">
+    <div className="mx-auto max-w-6xl space-y-6 px-6 py-8">
       <div>
         <p className="font-mono text-xs text-muted">{quotation.quotationNo}</p>
         <h1 className="text-xl font-bold text-navy">{quotation.customer?.customerName}</h1>
@@ -175,7 +175,7 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
           <p className="text-xs font-bold uppercase text-muted">ERPNext Pipeline Status</p>
           <StatusRow label="Quotation" value={quotation.erpnextQuotationId} />
           <div className="flex items-center justify-between">
-            <StatusRow label="Sales Order" value={quotation.erpnextSalesOrderId} pending="Awaiting negotiation & submission in ERPNext" />
+            <StatusRow className="flex-1" label="Sales Order" value={quotation.erpnextSalesOrderId} pending="Awaiting negotiation & submission in ERPNext" />
             {!quotation.erpnextSalesOrderId && (
               <button
                 onClick={async () => {
@@ -198,7 +198,7 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
             )}
           </div>
           <div className="flex items-center justify-between">
-            <StatusRow label="Delivery Note" value={quotation.erpnextDeliveryNoteId} pending="Awaiting manual Delivery Note in ERPNext" />
+            <StatusRow className="flex-1" label="Delivery Note" value={quotation.erpnextDeliveryNoteId} pending="Awaiting manual Delivery Note in ERPNext" />
             {quotation.erpnextSalesOrderId && !quotation.erpnextDeliveryNoteId && (
               <button
                 onClick={async () => {
@@ -221,7 +221,7 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
             )}
           </div>
           <div className="flex items-center justify-between">
-            <StatusRow label="Sales Invoice (draft)" value={quotation.erpnextInvoiceId} pending="Awaiting Sales Order status “To Bill”" />
+            <StatusRow className="flex-1" label="Sales Invoice (draft)" value={quotation.erpnextInvoiceId} pending="Awaiting Sales Order status “To Bill”" />
             {quotation.erpnextSalesOrderId && !quotation.erpnextInvoiceId && (
               <button
                 onClick={async () => {
@@ -265,9 +265,19 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
   );
 }
 
-function StatusRow({ label, value, pending }: { label: string; value: string | null; pending?: string }) {
+function StatusRow({
+  label,
+  value,
+  pending,
+  className,
+}: {
+  label: string;
+  value: string | null;
+  pending?: string;
+  className?: string;
+}) {
   return (
-    <div className="flex items-center justify-between">
+    <div className={`flex items-center justify-between ${className ?? ""}`}>
       <span className="text-muted">{label}</span>
       <span className={value ? "font-bold text-navy" : "text-xs text-muted"}>{value ?? pending ?? "—"}</span>
     </div>

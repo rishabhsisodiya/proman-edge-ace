@@ -198,20 +198,24 @@ export class ErpWritebackService {
 
   /**
    * Delivery Note is raised MANUALLY in ERPNext against the Sales Order
-   * (never created by ACE) — this looks up whether one exists yet, via the
-   * link at the item level (Delivery Note Item.against_sales_order), same
-   * as how the Quotation->SO link works (§5 of Shivam's integration guide).
+   * (never created by ACE) — this looks up whether one exists yet.
    * Manual "Check Delivery Note" button (2026-07-25) — this step was never
    * poll-covered even before (webhook-only), so this is a new capability,
    * not a cron replacement.
+   *
+   * FIX (2026-07-27, ACE_CheckDeliveryNote_Bug_Fix.md): querying the child
+   * table `Delivery Note Item` directly 403s — Frappe's get_list refuses to
+   * list ANY child table (…Item doctype) without a `parent` query param,
+   * even for an admin token. This was never an ERPNext-side permission gap.
+   * Fix: query the PARENT doctype `Delivery Note` with a child-field filter
+   * instead — one call also returns status for free.
    */
   async findDeliveryNoteForSalesOrder(erpnextSalesOrderName: string): Promise<string | null> {
-    const rows = await this.frappe.getResource<{ parent: string }[]>('Delivery Note Item', {
-      filters: JSON.stringify([['against_sales_order', '=', erpnextSalesOrderName]]),
-      fields: JSON.stringify(['parent']),
-      limit_page_length: '1',
+    const rows = await this.frappe.getResource<{ name: string; status: string }[]>('Delivery Note', {
+      filters: JSON.stringify([['Delivery Note Item', 'against_sales_order', '=', erpnextSalesOrderName]]),
+      fields: JSON.stringify(['name', 'status']),
     });
-    return rows[0]?.parent ?? null;
+    return rows[0]?.name ?? null;
   }
 
   /**

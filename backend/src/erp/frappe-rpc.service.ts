@@ -124,11 +124,19 @@ export class FrappeRpcService {
   /**
    * GET against ERPNext's standard REST resource API (/api/resource/...) —
    * distinct from get()/post() above, which call whitelisted RPC methods
-   * (/api/method/...). Used for doc status checks and item-level lookups
-   * (e.g. Delivery Note Item filtered by against_sales_order) that have no
-   * custom whitelisted method. Same clean-error-message handling as post()
-   * — a caller who bypassed this with a raw fetch() used to get a dumped
-   * traceback instead of a one-line message (fixed 2026-07-25).
+   * (/api/method/...). Used for doc status checks and parent-doctype lookups
+   * with a child-field filter (e.g. Delivery Note filtered by
+   * `Delivery Note Item.against_sales_order`) that have no custom whitelisted
+   * method. Same clean-error-message handling as post() — a caller who
+   * bypassed this with a raw fetch() used to get a dumped traceback instead
+   * of a one-line message (fixed 2026-07-25).
+   *
+   * NOTE: never call this with a child-table doctype (any "…Item" doctype)
+   * as resourcePath directly — Frappe's get_list 403s on that even for an
+   * admin token, unconditionally. Query the PARENT doctype with a
+   * `[["<Child Doctype>", "<field>", "<op>", "<value>"]]` filter instead
+   * (see findDeliveryNoteForSalesOrder for the working pattern — fixed
+   * 2026-07-27 after hitting exactly this).
    */
   async getResource<T = unknown>(resourcePath: string, params: Record<string, string> = {}): Promise<T> {
     const qs = new URLSearchParams(params).toString();
