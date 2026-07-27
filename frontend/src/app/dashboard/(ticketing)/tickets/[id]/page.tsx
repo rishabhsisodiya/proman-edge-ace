@@ -184,6 +184,11 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                   : `Under AMC${chargeability.amcEndDate ? ` — till ${new Date(chargeability.amcEndDate).toLocaleDateString()}` : ""}`}
               </span>
             )}
+            {chargeability && chargeability.chargeable && (
+              <span className="rounded-full bg-brand-red-bg px-3 py-1.5 text-xs font-bold text-brand-red">
+                Out of Warranty — Chargeable
+              </span>
+            )}
             <div className="hidden sm:block">
               <DotMenu items={menuItems} />
             </div>
