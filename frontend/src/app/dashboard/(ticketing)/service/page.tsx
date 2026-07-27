@@ -10,6 +10,9 @@ import {
   STATUS_LABEL,
   STATUS_STYLE,
   SERVICE_TYPE_LABEL,
+  SLA_STATUS_LABEL,
+  SLA_STATUS_STYLE,
+  worstSlaStatus,
   Ticket,
   TicketStatus,
   Priority,
@@ -49,6 +52,7 @@ export default function ManagerDashboardPage() {
   const [status, setStatus] = useState("");
   const [serviceType, setServiceType] = useState("");
   const [assigned, setAssigned] = useState("");
+  const [slaBreached, setSlaBreached] = useState(false);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const pageSize = 25;
@@ -74,7 +78,7 @@ export default function ManagerDashboardPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [region, priority, status, serviceType, assigned]);
+  }, [region, priority, status, serviceType, assigned, slaBreached]);
 
   useEffect(() => {
     setLoading(true);
@@ -85,6 +89,7 @@ export default function ManagerDashboardPage() {
     if (status) params.set("status", status);
     if (serviceType) params.set("serviceType", serviceType);
     if (assigned) params.set("assigned", assigned);
+    if (slaBreached) params.set("slaBreached", "true");
     params.set("page", String(page));
     params.set("pageSize", String(pageSize));
     params.set("sortBy", sortBy);
@@ -97,23 +102,15 @@ export default function ManagerDashboardPage() {
       })
       .catch(() => setError("Could not load tickets. Is the backend running and seeded?"))
       .finally(() => setLoading(false));
-  }, [region, priority, status, serviceType, assigned, page, sortBy, sortDir]);
+  }, [region, priority, status, serviceType, assigned, slaBreached, page, sortBy, sortDir]);
 
-  const now = Date.now();
   const stats = useMemo(() => {
     const open = allTickets.filter((t) => t.status !== "CLOSED").length;
     const unassigned = allTickets.filter((t) => !t.assignedEngineer && t.status !== "CLOSED").length;
-    const slaAtRisk = allTickets.filter(
-      (t) =>
-        t.slaResolutionDue &&
-        t.status !== "CLOSED" &&
-        new Date(t.slaResolutionDue).getTime() - now < 2 * 60 * 60 * 1000,
-    ).length;
-    const breached = allTickets.filter(
-      (t) => t.slaResolutionDue && t.status !== "CLOSED" && new Date(t.slaResolutionDue).getTime() < now,
-    ).length;
+    const slaAtRisk = allTickets.filter((t) => worstSlaStatus(t) === "WARNING_90").length;
+    const breached = allTickets.filter((t) => worstSlaStatus(t) === "BREACHED").length;
     return { open, unassigned, slaAtRisk, breached };
-  }, [allTickets, now]);
+  }, [allTickets]);
 
   return (
     <div className="space-y-6 p-6">
@@ -197,6 +194,12 @@ export default function ManagerDashboardPage() {
           <option value="true">Assigned</option>
           <option value="false">Unassigned</option>
         </select>
+        <button
+          onClick={() => setSlaBreached((v) => !v)}
+          className={`rounded-lg px-3 py-1.5 text-sm font-bold ${slaBreached ? "bg-brand-red text-white" : "border border-line bg-white text-navy hover:bg-navy-tint"}`}
+        >
+          SLA Breached
+        </button>
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-line bg-white shadow-[0_1px_4px_rgba(42,47,105,.06)]">
@@ -251,9 +254,16 @@ export default function ManagerDashboardPage() {
                     </span>
                   </td>
                   <td className="px-4">
-                    <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${STATUS_STYLE[t.status]}`}>
-                      {STATUS_LABEL[t.status]}
-                    </span>
+                    <div className="flex flex-wrap gap-1">
+                      <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${STATUS_STYLE[t.status]}`}>
+                        {STATUS_LABEL[t.status]}
+                      </span>
+                      {worstSlaStatus(t) !== "ON_TRACK" && (
+                        <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${SLA_STATUS_STYLE[worstSlaStatus(t)]}`}>
+                          {SLA_STATUS_LABEL[worstSlaStatus(t)]}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4">{t.customer.region}</td>
                   <td className="px-4">{t.assignedEngineer?.fullName ?? "Unassigned"}</td>

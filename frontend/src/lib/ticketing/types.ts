@@ -134,6 +134,8 @@ export interface Ticket {
   warrantyEligible: boolean;
   slaResolutionDue: string | null;
   slaResolutionMet: boolean;
+  slaResponseStatus?: "ON_TRACK" | "WARNING_90" | "BREACHED";
+  slaResolutionStatus?: "ON_TRACK" | "WARNING_90" | "BREACHED";
   pendingReason?: PendingReason | null;
   pendingNotes?: string | null;
   resolutionSummary?: string | null;
@@ -171,6 +173,28 @@ export const STATUS_LABEL: Record<TicketStatus, string> = {
  * Medium/Low=neutral Navy-tint. Status: in-progress stages are neutral,
  * Closed=Success (the only terminal-positive state).
  */
+export type SlaClockStatus = "ON_TRACK" | "WARNING_90" | "BREACHED";
+
+export const SLA_STATUS_LABEL: Record<SlaClockStatus, string> = {
+  ON_TRACK: "On Track",
+  WARNING_90: "SLA At Risk",
+  BREACHED: "SLA Breached",
+};
+
+export const SLA_STATUS_STYLE: Record<SlaClockStatus, string> = {
+  ON_TRACK: "bg-navy-soft text-muted",
+  WARNING_90: "bg-brand-amber-bg text-brand-amber",
+  BREACHED: "bg-brand-red-bg text-brand-red",
+};
+
+/** Worst of the two independent clocks (response/resolution) — for a single badge. */
+export function worstSlaStatus(t: Pick<Ticket, "slaResponseStatus" | "slaResolutionStatus">): SlaClockStatus {
+  const rank: Record<SlaClockStatus, number> = { ON_TRACK: 0, WARNING_90: 1, BREACHED: 2 };
+  const a = t.slaResponseStatus ?? "ON_TRACK";
+  const b = t.slaResolutionStatus ?? "ON_TRACK";
+  return rank[a] >= rank[b] ? a : b;
+}
+
 export const PRIORITY_STYLE: Record<Priority, string> = {
   CRITICAL: "bg-brand-red-bg text-brand-red",
   HIGH: "bg-brand-amber-bg text-brand-amber",

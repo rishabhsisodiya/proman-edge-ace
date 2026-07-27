@@ -75,6 +75,17 @@ export class WorkflowService {
         pendingReason: targetStatus === 'PENDING' ? pendingReason : null,
         pendingNotes: targetStatus === 'PENDING' ? (pendingNotes ?? null) : null,
         ...(resolutionSummary ? { resolutionSummary } : {}),
+        // FSD §14.3: response clock stops at Assigned, resolution clock stops
+        // at Engineer Resolved. These two fields existed on the schema since
+        // Days 1-3 but were never actually written anywhere until now — the
+        // SLA breach cron needs them to know which clocks are still running.
+        ...(targetStatus === 'ASSIGNED' ? { slaResponseMet: true, slaResponseStatus: 'ON_TRACK' } : {}),
+        ...(targetStatus === 'ENGINEER_RESOLVED' ? { slaResolutionMet: true, slaResolutionStatus: 'ON_TRACK' } : {}),
+        // Bounced back to rework (e.g. ASM reject-after-resolved) — the
+        // resolution clock restarts, it shouldn't stay marked "met" forever.
+        ...(targetStatus === 'ENGINEER_ASSIGNED' && ticket.status === 'ENGINEER_RESOLVED'
+          ? { slaResolutionMet: false, slaResolutionStatus: 'ON_TRACK' }
+          : {}),
       },
     });
   }

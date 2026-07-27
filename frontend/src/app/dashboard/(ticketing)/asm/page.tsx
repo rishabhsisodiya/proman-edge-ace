@@ -9,6 +9,9 @@ import {
   STATUS_LABEL,
   STATUS_STYLE,
   SERVICE_TYPE_LABEL,
+  SLA_STATUS_LABEL,
+  SLA_STATUS_STYLE,
+  worstSlaStatus,
   Ticket,
   TicketStatus,
   Priority,
@@ -48,6 +51,7 @@ export default function AsmDashboardPage() {
   const [priority, setPriority] = useState("");
   const [serviceType, setServiceType] = useState("");
   const [assigned, setAssigned] = useState("");
+  const [slaBreached, setSlaBreached] = useState(false);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const pageSize = 25;
@@ -70,7 +74,7 @@ export default function AsmDashboardPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [status, priority, serviceType, assigned]);
+  }, [status, priority, serviceType, assigned, slaBreached]);
 
   useEffect(() => {
     setLoading(true);
@@ -81,6 +85,7 @@ export default function AsmDashboardPage() {
     if (priority) params.set("priority", priority);
     if (serviceType) params.set("serviceType", serviceType);
     if (assigned) params.set("assigned", assigned);
+    if (slaBreached) params.set("slaBreached", "true");
     params.set("page", String(page));
     params.set("pageSize", String(pageSize));
     params.set("sortBy", sortBy);
@@ -93,13 +98,14 @@ export default function AsmDashboardPage() {
       })
       .catch(() => setError("Could not load tickets. Is the backend running and seeded?"))
       .finally(() => setLoading(false));
-  }, [status, priority, serviceType, assigned, page, sortBy, sortDir]);
+  }, [status, priority, serviceType, assigned, slaBreached, page, sortBy, sortDir]);
 
   const stats = useMemo(() => {
     const open = allTickets.filter((t) => t.status !== "CLOSED").length;
     const pendingAcceptance = allTickets.filter((t) => t.status === "ENGINEER_ASSIGNED").length;
     const unassigned = allTickets.filter((t) => !t.assignedEngineer && t.status !== "CLOSED").length;
-    return { open, pendingAcceptance, unassigned };
+    const slaBreachedCount = allTickets.filter((t) => worstSlaStatus(t) === "BREACHED").length;
+    return { open, pendingAcceptance, unassigned, slaBreachedCount };
   }, [allTickets]);
 
   function quickFilter(preset: "unassigned" | "pending" | "all") {
@@ -122,10 +128,11 @@ export default function AsmDashboardPage() {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Tile label="Open tickets (territory)" value={stats.open} />
         <Tile label="Unassigned" value={stats.unassigned} accent={stats.unassigned > 0 ? "text-brand-amber" : undefined} />
         <Tile label="Pending engineer acceptance" value={stats.pendingAcceptance} />
+        <Tile label="SLA breached" value={stats.slaBreachedCount} accent={stats.slaBreachedCount > 0 ? "text-brand-red" : undefined} />
       </div>
 
       <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-white p-3 shadow-[0_1px_4px_rgba(42,47,105,.06)]">
@@ -143,7 +150,16 @@ export default function AsmDashboardPage() {
             Pending Acceptance
           </button>
           <button
-            onClick={() => quickFilter("all")}
+            onClick={() => setSlaBreached((v) => !v)}
+            className={`rounded-md px-3 py-1.5 text-xs font-bold ${slaBreached ? "bg-brand-red text-white" : "bg-navy-tint text-navy hover:bg-navy hover:text-white"}`}
+          >
+            SLA Breached
+          </button>
+          <button
+            onClick={() => {
+              quickFilter("all");
+              setSlaBreached(false);
+            }}
             className="rounded-md bg-navy-tint px-3 py-1.5 text-xs font-bold text-navy hover:bg-navy hover:text-white"
           >
             Clear
@@ -280,9 +296,16 @@ function TicketTable({
                 <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${PRIORITY_STYLE[t.priority]}`}>{t.priority}</span>
               </td>
               <td className="px-4">
-                <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${STATUS_STYLE[t.status]}`}>
-                  {STATUS_LABEL[t.status]}
-                </span>
+                <div className="flex flex-wrap gap-1">
+                  <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${STATUS_STYLE[t.status]}`}>
+                    {STATUS_LABEL[t.status]}
+                  </span>
+                  {worstSlaStatus(t) !== "ON_TRACK" && (
+                    <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${SLA_STATUS_STYLE[worstSlaStatus(t)]}`}>
+                      {SLA_STATUS_LABEL[worstSlaStatus(t)]}
+                    </span>
+                  )}
+                </div>
               </td>
               <td className="px-4">{t.assignedEngineer?.fullName ?? "Unassigned"}</td>
             </tr>

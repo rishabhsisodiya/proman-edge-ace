@@ -259,6 +259,9 @@ export class TicketsService {
     if (filters.serviceType) where.serviceType = filters.serviceType as any;
     if (filters.assigned === 'true') where.assignedEngineerId = { not: null };
     if (filters.assigned === 'false') where.assignedEngineerId = null;
+    if (filters.slaBreached === 'true') {
+      where.OR = [{ slaResponseStatus: 'BREACHED' }, { slaResolutionStatus: 'BREACHED' }];
+    }
 
     // Capped at 500 rather than 100 — a couple of dashboards (Call Center,
     // My Tickets) still need one unbounded-ish fetch for their own

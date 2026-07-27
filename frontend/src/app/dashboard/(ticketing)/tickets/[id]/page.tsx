@@ -22,6 +22,10 @@ import {
   CustomerCategory,
   PENDING_REASON_LABEL,
   PRIORITY_STYLE,
+  SLA_STATUS_LABEL,
+  SLA_STATUS_STYLE,
+  SlaClockStatus,
+  worstSlaStatus,
   SELECTABLE_SERVICE_TYPES,
   SERVICE_TYPE_LABEL,
   STATUS_LABEL,
@@ -176,27 +180,34 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
           </div>
         </div>
         <div className="flex flex-col items-start gap-2 sm:items-end">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={`rounded-full px-3 py-1.5 text-xs font-bold ${PRIORITY_STYLE[ticket.priority]}`}>
-              {ticket.priority}
-            </span>
-            {chargeability && !chargeability.chargeable && chargeability.reason && (
-              <span
-                className={`rounded-full px-3 py-1.5 text-xs font-bold ${
-                  chargeability.reason === "WARRANTY" ? "bg-brand-amber-bg text-brand-amber" : "bg-brand-green-bg text-brand-green"
-                }`}
-              >
-                {chargeability.reason === "WARRANTY"
-                  ? "Under Warranty"
-                  : `Under AMC${chargeability.amcEndDate ? ` — till ${new Date(chargeability.amcEndDate).toLocaleDateString()}` : ""}`}
+          <div className="flex items-start gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <span className={`rounded-full px-3 py-1.5 text-xs font-bold ${PRIORITY_STYLE[ticket.priority]}`}>
+                {ticket.priority}
               </span>
-            )}
-            {chargeability && chargeability.chargeable && (
-              <span className="rounded-full bg-brand-red-bg px-3 py-1.5 text-xs font-bold text-brand-red">
-                Out of Warranty — Chargeable
-              </span>
-            )}
-            <div className="hidden sm:block">
+              {worstSlaStatus(ticket) !== "ON_TRACK" && (
+                <span className={`rounded-full px-3 py-1.5 text-xs font-bold ${SLA_STATUS_STYLE[worstSlaStatus(ticket)]}`}>
+                  {SLA_STATUS_LABEL[worstSlaStatus(ticket)]}
+                </span>
+              )}
+              {chargeability && !chargeability.chargeable && chargeability.reason && (
+                <span
+                  className={`rounded-full px-3 py-1.5 text-xs font-bold ${
+                    chargeability.reason === "WARRANTY" ? "bg-brand-amber-bg text-brand-amber" : "bg-brand-green-bg text-brand-green"
+                  }`}
+                >
+                  {chargeability.reason === "WARRANTY"
+                    ? "Under Warranty"
+                    : `Under AMC${chargeability.amcEndDate ? ` — till ${new Date(chargeability.amcEndDate).toLocaleDateString()}` : ""}`}
+                </span>
+              )}
+              {chargeability && chargeability.chargeable && (
+                <span className="rounded-full bg-brand-red-bg px-3 py-1.5 text-xs font-bold text-brand-red">
+                  Out of Warranty — Chargeable
+                </span>
+              )}
+            </div>
+            <div className="hidden shrink-0 sm:block">
               <DotMenu items={menuItems} />
             </div>
           </div>
@@ -805,6 +816,11 @@ function describeTimelineEntry(e: TicketAuditEntry): { headline: string; note: s
   }
   if (e.fieldName === 'duplicate_merge' || e.fieldName === 'duplicate_reference') {
     return { headline: e.newValue ?? '', note: null };
+  }
+  if (e.fieldName === 'slaResponseStatus' || e.fieldName === 'slaResolutionStatus') {
+    const clock = e.fieldName === 'slaResponseStatus' ? 'Response' : 'Resolution';
+    const to = SLA_STATUS_LABEL[e.newValue as SlaClockStatus] ?? e.newValue;
+    return { headline: `SLA ${clock}: ${to}`, note: null };
   }
   const fieldLabel = e.fieldName
     .split('_')

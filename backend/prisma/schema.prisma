@@ -517,6 +517,10 @@ model Ticket {
   slaResolutionDue         DateTime?
   slaResponseMet           Boolean             @default(false)
   slaResolutionMet         Boolean             @default(false)
+  /// Set by SlaBreachCron — persisted so it's filterable/badge-able without
+  /// recomputing from slaResponseDue/slaResolutionDue on every read.
+  slaResponseStatus        SlaClockStatus      @default(ON_TRACK)
+  slaResolutionStatus      SlaClockStatus      @default(ON_TRACK)
   slaPolicyId              String?
   callReceivedAt           DateTime            @default(now())
   callReceivedVia          CallReceivedVia?
@@ -701,6 +705,16 @@ enum RenewalStatus {
   FINAL_NOTICE
   LAPSED
   RENEWED
+}
+
+/// SLA breach monitoring cron (2026-07-28, FSD §14.3) — persisted per-clock
+/// status instead of recomputing "is this breached" ad-hoc on every page
+/// render (which is all the Manager dashboard's SLA tiles did before this).
+/// WARNING_90 = 90% of the allotted window elapsed; BREACHED = 100%+.
+enum SlaClockStatus {
+  ON_TRACK
+  WARNING_90
+  BREACHED
 }
 
 enum VisitStatus {
