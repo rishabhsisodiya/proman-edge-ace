@@ -130,6 +130,21 @@ async function main() {
     },
   });
 
+  // Second Engineer (2026-07-27) — needed to test the ASM reject-after-
+  // Engineer-Resolved "reassign to a different engineer" path; only one
+  // Engineer existed before, so that dropdown had nothing else to offer.
+  const engineer2 = await prisma.user.create({
+    data: {
+      fullName: 'R. Sharma',
+      email: 'engineer2@proman.test',
+      passwordHash,
+      mobile: '9000000013',
+      role: Role.ENGINEER,
+      skillTags: ['CRUSHER', 'BEARINGS'],
+      regions: { create: [{ region: Region.CENTRAL }] },
+    },
+  });
+
   const callCenter = await prisma.user.create({
     data: {
       fullName: 'Call Center Agent',

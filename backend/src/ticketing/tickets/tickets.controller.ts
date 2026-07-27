@@ -7,6 +7,7 @@ import { TicketsService } from './tickets.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { AssignTicketDto } from './dto/assign-ticket.dto';
 import { RejectTicketDto } from './dto/reject-ticket.dto';
+import { AsmRejectResolutionDto } from './dto/asm-reject-resolution.dto';
 import { MarkPendingDto } from './dto/mark-pending.dto';
 import { RegularizeTicketDto } from './dto/regularize-ticket.dto';
 import { CommentDto } from './dto/comment.dto';
@@ -87,6 +88,15 @@ export class TicketsController {
   @Post(':id/reject')
   reject(@Param('id') id: string, @Body() dto: RejectTicketDto, @Req() req: any) {
     return this.tickets.reject(id, dto.reason, { userId: req.user.userId, role: req.user.role });
+  }
+
+  // ASM reject-after-Engineer-Resolved (Ashwath feedback 2026-07-25) —
+  // engineerId is either the same engineer (redo) or a different one
+  // (reassign), both handled by the same method.
+  @Roles('ASM', 'MANAGER')
+  @Post(':id/reject-resolution')
+  rejectResolution(@Param('id') id: string, @Body() dto: AsmRejectResolutionDto, @Req() req: any) {
+    return this.tickets.asmRejectResolution(id, dto.engineerId, dto.reason, { userId: req.user.userId, role: req.user.role });
   }
 
   @Roles('ENGINEER')

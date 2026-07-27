@@ -24,6 +24,9 @@ interface ItemWarehouseStock {
 }
 interface ItemDetail extends ItemListItem {
   warehouseStock: ItemWarehouseStock[];
+  standardRate: string | number | null;
+  valuationRate: string | number | null;
+  sellingRate: number | null;
 }
 
 // FSV detail/edit screen — Draft is live-autosaved field-by-field (matches
@@ -283,6 +286,9 @@ function PartsSection({
     const detail = await apiFetch<ItemDetail>(`/items/${encodeURIComponent(it.itemCode)}`);
     setSelectedItem(detail);
     setWarehouse(detail.warehouseStock[0]?.warehouse ?? "");
+    const costRate = Number(detail.valuationRate ?? detail.standardRate ?? 0);
+    setRate(costRate ? String(costRate) : "0");
+    setSellingRate(detail.sellingRate != null ? String(detail.sellingRate) : "0");
   }
 
   async function onAddPart() {
@@ -304,6 +310,8 @@ function PartsSection({
       setSelectedItem(null);
       setItemQuery("");
       setQty("1");
+      setRate("0");
+      setSellingRate("0");
     } catch (err) {
       onError(err instanceof ApiError ? (err.body as { message?: string | string[] })?.message?.toString() ?? "Could not add part." : "Could not add part.");
     } finally {
@@ -455,7 +463,14 @@ function PartsSection({
                 >
                   Add
                 </button>
-                <button onClick={() => setSelectedItem(null)} className="text-xs font-bold text-muted">
+                <button
+                  onClick={() => {
+                    setSelectedItem(null);
+                    setRate("0");
+                    setSellingRate("0");
+                  }}
+                  className="text-xs font-bold text-muted"
+                >
                   Change item
                 </button>
               </div>

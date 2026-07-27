@@ -33,6 +33,7 @@ import {
 import {
   acceptTicket,
   asmResolveTicket,
+  asmRejectResolution,
   assignTicket,
   closeTicket,
   EngineerCandidate,
@@ -1028,6 +1029,20 @@ function TicketActions({
 }) {
   const [asmResolveComment, setAsmResolveComment] = useState("");
   const [closeComment, setCloseComment] = useState("");
+  const [showRejectResolution, setShowRejectResolution] = useState(false);
+  const [rejectResolutionReason, setRejectResolutionReason] = useState("");
+  const [rejectResolutionEngineerId, setRejectResolutionEngineerId] = useState("");
+  const [rejectCandidates, setRejectCandidates] = useState<EngineerCandidate[]>([]);
+
+  useEffect(() => {
+    if ((role === "ASM" || role === "MANAGER") && ticket.status === "ENGINEER_RESOLVED") {
+      engineerCandidates(ticket.customer.region ?? undefined)
+        .then(setRejectCandidates)
+        .catch(() => setRejectCandidates([]));
+      setRejectResolutionEngineerId(ticket.assignedEngineer?.id ?? "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [role, ticket.status, ticket.customer.region, ticket.assignedEngineer?.id]);
 
   const buttons: React.ReactNode[] = [];
 
@@ -1036,7 +1051,7 @@ function TicketActions({
   // not relevant to surface twice, and the sidebar is the more prominent
   // spot for "what do I do next" for that role specifically.
 
-  // ASM/Manager: confirm resolution
+  // ASM/Manager: confirm resolution, or reject it back to an engineer
   if ((role === "ASM" || role === "MANAGER") && ticket.status === "ENGINEER_RESOLVED") {
     buttons.push(
       <RemarkedAction
@@ -1050,6 +1065,60 @@ function TicketActions({
         }
       />,
     );
+    if (!showRejectResolution) {
+      buttons.push(
+        <ActionButton
+          key="reject-resolution"
+          label="Reject"
+          variant="secondary"
+          busy={busy}
+          onClick={() => setShowRejectResolution(true)}
+        />,
+      );
+    } else {
+      buttons.push(
+        <div key="reject-resolution-form" className="w-full space-y-2 rounded-md border border-line bg-navy-soft p-3">
+          <textarea
+            value={rejectResolutionReason}
+            onChange={(e) => setRejectResolutionReason(e.target.value)}
+            placeholder="Reason for rejection (required)"
+            className="h-16 w-full rounded-md border border-line p-2 text-sm text-navy"
+          />
+          <select
+            value={rejectResolutionEngineerId}
+            onChange={(e) => setRejectResolutionEngineerId(e.target.value)}
+            className="w-full rounded-md border border-line px-3 py-2 text-sm"
+          >
+            <option value="">Select engineer…</option>
+            {ticket.assignedEngineer && (
+              <option value={ticket.assignedEngineer.id}>{ticket.assignedEngineer.fullName} (same engineer)</option>
+            )}
+            {rejectCandidates
+              .filter((c) => c.id !== ticket.assignedEngineer?.id)
+              .map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.fullName} — {c.openLoad} open{c.territoryMatch ? " · territory match" : ""}
+                </option>
+              ))}
+          </select>
+          <div className="flex gap-2">
+            <ActionButton
+              label="Submit Rejection"
+              busy={busy || !rejectResolutionReason.trim() || !rejectResolutionEngineerId}
+              onClick={() => {
+                runAction(
+                  () => asmRejectResolution(ticket.id, rejectResolutionEngineerId, rejectResolutionReason.trim()),
+                  "Ticket rejected and reassigned.",
+                );
+                setShowRejectResolution(false);
+                setRejectResolutionReason("");
+              }}
+            />
+            <ActionButton label="Cancel" variant="secondary" busy={false} onClick={() => setShowRejectResolution(false)} />
+          </div>
+        </div>,
+      );
+    }
   }
 
   // Call Center/Manager: close

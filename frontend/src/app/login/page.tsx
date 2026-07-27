@@ -143,6 +143,7 @@ const SEED_USERS: { email: string; label: string; group: "ticketing" | "erp" }[]
   { email: "manager@proman.test", label: "Manager", group: "ticketing" },
   { email: "asm@proman.test", label: "ASM", group: "ticketing" },
   { email: "engineer@proman.test", label: "Engineer", group: "ticketing" },
+  { email: "engineer2@proman.test", label: "Engineer 2", group: "ticketing" },
   { email: "callcenter@proman.test", label: "Call Center", group: "ticketing" },
   { email: "manufacturing@proman.test", label: "Manufacturing Head", group: "erp" },
   { email: "sales@proman.test", label: "Sales Head", group: "erp" },

@@ -14,7 +14,9 @@ export const TICKET_TRANSITIONS: Record<TicketStatus, { next: TicketStatus[]; al
   REACHED_SITE: { next: ['WORKING'], allowedRoles: ['ENGINEER'] },
   WORKING: { next: ['PENDING', 'ENGINEER_RESOLVED'], allowedRoles: ['ENGINEER'] }, // ENGINEER_RESOLVED via FSV submit only
   PENDING: { next: ['WORKING'], allowedRoles: ['ENGINEER'] }, // resume once awaited item clears; SLA clock keeps running (§14.1 rule 21)
-  ENGINEER_RESOLVED: { next: ['ASM_RESOLVED'], allowedRoles: ['ASM', 'MANAGER'] },
+  // ENGINEER_ASSIGNED = ASM reject-after-resolved path (2026-07-27) — same
+  // or a different engineer re-does the work, must Accept again either way.
+  ENGINEER_RESOLVED: { next: ['ASM_RESOLVED', 'ENGINEER_ASSIGNED'], allowedRoles: ['ASM', 'MANAGER'] },
   ASM_RESOLVED: { next: ['CLOSED'], allowedRoles: ['CALL_CENTER', 'MANAGER'] },
   // Reopen target (ASM_RESOLVED) is a TCB default, not FSD-specified — the doc
   // only says "re-openable by Admin only," not which state it returns to.

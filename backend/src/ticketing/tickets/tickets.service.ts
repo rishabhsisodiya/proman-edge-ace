@@ -498,6 +498,55 @@ export class TicketsService {
   }
 
   /**
+   * ASM rejects an Engineer Resolved ticket (Ashwath feedback 2026-07-25) —
+   * two options folded into one method via `engineerId`: pass the same
+   * engineer to redo the work, or a different one to reassign. Either way
+   * the ticket goes back to ENGINEER_ASSIGNED (must Accept again, per
+   * client decision — no shortcut for the same-engineer case) rather than
+   * skipping straight to Accepted/Working. Shares the same
+   * rejectionCount/rejectionReasons/escalation-tier ladder as the engineer's
+   * own pre-resolution reject() above (client decision — one bounce counter
+   * for the whole ticket, not a separate one per reject flow).
+   */
+  async asmRejectResolution(id: string, engineerId: string, reason: string, actor: RequestUser) {
+    const engineer = await this.prisma.user.findUniqueOrThrow({ where: { id: engineerId } });
+    if (engineer.role !== 'ENGINEER') throw new BadRequestException('Target user is not an Engineer');
+
+    const ticket = await this.prisma.ticket.findUniqueOrThrow({ where: { id } });
+    if (ticket.status !== 'ENGINEER_RESOLVED') {
+      throw new BadRequestException('Only an Engineer Resolved ticket can be rejected this way');
+    }
+
+    const existingReasons = Array.isArray(ticket.rejectionReasons) ? ticket.rejectionReasons : [];
+    const rejectionCount = ticket.rejectionCount + 1;
+
+    await this.prisma.ticket.update({
+      where: { id },
+      data: {
+        rejectionCount,
+        rejectionReasons: [
+          ...existingReasons,
+          { engineerId: ticket.assignedEngineerId, reason, timestamp: new Date().toISOString() },
+        ] as any,
+        assignedEngineerId: engineerId,
+      },
+    });
+
+    const updated = await this.workflow.transition({
+      ticketId: id,
+      targetStatus: 'ENGINEER_ASSIGNED',
+      actorUserId: actor.userId,
+      actorRole: actor.role,
+      comment: `ASM rejected: ${reason} — reassigned to ${engineer.fullName}`,
+    });
+
+    const escalationTier =
+      rejectionCount >= 3 ? 'ESCALATED_TO_MANAGER' : rejectionCount === 2 ? 'MANAGER_ALERTED' : 'ASM_NOTIFIED';
+
+    return { ...updated, escalationTier };
+  }
+
+  /**
    * Client request: service type can be set/updated after ticket creation
    * (it may genuinely be unknown at creation time) — restricted to
    * ASM/Engineer/Manager/Admin (enforced at the controller), not Call
