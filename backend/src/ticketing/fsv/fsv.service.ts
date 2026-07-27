@@ -136,9 +136,15 @@ export class FsvService {
   }
 
   async addPhoto(id: string, dto: AddFsvPhotoDto) {
-    const visit = await this.prisma.fieldServiceVisit.findUniqueOrThrow({ where: { id } });
+    const visit = await this.prisma.fieldServiceVisit.findUniqueOrThrow({
+      where: { id },
+      include: { photos: true },
+    });
     if (visit.status === 'SUBMITTED') {
       throw new BadRequestException('This Field Service Visit has already been submitted and is immutable');
+    }
+    if (visit.photos.length >= MAX_PHOTOS) {
+      throw new BadRequestException(`Maximum ${MAX_PHOTOS} photos per visit`);
     }
     return this.prisma.fsvPhoto.create({ data: { visitId: id, ...dto } });
   }
@@ -178,8 +184,15 @@ export class FsvService {
     if (!visit.customerSignOff) {
       throw new BadRequestException('Customer sign-off is required before submitting');
     }
-    if (visit.ticket.serviceType === 'BREAKDOWN_CHARGEABLE' && visit.photos.length === 0) {
-      throw new BadRequestException('At least one photo is required for Breakdown tickets');
+    // Ashwath feedback (2026-07-25): Service Report + at least one photo now
+    // required before resolving, for ALL service types — previously photos
+    // were only required for Breakdown-Chargeable, and the report wasn't
+    // required at all.
+    if (visit.photos.length === 0) {
+      throw new BadRequestException('At least one photo is required before submitting');
+    }
+    if (!visit.visitReportUrl) {
+      throw new BadRequestException('A scanned Service Report must be attached before submitting');
     }
 
     const submitted = await this.prisma.fieldServiceVisit.update({

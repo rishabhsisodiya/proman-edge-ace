@@ -135,6 +135,30 @@ export async function uploadFsvPhoto(id: string, file: File, caption?: string): 
 
 export const submitFsv = (id: string) => post<FieldServiceVisit>(`/fsv/${id}/submit`);
 
+/** Uploads the scanned Service Report file (Ashwath feedback 2026-07-25), mirroring uploadFsvPhoto/uploadFsvSignature. */
+export async function uploadFsvReport(id: string, file: File): Promise<FieldServiceVisit> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const send = () =>
+    fetch(`${API_URL}/fsv/${id}/report/upload`, {
+      method: "POST",
+      credentials: "include",
+      body: formData,
+    });
+
+  let res = await send();
+  if (res.status === 401) {
+    const refreshed = await fetch(`${API_URL}/auth/refresh`, { method: "POST", credentials: "include" });
+    if (refreshed.ok) res = await send();
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new ApiError(res.status, body);
+  }
+  return res.json() as Promise<FieldServiceVisit>;
+}
+
 /** Uploads the captured signature PNG (see SignaturePad) to server-side storage, mirroring uploadFsvPhoto. */
 export async function uploadFsvSignature(id: string, blob: Blob): Promise<FieldServiceVisit> {
   const formData = new FormData();

@@ -12,6 +12,7 @@ import {
   submitFsv,
   updateFsv,
   uploadFsvPhoto,
+  uploadFsvReport,
   uploadFsvSignature,
 } from "@/lib/ticketing/fsv";
 import { ItemListItem, listItems } from "@/lib/ticketing/masters";
@@ -129,6 +130,8 @@ export default function FsvDetailPage({ params }: { params: Promise<{ id: string
       <PartsSection fsv={fsv} readOnly={readOnly} onSave={saveField} reload={load} onError={setError} />
 
       <PhotosSection fsv={fsv} readOnly={readOnly} reload={load} onError={setError} />
+
+      <ReportSection fsv={fsv} readOnly={readOnly} reload={load} onError={setError} />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
@@ -498,10 +501,12 @@ function PhotosSection({
     }
   }
 
+  const atMax = fsv.photos.length >= 5;
+
   return (
     <div>
       <label className="mb-1.5 block text-xs font-bold text-navy">
-        Photos <span className="font-normal text-muted">(≥1 required for Breakdown tickets)</span>
+        Photos <span className="font-normal text-muted">(1–5 required, max 2MB each)</span>
       </label>
       <div className="mb-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {fsv.photos.map((p) => (
@@ -509,7 +514,7 @@ function PhotosSection({
           <img key={p.id} src={p.url} alt={p.caption ?? "Visit photo"} className="h-20 w-full rounded-md border border-line object-cover" />
         ))}
       </div>
-      {!readOnly && (
+      {!readOnly && !atMax && (
         <div className="flex flex-wrap items-center gap-2">
           <input
             type="text"
@@ -523,6 +528,66 @@ function PhotosSection({
             <input
               type="file"
               accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+              onChange={onFileSelected}
+              disabled={uploading}
+              className="hidden"
+            />
+          </label>
+        </div>
+      )}
+      {!readOnly && atMax && <p className="text-xs text-muted">Maximum 5 photos reached.</p>}
+    </div>
+  );
+}
+
+function ReportSection({
+  fsv,
+  readOnly,
+  reload,
+  onError,
+}: {
+  fsv: FieldServiceVisit;
+  readOnly: boolean;
+  reload: () => void;
+  onError: (message: string | null) => void;
+}) {
+  const [uploading, setUploading] = useState(false);
+
+  async function onFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploading(true);
+    onError(null);
+    try {
+      await uploadFsvReport(fsv.id, file);
+      reload();
+    } catch (err) {
+      onError(err instanceof ApiError ? (err.body as { message?: string })?.message ?? "Upload failed" : "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div>
+      <label className="mb-1.5 block text-xs font-bold text-navy">
+        Service Report <span className="font-normal text-muted">(required — scanned document, JPEG/PNG/PDF)</span>
+      </label>
+      {fsv.visitReportUrl ? (
+        <a href={fsv.visitReportUrl} target="_blank" rel="noreferrer" className="text-sm font-bold text-navy underline">
+          View uploaded Service Report
+        </a>
+      ) : (
+        <p className="text-xs text-muted">No Service Report attached yet.</p>
+      )}
+      {!readOnly && (
+        <div className="mt-2">
+          <label className="flex h-9 w-fit cursor-pointer items-center rounded-md bg-navy-tint px-3 text-xs font-bold text-navy">
+            {uploading ? "Uploading…" : fsv.visitReportUrl ? "Replace Service Report" : "Upload Service Report"}
+            <input
+              type="file"
+              accept="image/jpeg,image/png,application/pdf"
               onChange={onFileSelected}
               disabled={uploading}
               className="hidden"

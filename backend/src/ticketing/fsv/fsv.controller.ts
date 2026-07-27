@@ -29,6 +29,9 @@ const ALLOWED_PHOTO_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp
 const FSV_SIGNATURE_UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'fsv-signatures');
 const ALLOWED_SIGNATURE_MIME_TYPES = new Set(['image/png']);
 
+const FSV_REPORT_UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'fsv-reports');
+const ALLOWED_REPORT_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'application/pdf']);
+
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller()
 export class FsvController {
@@ -82,7 +85,9 @@ export class FsvController {
         destination: FSV_PHOTO_UPLOAD_DIR,
         filename: (_req, file, cb) => cb(null, `${crypto.randomUUID()}${path.extname(file.originalname)}`),
       }),
-      limits: { fileSize: 10 * 1024 * 1024 },
+      // 2MB per photo (Ashwath feedback 2026-07-25: "Service pics [Max 5,
+      // 2MB each]") — was 10MB; max-count (5) is enforced in FsvService.addPhoto().
+      limits: { fileSize: 2 * 1024 * 1024 },
       fileFilter: (_req, file, cb) => {
         if (!ALLOWED_PHOTO_MIME_TYPES.has(file.mimetype)) {
           cb(new BadRequestException('Only JPEG, PNG, WEBP, or HEIC/HEIF images are allowed'), false);
@@ -125,6 +130,31 @@ export class FsvController {
     if (!file) throw new BadRequestException('No file uploaded');
     const url = `${req.protocol}://${req.get('host')}/uploads/fsv-signatures/${file.filename}`;
     return this.fsv.setSignature(id, url);
+  }
+
+  /** Scanned Service Report (Ashwath feedback 2026-07-25) — required before submit, all service types. */
+  @Roles('ENGINEER')
+  @Post('fsv/:id/report/upload')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: FSV_REPORT_UPLOAD_DIR,
+        filename: (_req, file, cb) => cb(null, `${crypto.randomUUID()}${path.extname(file.originalname)}`),
+      }),
+      limits: { fileSize: 10 * 1024 * 1024 },
+      fileFilter: (_req, file, cb) => {
+        if (!ALLOWED_REPORT_MIME_TYPES.has(file.mimetype)) {
+          cb(new BadRequestException('Service Report must be a JPEG, PNG, or PDF file'), false);
+          return;
+        }
+        cb(null, true);
+      },
+    }),
+  )
+  uploadReport(@Param('id') id: string, @UploadedFile() file: Express.Multer.File, @Req() req: Request) {
+    if (!file) throw new BadRequestException('No file uploaded');
+    const url = `${req.protocol}://${req.get('host')}/uploads/fsv-reports/${file.filename}`;
+    return this.fsv.setReport(id, url);
   }
 
   @Roles('ENGINEER')
