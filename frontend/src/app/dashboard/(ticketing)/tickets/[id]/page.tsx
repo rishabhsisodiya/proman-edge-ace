@@ -1165,14 +1165,22 @@ function TicketActions({
  * tab — was previously an always-visible card in the main action list,
  * moved here per client feedback for a cleaner, more organized layout.
  */
+// Client decision (2026-07-27): Create Quotation/Direct Sales Order is only
+// meaningful once the engineer has actually engaged with the ticket, up
+// through Pending (still an active engagement, just blocked on something) —
+// not before Accepted, and not once Engineer/ASM has already resolved it.
+// Replaces the previous "does any FSV exist" gate, which an engineer could
+// satisfy by opening an FSV without ever leaving Accepted.
+const COMMERCIAL_ALLOWED_STATUSES: TicketStatus[] = ["ACCEPTED", "REACHED_SITE", "WORKING", "PENDING"];
+
 function CommercialTab({ ticket }: { ticket: Ticket }) {
   const [chargeability, setChargeability] = useState<Chargeability | null>(null);
   const [quotations, setQuotations] = useState<QuotationRecord[]>([]);
   const [deliveries, setDeliveries] = useState<DeliveryRecord[]>([]);
   const [commercialBusy, setCommercialBusy] = useState(false);
-  const [fsvExists, setFsvExists] = useState(false);
   const [resultModal, setResultModal] = useState<{ title: string; message: string; success: boolean } | null>(null);
   const router = useRouter();
+  const canCreateCommercial = COMMERCIAL_ALLOWED_STATUSES.includes(ticket.status);
 
   function extractErrorMessage(err: unknown): string {
     if (err instanceof ApiError) {
@@ -1181,10 +1189,6 @@ function CommercialTab({ ticket }: { ticket: Ticket }) {
     }
     return "Could not reach the server.";
   }
-
-  useEffect(() => {
-    listFsvForTicket(ticket.id).then((list) => setFsvExists(list.length > 0)).catch(() => setFsvExists(false));
-  }, [ticket.id]);
 
   useEffect(() => {
     isTicketChargeable(ticket.id).then(setChargeability).catch(() => setChargeability(null));
@@ -1207,8 +1211,8 @@ function CommercialTab({ ticket }: { ticket: Ticket }) {
                   ? `Covered by AMC ${chargeability.amcContractRef}${chargeability.amcEndDate ? ` (until ${new Date(chargeability.amcEndDate).toLocaleDateString()})` : ""} — not chargeable.`
                   : "Not chargeable."}
           </span>
-          {!fsvExists ? (
-            <span className="text-xs italic text-muted">(available once a Field Service Visit has started)</span>
+          {!canCreateCommercial ? (
+            <span className="text-xs italic text-muted">(available once the ticket is Accepted, through Pending)</span>
           ) : (
             <>
               <ActionButton
@@ -1247,11 +1251,21 @@ function CommercialTab({ ticket }: { ticket: Ticket }) {
           )}
         </div>
       ) : (
-        <div className="space-y-1">
+        <div className="space-y-3">
           {quotations.map((q) => (
-            <a key={q.id} href={`/dashboard/quotations/${q.id}`} className="block text-xs font-bold text-navy hover:underline">
-              {q.quotationNo} — {q.status}
-            </a>
+            <div key={q.id} className="rounded-md border border-line p-2">
+              <a href={`/dashboard/quotations/${q.id}`} className="block text-xs font-bold text-navy hover:underline">
+                {q.quotationNo} — {q.status}
+              </a>
+              {q.erpnextQuotationId && (
+                <div className="mt-1.5 space-y-0.5 text-xs text-muted">
+                  <p>ERPNext Quotation: <span className="font-bold text-navy">{q.erpnextQuotationId}</span></p>
+                  <p>Sales Order: <span className={q.erpnextSalesOrderId ? "font-bold text-navy" : ""}>{q.erpnextSalesOrderId ?? "—"}</span></p>
+                  <p>Delivery Note: <span className={q.erpnextDeliveryNoteId ? "font-bold text-navy" : ""}>{q.erpnextDeliveryNoteId ?? "—"}</span></p>
+                  <p>Sales Invoice: <span className={q.erpnextInvoiceId ? "font-bold text-navy" : ""}>{q.erpnextInvoiceId ?? "—"}</span></p>
+                </div>
+              )}
+            </div>
           ))}
           {deliveries.map((d) => (
             <div key={d.id} className="text-xs text-muted">

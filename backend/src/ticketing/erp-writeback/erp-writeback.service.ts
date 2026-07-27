@@ -57,6 +57,28 @@ export class ErpWritebackService {
     return process.env.ACE_SALES_PERSON ?? 'ACE Service';
   }
 
+  private salesTaxesTemplate(): string {
+    return process.env.ACE_SALES_TAXES_TEMPLATE ?? 'Sales SGST 9% & CGST9% - PISPL';
+  }
+
+  /**
+   * Tax child rows for a Sales Taxes and Charges Template, via ERPNext's own
+   * get_taxes_and_charges (nothing hard-coded on our side). Attaching the
+   * rows is REQUIRED, not optional — PISPL's "auto add taxes from template"
+   * setting is OFF, so setting only the header `taxes_and_charges` leaves the
+   * quotation untaxed. Setting both is safe: ERPNext skips its own auto-add
+   * when rows are already present, so there's no double-tax risk either way.
+   */
+  private async fetchSalesTaxes(template: string): Promise<Record<string, unknown>[]> {
+    if (!template) return [];
+    const rows = await this.frappe.post<Record<string, unknown>[]>(
+      'erpnext.controllers.accounts_controller.get_taxes_and_charges',
+      { master_doctype: 'Sales Taxes and Charges Template', master_name: template },
+    );
+    const drop = new Set(['name', 'parent', 'parentfield', 'parenttype', 'idx', 'creation', 'modified', 'modified_by', 'owner', 'docstatus']);
+    return (rows ?? []).map((row) => Object.fromEntries(Object.entries(row).filter(([k]) => !drop.has(k))));
+  }
+
   private remarks(ticketId: string): string {
     return `ACE Ticket: ${ticketId}`;
   }
@@ -73,6 +95,13 @@ export class ErpWritebackService {
    * posts nothing). Pass an explicit `rate` per line (ACE's own catalog
    * rate) — a bare insert with no rate and an empty price list leaves
    * rate=0, confirmed on the test instance.
+   *
+   * GST tax prefill (2026-07-27, ACE_SalesOrder_From_Quotation_Handoff_default_tax.md)
+   * — defaults to the intra-state CGST 9% + SGST 9% template
+   * (ACE_SALES_TAXES_TEMPLATE); pass taxesTemplate="Sales IGST 18%" for an
+   * out-of-state customer, or "" to omit tax entirely. The Sales Order and
+   * Sales Invoice inherit these taxes automatically via the make_* mappers —
+   * no separate tax step needed downstream.
    */
   async quotationDraft(
     ticketId: string,
@@ -80,7 +109,10 @@ export class ErpWritebackService {
     items: { itemCode: string; qty: number; rate?: number; uom?: string }[],
     validTill?: string,
     priceList?: string,
+    taxesTemplate?: string,
   ): Promise<string> {
+    const template = taxesTemplate ?? this.salesTaxesTemplate();
+    const taxes = template ? await this.fetchSalesTaxes(template) : undefined;
     const doc = {
       doctype: 'Quotation',
       quotation_to: 'Customer',
@@ -91,6 +123,8 @@ export class ErpWritebackService {
       remarks: this.remarks(ticketId),
       items: items.map((i) => this.line(i)),
       ...(validTill ? { valid_till: validTill } : {}),
+      ...(template ? { taxes_and_charges: template } : {}),
+      ...(taxes ? { taxes } : {}),
     };
     this.logger.log(`Creating draft Quotation for ticket ${ticketId}`);
     const result = await this.frappe.post<{ name: string }>('frappe.client.insert', { doc: JSON.stringify(doc) });

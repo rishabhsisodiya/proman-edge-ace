@@ -221,8 +221,19 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
             )}
           </div>
           <div className="flex items-center justify-between">
-            <StatusRow className="flex-1" label="Sales Invoice (draft)" value={quotation.erpnextInvoiceId} pending="Awaiting Sales Order status “To Bill”" />
-            {quotation.erpnextSalesOrderId && !quotation.erpnextInvoiceId && (
+            <StatusRow
+              className="flex-1"
+              label="Sales Invoice (draft)"
+              value={quotation.erpnextInvoiceId}
+              pending={
+                quotation.ticket?.status !== "CLOSED"
+                  ? "Awaiting ticket closure"
+                  : "Awaiting Sales Order status “To Bill”"
+              }
+            />
+            {/* Client decision (2026-07-27): Create Invoice only becomes available once
+                the ticket is fully Closed — not merely once the Sales Order exists. */}
+            {quotation.erpnextSalesOrderId && !quotation.erpnextInvoiceId && quotation.ticket?.status === "CLOSED" && (
               <button
                 onClick={async () => {
                   setBusy(true);

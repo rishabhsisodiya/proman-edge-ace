@@ -17,6 +17,7 @@ import {
   ServiceType,
 } from "@/lib/ticketing/types";
 import { Pagination } from "@/components/Pagination";
+import { SortableTh } from "@/components/SortableTh";
 
 const REGIONS: Region[] = ["NORTH", "SOUTH", "EAST", "WEST", "CENTRAL", "BANGLADESH"];
 const PRIORITIES: Priority[] = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
@@ -51,6 +52,16 @@ export default function ManagerDashboardPage() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const pageSize = 25;
+  const [sortBy, setSortBy] = useState("createdAt");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  function onSort(key: string) {
+    if (key === sortBy) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortBy(key);
+      setSortDir("asc");
+    }
+  }
 
   // Stat tiles must reflect the whole board regardless of active filters —
   // sourced from a separate unfiltered fetch, same pattern as the ASM page.
@@ -76,6 +87,8 @@ export default function ManagerDashboardPage() {
     if (assigned) params.set("assigned", assigned);
     params.set("page", String(page));
     params.set("pageSize", String(pageSize));
+    params.set("sortBy", sortBy);
+    params.set("sortDir", sortDir);
 
     apiFetch<Paginated<Ticket>>(`/tickets?${params.toString()}`)
       .then((res) => {
@@ -84,7 +97,7 @@ export default function ManagerDashboardPage() {
       })
       .catch(() => setError("Could not load tickets. Is the backend running and seeded?"))
       .finally(() => setLoading(false));
-  }, [region, priority, status, serviceType, assigned, page]);
+  }, [region, priority, status, serviceType, assigned, page, sortBy, sortDir]);
 
   const now = Date.now();
   const stats = useMemo(() => {
@@ -189,14 +202,14 @@ export default function ManagerDashboardPage() {
       <div className="overflow-x-auto rounded-lg border border-line bg-white shadow-[0_1px_4px_rgba(42,47,105,.06)]">
         <table className="w-full text-sm">
           <thead>
-            <tr className="h-10 bg-navy text-left text-[10px] font-bold uppercase tracking-wider text-white">
-              <th className="px-4">Ticket</th>
-              <th className="px-4">Customer / Site</th>
-              <th className="px-4">Equipment / Issue</th>
-              <th className="px-4">Priority</th>
-              <th className="px-4">Status</th>
-              <th className="px-4">Region</th>
-              <th className="px-4">Engineer</th>
+            <tr className="h-10 bg-navy text-left text-[10px] uppercase tracking-wider text-white">
+              <SortableTh label="Ticket" sortKey="ticketNo" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
+              <SortableTh label="Customer / Site" sortKey="customerName" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
+              <th className="px-4 font-bold">Equipment / Issue</th>
+              <SortableTh label="Priority" sortKey="priority" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
+              <SortableTh label="Status" sortKey="status" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
+              <SortableTh label="Region" sortKey="region" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
+              <SortableTh label="Engineer" sortKey="engineerName" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
             </tr>
           </thead>
           <tbody>

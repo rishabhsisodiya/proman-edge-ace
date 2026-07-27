@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { Paginated, PRIORITY_STYLE, SOURCE_LABEL, STATUS_LABEL, STATUS_STYLE, Source, Ticket } from "@/lib/ticketing/types";
+import { SortableTh } from "@/components/SortableTh";
 
 function Tile({ label, value, accent }: { label: string; value: string | number; accent?: string }) {
   return (
@@ -30,6 +31,16 @@ export default function CallCenterDashboardPage() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState("createdAt");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  function onSort(key: string) {
+    if (key === sortBy) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortBy(key);
+      setSortDir("asc");
+    }
+  }
 
   useEffect(() => {
     // pageSize=500: this dashboard computes its own stats client-side over
@@ -58,6 +69,33 @@ export default function CallCenterDashboardPage() {
 
     return { open, unassigned, todayIntake, slaAtRisk, bySource };
   }, [tickets, now]);
+
+  // Client-side sort for "Recent tickets" only — this table isn't paginated
+  // server-side (already fetches the full-ish unfiltered set for stats).
+  const sortedRecent = useMemo(() => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    const get = (t: Ticket): string | number => {
+      switch (sortBy) {
+        case "ticketNo":
+          return t.ticketNo;
+        case "customerName":
+          return t.customer.customerName;
+        case "priority":
+          return t.priority;
+        case "status":
+          return t.status;
+        case "engineerName":
+          return t.assignedEngineer?.fullName ?? "";
+        default:
+          return t.createdAt;
+      }
+    };
+    return [...tickets].sort((a, b) => {
+      const av = get(a);
+      const bv = get(b);
+      return av < bv ? -1 * dir : av > bv ? 1 * dir : 0;
+    });
+  }, [tickets, sortBy, sortDir]);
 
   return (
     <div className="space-y-6 p-6">
@@ -155,13 +193,13 @@ export default function CallCenterDashboardPage() {
         <div className="overflow-x-auto rounded-lg border border-line bg-white">
           <table className="w-full text-sm">
             <thead>
-              <tr className="h-10 bg-navy text-left text-[10px] font-bold uppercase tracking-wider text-white">
-                <th className="px-4">Ticket</th>
-                <th className="px-4">Customer</th>
-                <th className="px-4">Source</th>
-                <th className="px-4">Priority</th>
-                <th className="px-4">Status</th>
-                <th className="px-4">Engineer</th>
+              <tr className="h-10 bg-navy text-left text-[10px] uppercase tracking-wider text-white">
+                <SortableTh label="Ticket" sortKey="ticketNo" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
+                <SortableTh label="Customer" sortKey="customerName" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
+                <th className="px-4 font-bold">Source</th>
+                <SortableTh label="Priority" sortKey="priority" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
+                <SortableTh label="Status" sortKey="status" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
+                <SortableTh label="Engineer" sortKey="engineerName" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
               </tr>
             </thead>
             <tbody>
@@ -179,7 +217,7 @@ export default function CallCenterDashboardPage() {
                   </td>
                 </tr>
               )}
-              {tickets.slice(0, 20).map((t, i) => (
+              {sortedRecent.slice(0, 20).map((t, i) => (
                 <tr
                   key={t.id}
                   onClick={() => router.push(`/dashboard/tickets/${t.id}`)}

@@ -59,6 +59,7 @@ export interface Quotation {
   items: QuotationItem[];
   deliveries?: Delivery[];
   customer?: { id: string; customerName: string };
+  ticket?: { id: string; ticketNo: string; status: string };
 }
 
 function post<T>(path: string, body?: unknown): Promise<T> {

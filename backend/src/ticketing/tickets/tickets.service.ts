@@ -267,11 +267,25 @@ export class TicketsService {
     const page = Math.max(1, parseInt(filters.page ?? '1', 10) || 1);
     const pageSize = Math.min(500, Math.max(1, parseInt(filters.pageSize ?? '25', 10) || 25));
 
+    // Clickable column-header sorting (client request, 2026-07-27) — server-side
+    // so it's consistent across pages, not just the currently-fetched one.
+    const sortDir: Prisma.SortOrder = filters.sortDir === 'asc' ? 'asc' : 'desc';
+    const sortableColumns: Record<string, Prisma.TicketOrderByWithRelationInput> = {
+      ticketNo: { ticketNo: sortDir },
+      customerName: { customer: { customerName: sortDir } },
+      priority: { priority: sortDir },
+      status: { status: sortDir },
+      engineerName: { assignedEngineer: { fullName: sortDir } },
+      region: { customer: { region: sortDir } },
+      createdAt: { createdAt: sortDir },
+    };
+    const orderBy = (filters.sortBy && sortableColumns[filters.sortBy]) || { createdAt: 'desc' as const };
+
     const [data, total] = await Promise.all([
       this.prisma.ticket.findMany({
         where,
         include: { customer: true, equipment: true, assignedEngineer: true, assignedAsm: true },
-        orderBy: { createdAt: 'desc' },
+        orderBy,
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),

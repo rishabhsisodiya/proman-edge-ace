@@ -15,6 +15,7 @@ import {
   ServiceType,
 } from "@/lib/ticketing/types";
 import { Pagination } from "@/components/Pagination";
+import { SortableTh } from "@/components/SortableTh";
 
 const PRIORITIES: Priority[] = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 const STATUSES: TicketStatus[] = Object.keys(STATUS_LABEL) as TicketStatus[];
@@ -50,6 +51,16 @@ export default function AsmDashboardPage() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const pageSize = 25;
+  const [sortBy, setSortBy] = useState("createdAt");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  function onSort(key: string) {
+    if (key === sortBy) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortBy(key);
+      setSortDir("asc");
+    }
+  }
 
   useEffect(() => {
     apiFetch<Paginated<Ticket>>("/tickets?pageSize=500")
@@ -72,6 +83,8 @@ export default function AsmDashboardPage() {
     if (assigned) params.set("assigned", assigned);
     params.set("page", String(page));
     params.set("pageSize", String(pageSize));
+    params.set("sortBy", sortBy);
+    params.set("sortDir", sortDir);
 
     apiFetch<Paginated<Ticket>>(`/tickets?${params.toString()}`)
       .then((res) => {
@@ -80,7 +93,7 @@ export default function AsmDashboardPage() {
       })
       .catch(() => setError("Could not load tickets. Is the backend running and seeded?"))
       .finally(() => setLoading(false));
-  }, [status, priority, serviceType, assigned, page]);
+  }, [status, priority, serviceType, assigned, page, sortBy, sortDir]);
 
   const stats = useMemo(() => {
     const open = allTickets.filter((t) => t.status !== "CLOSED").length;
@@ -192,6 +205,9 @@ export default function AsmDashboardPage() {
         error={error}
         onRowClick={(id) => router.push(`/dashboard/tickets/${id}`)}
         emptyText="No tickets match these filters."
+        sortBy={sortBy}
+        sortDir={sortDir}
+        onSort={onSort}
       />
 
       <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} />
@@ -205,23 +221,29 @@ function TicketTable({
   error,
   onRowClick,
   emptyText,
+  sortBy,
+  sortDir,
+  onSort,
 }: {
   tickets: Ticket[];
   loading: boolean;
   error: string | null;
   onRowClick: (id: string) => void;
   emptyText: string;
+  sortBy: string;
+  sortDir: "asc" | "desc";
+  onSort: (key: string) => void;
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-line bg-white">
       <table className="w-full text-sm">
         <thead>
-          <tr className="h-10 bg-navy text-left text-[10px] font-bold uppercase tracking-wider text-white">
-            <th className="px-4">Ticket</th>
-            <th className="px-4">Customer</th>
-            <th className="px-4">Priority</th>
-            <th className="px-4">Status</th>
-            <th className="px-4">Engineer</th>
+          <tr className="h-10 bg-navy text-left text-[10px] uppercase tracking-wider text-white">
+            <SortableTh label="Ticket" sortKey="ticketNo" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
+            <SortableTh label="Customer" sortKey="customerName" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
+            <SortableTh label="Priority" sortKey="priority" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
+            <SortableTh label="Status" sortKey="status" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
+            <SortableTh label="Engineer" sortKey="engineerName" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
           </tr>
         </thead>
         <tbody>

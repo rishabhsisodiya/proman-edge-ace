@@ -332,12 +332,18 @@ export class QuotationService {
    * as Draft even when submitted, per Shivam's gotcha #6).
    */
   async createInvoice(id: string) {
-    const quotation = await this.prisma.quotation.findUniqueOrThrow({ where: { id } });
+    const quotation = await this.prisma.quotation.findUniqueOrThrow({ where: { id }, include: { ticket: true } });
     if (!quotation.erpnextSalesOrderId) {
       throw new BadRequestException('This quotation has no Sales Order yet');
     }
     if (quotation.erpnextInvoiceId) {
       throw new BadRequestException('A Sales Invoice already exists for this quotation');
+    }
+    // Client decision (2026-07-27): the manual "Create Invoice" button only
+    // becomes valid once the ticket is fully Closed — matches the frontend
+    // gate, enforced here too so a direct API call can't bypass it.
+    if (quotation.ticket.status !== 'CLOSED') {
+      throw new BadRequestException('Ticket must be Closed before creating a Sales Invoice');
     }
     const status = await this.erpWriteback.getDocStatus('Sales Order', quotation.erpnextSalesOrderId);
     if (status.docstatus !== 1 || (status.per_billed ?? 0) !== 0) {
