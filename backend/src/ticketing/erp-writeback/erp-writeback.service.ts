@@ -155,6 +155,12 @@ export class ErpWritebackService {
    * no Quotation to map from. Sales Order still stays "submitted by ACE" in
    * the new model too, so hand-building + submitting one directly remains
    * consistent; only the Quotation/Invoice/Stock-Entry parts changed.
+   *
+   * sales_team + api_call=1 fix (2026-07-25) — this is a second, separate
+   * Sales Order submit path from salesOrderFromQuotation() above and was
+   * missed in the first pass at that fix; same MandatoryError: sales_team
+   * and prevent_so_creation_for_acepl issue applies here identically since
+   * both submit a Sales Order doc the same way.
    */
   async salesOrderDirect(
     ticketId: string,
@@ -173,9 +179,13 @@ export class ErpWritebackService {
       po_date: poDate,
       delivery_date: deliveryDate,
       items: items.map((i) => this.line(i, deliveryDate)),
+      sales_team: [{ sales_person: this.salesPerson(), allocated_percentage: 100 }],
     };
     this.logger.log(`Submitting direct Sales Order for ticket ${ticketId}`);
-    const result = await this.frappe.post<{ name: string }>('frappe.client.submit', { doc: JSON.stringify(doc) });
+    const result = await this.frappe.post<{ name: string }>('frappe.client.submit', {
+      doc: JSON.stringify(doc),
+      api_call: 1,
+    });
     return result.name;
   }
 
