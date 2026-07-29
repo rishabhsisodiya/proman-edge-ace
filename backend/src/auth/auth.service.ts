@@ -17,7 +17,10 @@ export interface RefreshTokenPayload {
   type: 'refresh';
 }
 
-const PASSWORD_POLICY_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+// Exported so any other place that sets a password (e.g. UsersService's admin
+// create/reset-password) enforces the exact same rule — one regex source of
+// truth, not a copy that can drift.
+export const PASSWORD_POLICY_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
 
 // FSD §8.2: 5 attempts / 15 min window -> 30 min lockout, Admin can unlock early.
 const MAX_FAILED_ATTEMPTS = 5;

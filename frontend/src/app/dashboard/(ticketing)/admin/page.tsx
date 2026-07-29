@@ -1,16 +1,18 @@
 import Link from "next/link";
 
 // Admin Console — hub for §5.2's 10 admin-managed config entities plus
-// login/security. Only "Login & Security" is actually built today (the
-// auth-hardening work: failed-login lockout + unlock); everything else is a
-// placeholder until its own Build Plan slot lands (Days 1-3 leaf config,
-// Days 4-10/11-16 for Workflow Designer/Notification Templates/Predictive
-// Rules — see ACE-Ticket-Engine-Build-Plan.md).
+// User Management. "Login & Security" (failed-login lockout + unlock) was
+// merged into User Management (2026-07-28) — locked accounts now show a
+// badge + Unlock action directly on the Users list instead of a separate
+// screen. Several other entries are still placeholders until their own
+// Build Plan slot lands (Days 1-3 leaf config, Days 4-10/11-16 for Workflow
+// Designer/Notification Templates/Predictive Rules — see
+// ACE-Ticket-Engine-Build-Plan.md).
 const SECTIONS = [
   {
-    label: "Login & Security",
-    description: "Locked accounts, unlock action",
-    href: "/dashboard/admin/security",
+    label: "User Management",
+    description: "Create/edit users (any role except Admin), regions, skill tags, companies, locked-account unlock",
+    href: "/dashboard/admin/users",
   },
   {
     label: "Equipment",
@@ -68,7 +70,6 @@ const SECTIONS = [
     href: "/dashboard/admin/price-lists",
   },
   { label: "Predictive Rules", description: "Time-since-service / breakdown-frequency / hours thresholds", href: null },
-  { label: "User Management", description: "Full user CRUD (roles, regions, skill tags)", href: null },
 ];
 
 export default function AdminConsolePage() {

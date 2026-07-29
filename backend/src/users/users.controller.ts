@@ -1,9 +1,12 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { UsersService } from './users.service';
+import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('users')
@@ -12,13 +15,37 @@ export class UsersController {
 
   @Roles('ADMIN')
   @Get()
-  list(@Query('role') role?: Role, @Query('lockedOnly') lockedOnly?: string) {
-    return this.users.list(role, lockedOnly === 'true');
+  list(@Query('role') role?: Role, @Query('lockedOnly') lockedOnly?: string, @Query('isActive') isActive?: string) {
+    return this.users.list(role, lockedOnly === 'true', isActive === undefined ? undefined : isActive === 'true');
   }
 
   @Roles('ASM', 'MANAGER')
   @Get('engineer-candidates')
   engineerCandidates(@Query('region') region?: string, @Query('skillTag') skillTag?: string) {
     return this.users.engineerCandidates(region, skillTag);
+  }
+
+  @Roles('ADMIN')
+  @Get('companies')
+  companies() {
+    return this.users.listCompanies();
+  }
+
+  @Roles('ADMIN')
+  @Post()
+  create(@Body() dto: CreateUserDto) {
+    return this.users.create(dto);
+  }
+
+  @Roles('ADMIN')
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() dto: UpdateUserDto) {
+    return this.users.update(id, dto);
+  }
+
+  @Roles('ADMIN')
+  @Post(':id/reset-password')
+  resetPassword(@Param('id') id: string, @Body() dto: ResetPasswordDto) {
+    return this.users.resetPassword(id, dto.newPassword);
   }
 }
