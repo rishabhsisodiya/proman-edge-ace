@@ -30,6 +30,11 @@ export class SyncAdminController {
     return this.syncAdmin.needsReview();
   }
 
+  @Get('employees')
+  employees() {
+    return this.syncAdmin.employees();
+  }
+
   @Post('failures/:id/retry')
   retryFailure(@Param('id') id: string) {
     return this.syncAdmin.retryFailure(id);

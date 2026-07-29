@@ -13,6 +13,7 @@ export interface ManagedUser {
   failedLoginAttempts: number;
   skillTags: string[];
   engineerLevel: string | null;
+  erpEmployeeId: string | null;
   regions: { region: Region }[];
   companies: { company: { id: string; name: string } }[];
 }
@@ -58,6 +59,7 @@ export interface CreateUserParams {
   skillTags?: string[];
   companyIds?: string[];
   engineerLevel?: string;
+  erpEmployeeId?: string;
 }
 
 export const createUser = (params: CreateUserParams) =>
@@ -86,3 +88,17 @@ export interface CompanyRef {
 }
 
 export const listCompanies = () => apiFetch<CompanyRef[]>(`/users/companies`);
+
+export interface UnimportedErpEmployee {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  designation: string;
+  status: string;
+  erpUserId: string | null;
+  cellNumber: string | null;
+  department: string | null;
+  lastSyncedAt: string;
+}
+
+export const listUnimportedErpEmployees = () => apiFetch<UnimportedErpEmployee[]>(`/users/erp-employees/unimported`);

@@ -49,6 +49,20 @@ export const getSyncSkipped = () => apiFetch<SyncSkipped[]>(`/admin/sync/skipped
 
 export const getNeedsReview = () => apiFetch<NeedsReviewCustomer[]>(`/admin/sync/needs-review`);
 
+export interface SyncedEmployee {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  designation: string;
+  status: string;
+  erpUserId: string | null;
+  cellNumber: string | null;
+  department: string | null;
+  lastSyncedAt: string;
+}
+
+export const getSyncEmployees = () => apiFetch<SyncedEmployee[]>(`/admin/sync/employees`);
+
 export const retrySyncFailure = (id: string) =>
   apiFetch<{ ok: boolean }>(`/admin/sync/failures/${id}/retry`, { method: "POST" });
 

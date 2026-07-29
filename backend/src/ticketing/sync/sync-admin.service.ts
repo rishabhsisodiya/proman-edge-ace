@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CustomerSyncService } from './customer-sync.service';
 import { ItemSyncService } from './item-sync.service';
+import { EmployeeSyncService } from './employee-sync.service';
 
 /** Backs the W-26 Sync Monitor admin screen (§12.5/§10.1). */
 @Injectable()
@@ -10,6 +11,7 @@ export class SyncAdminService {
     private readonly prisma: PrismaService,
     private readonly customerSync: CustomerSyncService,
     private readonly itemSync: ItemSyncService,
+    private readonly employeeSync: EmployeeSyncService,
   ) {}
 
   runs(entity?: string) {
@@ -36,6 +38,11 @@ export class SyncAdminService {
     });
   }
 
+  /** Full synced Employee list, for Sync Monitor visibility into what the last run brought in — not the Create User picker (see UsersService.unimportedErpEmployees for that). */
+  employees() {
+    return this.prisma.erpEmployee.findMany({ orderBy: { employeeName: 'asc' } });
+  }
+
   async retryFailure(id: string) {
     const failure = await this.prisma.customerSyncFailure.findUnique({ where: { id } });
     if (!failure) throw new NotFoundException('Failure record not found');
@@ -44,14 +51,18 @@ export class SyncAdminService {
   }
 
   /**
-   * Manual on-demand run of the full night job — Customer (+ CustomerSite)
-   * then Item, same sequence NightlySyncCron fires automatically at 1:30 AM.
+   * Manual on-demand run of the full night job — Customer (+ CustomerSite),
+   * Item, then Employee — same sequence NightlySyncCron fires automatically
+   * at 1:30 AM.
    * @param force Ignores each sync's modified-since watermark and reprocesses
    * every record from scratch — for one-off full resyncs, not routine use.
+   * Employee sync has no watermark (small dataset, always a full re-pull),
+   * so `force` doesn't change its behavior.
    */
   async triggerRun(force = false) {
     await this.customerSync.run(force);
     await this.itemSync.run(force);
+    await this.employeeSync.run();
     return { ok: true };
   }
 }

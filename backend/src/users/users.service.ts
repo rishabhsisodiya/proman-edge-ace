@@ -17,6 +17,7 @@ const USER_SAFE_SELECT = {
   failedLoginAttempts: true,
   skillTags: true,
   engineerLevel: true,
+  erpEmployeeId: true,
   regions: true,
   companies: { include: { company: true } },
 } as const;
@@ -87,6 +88,13 @@ export class UsersService {
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (existing) throw new ConflictException('A user with this email already exists');
 
+    if (dto.erpEmployeeId) {
+      const employee = await this.prisma.erpEmployee.findUnique({ where: { employeeId: dto.erpEmployeeId } });
+      if (!employee) throw new BadRequestException('ERP employee not found — try re-syncing first');
+      const alreadyLinked = await this.prisma.user.findUnique({ where: { erpEmployeeId: dto.erpEmployeeId } });
+      if (alreadyLinked) throw new ConflictException('This ERP employee has already been imported as a User');
+    }
+
     const passwordHash = await bcrypt.hash(dto.password, 10);
     const user = await this.prisma.user.create({
       data: {
@@ -97,6 +105,7 @@ export class UsersService {
         role: dto.role,
         skillTags: dto.skillTags ?? [],
         engineerLevel: dto.engineerLevel,
+        erpEmployeeId: dto.erpEmployeeId,
         mustChangePassword: true,
         regions: dto.regions ? { create: dto.regions.map((region) => ({ region })) } : undefined,
         companies: dto.companyIds ? { create: dto.companyIds.map((companyId) => ({ companyId })) } : undefined,
@@ -175,6 +184,22 @@ export class UsersService {
   /** The 5 seeded Company rows (PISPL/ACE/PROMAX/Bluestone/QMS Pro) — for the company picker on this same screen. */
   listCompanies() {
     return this.prisma.company.findMany({ orderBy: { name: 'asc' } });
+  }
+
+  /**
+   * ERP Employees (ACE_Service_Module_SQL.md §1) not yet linked to a real
+   * ACE User — the "Prefill from ERP Employee" picker on Create User. Excludes
+   * rows already imported (anti-join, cheap at this list's size — synced
+   * ~23 rows on the reference instance).
+   */
+  async unimportedErpEmployees() {
+    const linked = await this.prisma.user.findMany({
+      where: { erpEmployeeId: { not: null } },
+      select: { erpEmployeeId: true },
+    });
+    const linkedIds = new Set(linked.map((u) => u.erpEmployeeId));
+    const employees = await this.prisma.erpEmployee.findMany({ orderBy: { employeeName: 'asc' } });
+    return employees.filter((e) => !linkedIds.has(e.employeeId));
   }
 
   private async openTicketAssignmentCount(userId: string): Promise<number> {

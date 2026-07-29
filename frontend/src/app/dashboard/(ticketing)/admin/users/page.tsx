@@ -8,10 +8,12 @@ import {
   CREATABLE_ROLES,
   createUser,
   listCompanies,
+  listUnimportedErpEmployees,
   listUsers,
   ManagedUser,
   resetUserPassword,
   ROLE_LABEL,
+  UnimportedErpEmployee,
   updateUser,
 } from "@/lib/ticketing/users";
 import { Region } from "@/lib/ticketing/types";
@@ -24,6 +26,7 @@ const REGIONS: Region[] = ["NORTH", "SOUTH", "EAST", "WEST", "CENTRAL", "BANGLAD
 export default function UserManagementPage() {
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [companies, setCompanies] = useState<CompanyRef[]>([]);
+  const [unimportedEmployees, setUnimportedEmployees] = useState<UnimportedErpEmployee[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [roleFilter, setRoleFilter] = useState("");
@@ -68,6 +71,7 @@ export default function UserManagementPage() {
 
   useEffect(() => {
     listCompanies().then(setCompanies).catch(() => {});
+    listUnimportedErpEmployees().then(setUnimportedEmployees).catch(() => {});
   }, []);
 
   useEffect(load, [roleFilter, activeFilter]);
@@ -178,7 +182,18 @@ export default function UserManagementPage() {
         </table>
       )}
 
-      {showCreate && <CreateUserModal companies={companies} onClose={() => setShowCreate(false)} onDone={() => { setShowCreate(false); load(); }} />}
+      {showCreate && (
+        <CreateUserModal
+          companies={companies}
+          unimportedEmployees={unimportedEmployees}
+          onClose={() => setShowCreate(false)}
+          onDone={() => {
+            setShowCreate(false);
+            load();
+            listUnimportedErpEmployees().then(setUnimportedEmployees).catch(() => {});
+          }}
+        />
+      )}
       {editing && <EditUserModal user={editing} companies={companies} onClose={() => setEditing(null)} onDone={() => { setEditing(null); load(); }} />}
       {resetTarget && <ResetPasswordModal user={resetTarget} onClose={() => setResetTarget(null)} onDone={() => setResetTarget(null)} />}
     </div>
@@ -257,7 +272,17 @@ function CompanyPicker({ companies, value, onChange }: { companies: CompanyRef[]
   );
 }
 
-function CreateUserModal({ companies, onClose, onDone }: { companies: CompanyRef[]; onClose: () => void; onDone: () => void }) {
+function CreateUserModal({
+  companies,
+  unimportedEmployees,
+  onClose,
+  onDone,
+}: {
+  companies: CompanyRef[];
+  unimportedEmployees: UnimportedErpEmployee[];
+  onClose: () => void;
+  onDone: () => void;
+}) {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [mobile, setMobile] = useState("");
@@ -267,8 +292,21 @@ function CreateUserModal({ companies, onClose, onDone }: { companies: CompanyRef
   const [companyIds, setCompanyIds] = useState<string[]>([]);
   const [skillTagsText, setSkillTagsText] = useState("");
   const [engineerLevel, setEngineerLevel] = useState("");
+  const [erpEmployeeId, setErpEmployeeId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Selecting an ERP Employee prefills name/mobile/email (email only when the
+  // ERP record has a login on file) — every field stays editable, this is a
+  // suggestion, not a lock (client decision, 2026-07-28).
+  function onPickEmployee(employeeId: string) {
+    setErpEmployeeId(employeeId);
+    const emp = unimportedEmployees.find((e) => e.employeeId === employeeId);
+    if (!emp) return;
+    setFullName(emp.employeeName);
+    if (emp.cellNumber) setMobile(emp.cellNumber);
+    if (emp.erpUserId) setEmail(emp.erpUserId);
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -288,6 +326,7 @@ function CreateUserModal({ companies, onClose, onDone }: { companies: CompanyRef
           .map((s) => s.trim())
           .filter(Boolean),
         engineerLevel: engineerLevel || undefined,
+        erpEmployeeId: erpEmployeeId || undefined,
       });
       onDone();
     } catch (err) {
@@ -302,6 +341,27 @@ function CreateUserModal({ companies, onClose, onDone }: { companies: CompanyRef
     <Modal title="Create User" onClose={onClose}>
       <form onSubmit={onSubmit} className="space-y-3">
         {error && <p className="rounded-md bg-brand-red-bg px-3 py-2 text-xs text-brand-red">{error}</p>}
+
+        {unimportedEmployees.length > 0 && (
+          <div className="rounded-md border border-line bg-navy-tint/30 p-3">
+            <label className="mb-1 block text-xs font-bold text-navy">Prefill from ERP Employee (optional)</label>
+            <select
+              value={erpEmployeeId}
+              onChange={(e) => onPickEmployee(e.target.value)}
+              className="h-9 w-full rounded-md border border-line px-2 text-sm text-navy"
+            >
+              <option value="">— Manual entry —</option>
+              {unimportedEmployees.map((emp) => (
+                <option key={emp.employeeId} value={emp.employeeId}>
+                  {emp.employeeId} — {emp.employeeName} — {emp.designation}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-[11px] text-muted">
+              Fills name/mobile/email as a suggestion — every field below stays editable.
+            </p>
+          </div>
+        )}
 
         <div>
           <label className="mb-1 block text-xs font-bold text-navy">Full name</label>

@@ -32,6 +32,12 @@ export class UsersController {
   }
 
   @Roles('ADMIN')
+  @Get('erp-employees/unimported')
+  unimportedErpEmployees() {
+    return this.users.unimportedErpEmployees();
+  }
+
+  @Roles('ADMIN')
   @Post()
   create(@Body() dto: CreateUserDto) {
     return this.users.create(dto);

@@ -4,18 +4,20 @@ import { useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
 import {
   getNeedsReview,
+  getSyncEmployees,
   getSyncFailures,
   getSyncRuns,
   getSyncSkipped,
   NeedsReviewCustomer,
   retrySyncFailure,
+  SyncedEmployee,
   SyncFailure,
   SyncRun,
   SyncSkipped,
   triggerNightlySync,
 } from "@/lib/ticketing/sync-admin";
 
-type Tab = "runs" | "failures" | "skipped" | "needsReview";
+type Tab = "runs" | "failures" | "skipped" | "needsReview" | "employees";
 
 const STATUS_STYLE: Record<SyncRun["status"], string> = {
   SUCCESS: "bg-brand-green-bg text-brand-green",
@@ -31,6 +33,7 @@ export default function SyncMonitorPage() {
   const [failures, setFailures] = useState<SyncFailure[]>([]);
   const [skipped, setSkipped] = useState<SyncSkipped[]>([]);
   const [needsReview, setNeedsReview] = useState<NeedsReviewCustomer[]>([]);
+  const [employees, setEmployees] = useState<SyncedEmployee[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -40,12 +43,13 @@ export default function SyncMonitorPage() {
   function load() {
     setLoading(true);
     setError(null);
-    Promise.all([getSyncRuns(), getSyncFailures(), getSyncSkipped(), getNeedsReview()])
-      .then(([r, f, s, n]) => {
+    Promise.all([getSyncRuns(), getSyncFailures(), getSyncSkipped(), getNeedsReview(), getSyncEmployees()])
+      .then(([r, f, s, n, e]) => {
         setRuns(r);
         setFailures(f);
         setSkipped(s);
         setNeedsReview(n);
+        setEmployees(e);
       })
       .catch((err) => {
         if (err instanceof ApiError && err.status === 403) {
@@ -78,8 +82,8 @@ export default function SyncMonitorPage() {
       await triggerNightlySync(force);
       setNotice(
         force
-          ? "Full resync triggered and completed (Customer + Item, all records reprocessed)."
-          : "Night job triggered and completed (Customer + Item).",
+          ? "Full resync triggered and completed (Customer + Item + Employee, Customer/Item records fully reprocessed)."
+          : "Night job triggered and completed (Customer + Item + Employee).",
       );
       load();
     } catch {
@@ -91,6 +95,7 @@ export default function SyncMonitorPage() {
 
   const lastRun = runs.find((r) => r.entity === "Customer");
   const lastItemRun = runs.find((r) => r.entity === "Item");
+  const lastEmployeeRun = runs.find((r) => r.entity === "ErpEmployee");
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-10">
@@ -122,8 +127,12 @@ export default function SyncMonitorPage() {
         </div>
       </div>
       <p className="mb-4 text-sm text-muted">
-        ERPNext Customer (+ site addresses) + Item sync history, failed records, skipped records, and customers
-        flagged for review.
+        ERPNext Customer (+ site addresses), Item, and Employee (service designations) sync history, failed records,
+        skipped records, and customers flagged for review. To create a User from a synced Employee, use{" "}
+        <a href="/dashboard/admin/users" className="underline">
+          User Management
+        </a>
+        &apos;s Create User form.
       </p>
 
       <div className="mb-6 space-y-2">
@@ -154,6 +163,16 @@ export default function SyncMonitorPage() {
             </span>
           </div>
         )}
+        {lastEmployeeRun && (
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-white p-4 text-sm">
+            <span className="text-xs font-bold uppercase text-muted">Employee</span>
+            <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${STATUS_STYLE[lastEmployeeRun.status]}`}>
+              {lastEmployeeRun.status}
+            </span>
+            <span className="text-navy">Last run: {new Date(lastEmployeeRun.startedAt).toLocaleString()}</span>
+            <span className="text-muted">{employees.length} employees synced (service designations only)</span>
+          </div>
+        )}
       </div>
 
       {notice && <p className="mb-4 rounded-md bg-brand-green-bg px-3 py-2 text-xs text-brand-green">{notice}</p>}
@@ -166,6 +185,7 @@ export default function SyncMonitorPage() {
             ["failures", `Failures (${failures.length})`],
             ["skipped", `Skipped (${skipped.length})`],
             ["needsReview", `Needs Review (${needsReview.length})`],
+            ["employees", `Employees (${employees.length})`],
           ] as [Tab, string][]
         ).map(([key, label]) => (
           <button
@@ -186,8 +206,10 @@ export default function SyncMonitorPage() {
         <FailuresTable failures={failures} busyId={busyId} onRetry={onRetry} />
       ) : tab === "skipped" ? (
         <SkippedTable skipped={skipped} />
-      ) : (
+      ) : tab === "needsReview" ? (
         <NeedsReviewTable rows={needsReview} />
+      ) : (
+        <EmployeesTable employees={employees} />
       )}
     </div>
   );
@@ -292,6 +314,34 @@ function SkippedTable({ skipped }: { skipped: SyncSkipped[] }) {
             <td className="px-4 py-3 text-muted">{s.erpnextCustomerId}</td>
             <td className="px-4 py-3 text-muted">{s.reason}</td>
             <td className="px-4 py-3 text-muted">{new Date(s.firstSeenAt).toLocaleDateString()}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function EmployeesTable({ employees }: { employees: SyncedEmployee[] }) {
+  if (employees.length === 0) return <p className="text-sm text-muted">No employees synced yet.</p>;
+  return (
+    <table className="w-full rounded-lg border border-line bg-white text-sm">
+      <thead>
+        <tr className="border-b border-line text-left text-xs font-bold uppercase tracking-wide text-navy">
+          <th className="px-4 py-3">Employee ID</th>
+          <th className="px-4 py-3">Name</th>
+          <th className="px-4 py-3">Designation</th>
+          <th className="px-4 py-3">Department</th>
+          <th className="px-4 py-3">ERP Login</th>
+        </tr>
+      </thead>
+      <tbody>
+        {employees.map((e) => (
+          <tr key={e.id} className="border-b border-line last:border-0">
+            <td className="px-4 py-3 font-mono text-xs text-muted">{e.employeeId}</td>
+            <td className="px-4 py-3 text-navy">{e.employeeName}</td>
+            <td className="px-4 py-3 text-muted">{e.designation}</td>
+            <td className="px-4 py-3 text-muted">{e.department ?? "—"}</td>
+            <td className="px-4 py-3 text-muted">{e.erpUserId || "—"}</td>
           </tr>
         ))}
       </tbody>

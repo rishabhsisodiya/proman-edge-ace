@@ -237,6 +237,11 @@ model User {
   currentGpsLong      Float?
   lastLocationUpdate  DateTime?
   erpnextUserId       String?             @unique
+  /// Set when this User was created from (or later linked to) an
+  /// ErpEmployee row — the ERPNext Employee ID (e.g. "PR1094"), not the
+  /// login email (erpnextUserId above). Set via User Management's Create
+  /// User "Prefill from ERP Employee" picker — never automatic.
+  erpEmployeeId       String?             @unique
   // Free-text, not an enum — actual levels (Junior/Senior/Lead or otherwise)
   // aren't fixed yet (§5.2 Build Plan note); looked up against BillingRate.level.
   engineerLevel       String?
@@ -381,6 +386,24 @@ model CustomerSyncSkipped {
   lastCheckedAt     DateTime @default(now())
 }
 
+/// Service Engineer dropdown source (2026-07-28, ACE_Service_Module_SQL.md
+/// §1) — synced nightly from ERPNext's tabEmployee, filtered to configured
+/// service designations. Reference/staging data only: importing one into a
+/// real ACE User (any role except Admin) is a separate, explicit Admin
+/// action via User Management's Create User form — see User.erpEmployeeId.
+model ErpEmployee {
+  id           String   @id @default(uuid())
+  employeeId   String   @unique
+  employeeName String
+  designation  String
+  status       String
+  /// ERPNext login email, if any — often NULL (confirmed ~7/23 on the
+  /// reference instance). Never used as a key; employeeId is stable.
+  erpUserId    String?
+  cellNumber   String?
+  department   String?
+  lastSyncedAt DateTime @default(now())
+}
 
 model CustomerSite {
   id               String  @id @default(uuid())

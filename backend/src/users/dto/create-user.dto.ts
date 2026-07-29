@@ -39,4 +39,10 @@ export class CreateUserDto {
   @IsOptional()
   @IsString()
   engineerLevel?: string;
+
+  // Set when this User is being created from the "Prefill from ERP Employee"
+  // picker — the ERPNext Employee ID (e.g. "PR1170"), not a UUID.
+  @IsOptional()
+  @IsString()
+  erpEmployeeId?: string;
 }
