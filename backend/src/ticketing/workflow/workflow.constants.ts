@@ -18,9 +18,10 @@ export const TICKET_TRANSITIONS: Record<TicketStatus, { next: TicketStatus[]; al
   // or a different engineer re-does the work, must Accept again either way.
   ENGINEER_RESOLVED: { next: ['ASM_RESOLVED', 'ENGINEER_ASSIGNED'], allowedRoles: ['ASM', 'MANAGER'] },
   ASM_RESOLVED: { next: ['CLOSED'], allowedRoles: ['CALL_CENTER', 'MANAGER'] },
-  // Reopen target (ASM_RESOLVED) is a TCB default, not FSD-specified — the doc
-  // only says "re-openable by Admin only," not which state it returns to.
-  CLOSED: { next: ['ASM_RESOLVED'], allowedRoles: ['ADMIN'] },
+  // FSD §14.1 rule 20: "a Closed/Feedback ticket can be re-opened to Open
+  // state by Admin only." Was previously ASM_RESOLVED (a TCB default that
+  // deviated from spec) — fixed 2026-07-28, see TicketsService.reopen().
+  CLOSED: { next: ['OPEN'], allowedRoles: ['ADMIN'] },
 };
 
 export const REJECTION_ESCALATION = {

@@ -381,6 +381,7 @@ model CustomerSyncSkipped {
   lastCheckedAt     DateTime @default(now())
 }
 
+
 model CustomerSite {
   id               String  @id @default(uuid())
   // Not in the FSD's own Customer SQL spec (site_addresses explicitly marked
@@ -521,7 +522,13 @@ model Ticket {
   /// recomputing from slaResponseDue/slaResolutionDue on every read.
   slaResponseStatus        SlaClockStatus      @default(ON_TRACK)
   slaResolutionStatus      SlaClockStatus      @default(ON_TRACK)
+  /// FSD §14.1 rule 21 — set by WorkflowService.applyTransition() when the
+  /// ticket enters a status on the admin-configured SlaPauseState list;
+  /// cleared (and slaPausedMinutes/due-dates adjusted) when it leaves one.
+  slaPausedAt              DateTime?
+  slaPausedMinutes         Int                 @default(0)
   slaPolicyId              String?
+  slaPolicy                SlaPolicy?          @relation(fields: [slaPolicyId], references: [id])
   callReceivedAt           DateTime            @default(now())
   callReceivedVia          CallReceivedVia?
   createdByUserId          String
@@ -531,6 +538,8 @@ model Ticket {
   assignedEngineer         User?               @relation("EngineerTickets", fields: [assignedEngineerId], references: [id])
   rejectionCount           Int                 @default(0)
   rejectionReasons         Json                @default("[]")
+  /// FSD §14.1 rule 20 — incremented every time TicketsService.reopen() fires.
+  reOpenCount              Int                 @default(0)
   pendingReason            PendingReason?
   pendingNotes             String?
   resolutionSummary        String?
@@ -565,6 +574,36 @@ model Ticket {
   @@index([slaResolutionDue])
   @@index([assignedAsmId])
   @@index([assignedEngineerId])
+}
+
+/// Admin-configurable SLA target per FSD §14.3 — replaces the previously
+/// hardcoded SLA_POLICY constant (sla-policy.constants.ts) that nobody but a
+/// developer could view or change. One row per (serviceType, priority);
+/// missing combinations fall back to no SLA window (ticket gets no due
+/// dates) exactly as the hardcoded table did.
+model SlaPolicy {
+  id              String       @id @default(uuid())
+  serviceType     ServiceType
+  priority        Priority
+  responseHours   Int
+  resolutionHours Int
+  tickets         Ticket[]
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@unique([serviceType, priority])
+}
+
+/// FSD §14.1 rule 21 — "SLA clock pauses only for tickets that move to a
+/// configurable 'SLA pause' state list (admin-configurable; default: none)."
+/// Presence of a row for a given TicketStatus means time spent in that status
+/// doesn't count against the SLA clock; empty table = today's behavior
+/// (nothing pauses except the two hardcoded stop-clock rules in
+/// WorkflowService — response at Assigned, resolution at Engineer Resolved).
+model SlaPauseState {
+  id        String       @id @default(uuid())
+  status    TicketStatus @unique
+  createdAt DateTime     @default(now())
 }
 
 model TicketAuditLog {

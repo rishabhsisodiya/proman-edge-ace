@@ -7,6 +7,8 @@ import { WorkflowModule } from './ticketing/workflow/workflow.module';
 import { UsersModule } from './users/users.module';
 import { CustomersModule } from './ticketing/customers/customers.module';
 import { RegionMappingModule } from './ticketing/region-mapping/region-mapping.module';
+import { SlaPolicyModule } from './ticketing/sla-policy/sla-policy.module';
+import { SlaPauseStateModule } from './ticketing/sla-pause-state/sla-pause-state.module';
 import { SyncModule } from './ticketing/sync/sync.module';
 import { EquipmentModule } from './ticketing/equipment/equipment.module';
 import { AmcModule } from './ticketing/amc/amc.module';
@@ -37,6 +39,8 @@ import { DispatchModule } from './dashboards/dispatch/dispatch.module';
     UsersModule,
     CustomersModule,
     RegionMappingModule,
+    SlaPolicyModule,
+    SlaPauseStateModule,
     SyncModule,
     EquipmentModule,
     AmcModule,

@@ -5,8 +5,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { nextTicketNo } from './ticket-number.util';
 import { addBusinessHours } from './business-hours.util';
-import { SLA_POLICY } from './sla-policy.constants';
 import { WorkflowService } from '../workflow/workflow.service';
+import { SlaPolicyService } from '../sla-policy/sla-policy.service';
 
 /**
  * FSD §7.1 rule 4 — auto-classification for auto-sources (AMC->Scheduled PM/
@@ -76,6 +76,7 @@ export class TicketsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly workflow: WorkflowService,
+    private readonly slaPolicies: SlaPolicyService,
   ) {}
 
   /**
@@ -145,7 +146,7 @@ export class TicketsService {
     const warrantyStatusAtCreation = equipment?.warrantyStatus ?? null;
     const warrantyEligible = warrantyStatusAtCreation === 'UNDER_WARRANTY';
 
-    const policy = serviceType ? SLA_POLICY[serviceType]?.[priority] : undefined;
+    const policy = await this.slaPolicies.resolve(serviceType, priority);
     const now = new Date();
     const slaResponseDue = policy ? addBusinessHours(now, policy.responseHours) : null;
     const slaResolutionDue = policy ? addBusinessHours(now, policy.resolutionHours) : null;
@@ -177,6 +178,7 @@ export class TicketsService {
           warrantyEligible,
           slaResponseDue,
           slaResolutionDue,
+          slaPolicyId: policy?.id,
           createdByUserId: actor.userId,
         },
       });
@@ -309,6 +311,7 @@ export class TicketsService {
         assignedEngineer: true,
         assignedAsm: true,
         possibleDuplicateOf: { select: { id: true, ticketNo: true, status: true } },
+        slaPolicy: true,
       },
     });
     if (!ticket) throw new NotFoundException('Ticket not found');
@@ -573,7 +576,7 @@ export class TicketsService {
    */
   async updateServiceType(id: string, serviceType: ServiceType, actor: RequestUser) {
     const ticket = await this.prisma.ticket.findUniqueOrThrow({ where: { id } });
-    const policy = SLA_POLICY[serviceType]?.[ticket.priority];
+    const policy = await this.slaPolicies.resolve(serviceType, ticket.priority);
     const now = new Date();
 
     const updated = await this.prisma.ticket.update({
@@ -582,6 +585,7 @@ export class TicketsService {
         serviceType,
         slaResponseDue: policy ? addBusinessHours(now, policy.responseHours) : ticket.slaResponseDue,
         slaResolutionDue: policy ? addBusinessHours(now, policy.resolutionHours) : ticket.slaResolutionDue,
+        slaPolicyId: policy?.id ?? ticket.slaPolicyId,
       },
     });
 
@@ -691,13 +695,43 @@ export class TicketsService {
     });
   }
 
-  /** Admin-only reopen from Closed (§5.4 — "re-openable by Admin only"). */
-  reopen(id: string, actor: RequestUser) {
-    return this.workflow.transition({
-      ticketId: id,
-      targetStatus: 'ASM_RESOLVED',
-      actorUserId: actor.userId,
-      actorRole: actor.role,
+  /**
+   * FSD §14.1 rule 20 — Admin-only reopen from Closed back to Open (was
+   * ASM_RESOLVED, a TCB default that deviated from spec — fixed 2026-07-28).
+   * Increments reOpenCount and resets the SLA clocks for the restarted
+   * lifecycle (fresh due dates from the ticket's own service type/priority
+   * policy, same computation ticket creation uses) — the old due dates were
+   * relative to the original creation time and would otherwise show as
+   * already breached the instant the ticket reopens.
+   */
+  async reopen(id: string, actor: RequestUser) {
+    return this.prisma.$transaction(async (tx) => {
+      const ticket = await tx.ticket.findUniqueOrThrow({ where: { id } });
+      const policy = await this.slaPolicies.resolve(ticket.serviceType, ticket.priority);
+      const now = new Date();
+
+      await tx.ticket.update({
+        where: { id },
+        data: {
+          reOpenCount: { increment: 1 },
+          slaResponseMet: false,
+          slaResolutionMet: false,
+          slaResponseStatus: 'ON_TRACK',
+          slaResolutionStatus: 'ON_TRACK',
+          slaResponseDue: policy ? addBusinessHours(now, policy.responseHours) : null,
+          slaResolutionDue: policy ? addBusinessHours(now, policy.resolutionHours) : null,
+          slaPausedAt: null,
+          slaPausedMinutes: 0,
+        },
+      });
+
+      return this.workflow.transition({
+        ticketId: id,
+        targetStatus: 'OPEN',
+        actorUserId: actor.userId,
+        actorRole: actor.role,
+        tx,
+      });
     });
   }
 

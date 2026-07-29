@@ -23,7 +23,16 @@ const SECTIONS = [
     href: "/dashboard/admin/amc-contracts",
   },
   { label: "Service Types", description: "The 7 service_type values + billing model", href: null },
-  { label: "SLA Policies", description: "Response/resolution hours by service type × priority", href: null },
+  {
+    label: "SLA Policies",
+    description: "Response/resolution hours by service type × priority",
+    href: "/dashboard/admin/sla-policies",
+  },
+  {
+    label: "SLA Pause States",
+    description: "Ticket statuses that pause the SLA clock (default: none)",
+    href: "/dashboard/admin/sla-pause-states",
+  },
   { label: "Ticket Priorities", description: "Priority levels + Priority Matrix", href: null },
   { label: "Workflow States & Transitions", description: "Ticket lifecycle designer", href: null },
   {

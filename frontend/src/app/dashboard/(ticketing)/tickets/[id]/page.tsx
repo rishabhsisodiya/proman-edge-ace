@@ -352,6 +352,20 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
           <p className="text-xs font-bold uppercase text-muted">Source</p>
           <p className="break-words text-navy">{SOURCE_LABEL[ticket.source] ?? ticket.source}</p>
         </div>
+        {!!ticket.reOpenCount && (
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase text-muted">Reopened</p>
+            <p className="break-words text-navy">{ticket.reOpenCount} time{ticket.reOpenCount > 1 ? "s" : ""}</p>
+          </div>
+        )}
+        <div className="min-w-0">
+          <p className="text-xs font-bold uppercase text-muted">SLA Policy</p>
+          <p className="break-words text-navy">
+            {ticket.slaPolicy
+              ? `${ticket.slaPolicy.responseHours}h response / ${ticket.slaPolicy.resolutionHours}h resolution`
+              : "No policy set for this service type / priority"}
+          </p>
+        </div>
         {ticket.status === "PENDING" && (
           <div className="min-w-0 sm:col-span-2">
             <p className="text-xs font-bold uppercase text-muted">Pending reason</p>

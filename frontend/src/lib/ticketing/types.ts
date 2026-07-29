@@ -136,10 +136,12 @@ export interface Ticket {
   slaResolutionMet: boolean;
   slaResponseStatus?: "ON_TRACK" | "WARNING_90" | "BREACHED";
   slaResolutionStatus?: "ON_TRACK" | "WARNING_90" | "BREACHED";
+  slaPolicy?: { responseHours: number; resolutionHours: number } | null;
   pendingReason?: PendingReason | null;
   pendingNotes?: string | null;
   resolutionSummary?: string | null;
   rejectionCount?: number;
+  reOpenCount?: number;
   createdAt: string;
   customer: Customer;
   site?: CustomerSite | null;

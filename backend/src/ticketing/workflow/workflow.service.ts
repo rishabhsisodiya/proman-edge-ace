@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/com
 import { ChangeSource, Prisma, PendingReason, Role, Ticket, TicketStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TICKET_TRANSITIONS } from './workflow.constants';
+import { SlaPauseStateService } from '../sla-pause-state/sla-pause-state.service';
 
 const REGULARIZE_ROLES: Role[] = ['ADMIN', 'CALL_CENTER'];
 
@@ -10,7 +11,10 @@ type Db = PrismaService | Prisma.TransactionClient;
 
 @Injectable()
 export class WorkflowService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly slaPauseStates: SlaPauseStateService,
+  ) {}
 
   /**
    * The only writer of ticket.status. Every transition is validated against
@@ -60,8 +64,7 @@ export class WorkflowService {
     }
 
     return this.applyTransition({
-      ticketId,
-      fromStatus: ticket.status,
+      ticket,
       targetStatus,
       actorUserId,
       auditNote: comment?.trim() || undefined,
@@ -114,8 +117,7 @@ export class WorkflowService {
     const ticket = await this.prisma.ticket.findUniqueOrThrow({ where: { id: ticketId } });
 
     return this.applyTransition({
-      ticketId,
-      fromStatus: ticket.status,
+      ticket,
       targetStatus,
       actorUserId,
       auditNote: `Regularized: ${reason}`,
@@ -129,15 +131,39 @@ export class WorkflowService {
   }
 
   private async applyTransition(params: {
-    ticketId: string;
-    fromStatus: TicketStatus;
+    ticket: Ticket;
     targetStatus: TicketStatus;
     actorUserId: string;
     auditNote?: string;
     data: Record<string, unknown>;
     tx?: Prisma.TransactionClient;
   }): Promise<Ticket> {
-    const { ticketId, fromStatus, targetStatus, actorUserId, auditNote, data, tx } = params;
+    const { ticket, targetStatus, actorUserId, auditNote, data, tx } = params;
+    const ticketId = ticket.id;
+    const fromStatus = ticket.status;
+
+    // FSD §14.1 rule 21 — admin-configurable SLA pause-state list. Entering a
+    // configured status starts the pause clock; leaving one stops it and
+    // pushes the paused duration onto whichever due-dates haven't been met
+    // yet, so paused time genuinely doesn't count against the SLA.
+    const pausingStatuses = await this.slaPauseStates.listPausingStatuses();
+    const wasPaused = pausingStatuses.has(fromStatus);
+    const willBePaused = pausingStatuses.has(targetStatus);
+    const pauseData: Record<string, unknown> = {};
+    if (!wasPaused && willBePaused) {
+      pauseData.slaPausedAt = new Date();
+    } else if (wasPaused && !willBePaused && ticket.slaPausedAt) {
+      const elapsedMs = Date.now() - ticket.slaPausedAt.getTime();
+      pauseData.slaPausedAt = null;
+      pauseData.slaPausedMinutes = ticket.slaPausedMinutes + Math.max(0, Math.round(elapsedMs / 60000));
+      if (!ticket.slaResponseMet && ticket.slaResponseDue) {
+        pauseData.slaResponseDue = new Date(ticket.slaResponseDue.getTime() + elapsedMs);
+      }
+      if (!ticket.slaResolutionMet && ticket.slaResolutionDue) {
+        pauseData.slaResolutionDue = new Date(ticket.slaResolutionDue.getTime() + elapsedMs);
+      }
+    }
+    Object.assign(data, pauseData);
 
     const auditData = {
       ticketId,
