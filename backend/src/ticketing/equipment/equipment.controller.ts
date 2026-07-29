@@ -33,4 +33,11 @@ export class EquipmentController {
   update(@Param('id') id: string, @Body() dto: UpdateEquipmentDto) {
     return this.equipment.update(id, dto);
   }
+
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'MANAGER')
+  @Post(':id/resolve-duplicate')
+  resolveDuplicate(@Param('id') id: string, @Body('action') action: 'MERGE' | 'DISMISS') {
+    return this.equipment.resolveDuplicate(id, action);
+  }
 }

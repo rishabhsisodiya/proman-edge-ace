@@ -63,6 +63,17 @@ export interface SyncedEmployee {
 
 export const getSyncEmployees = () => apiFetch<SyncedEmployee[]>(`/admin/sync/employees`);
 
+export interface EquipmentSyncSkipped {
+  id: string;
+  erpSerialId: string;
+  customerName: string;
+  reason: string;
+  firstSeenAt: string;
+  lastCheckedAt: string;
+}
+
+export const getEquipmentSkipped = () => apiFetch<EquipmentSyncSkipped[]>(`/admin/sync/equipment-skipped`);
+
 export const retrySyncFailure = (id: string) =>
   apiFetch<{ ok: boolean }>(`/admin/sync/failures/${id}/retry`, { method: "POST" });
 

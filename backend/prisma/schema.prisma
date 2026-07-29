@@ -503,6 +503,28 @@ model Equipment {
   skillTagsRequired    String[]
   notes                String?
   erpnextSerialNo      String?
+  /// Equipment Tracking sync (2026-07-30, ACE_Service_Module_SQL.md §2) — one
+  /// Equipment Tracking row = one SO line, which may cover more than one
+  /// physical unit. Null/1 for manually-entered equipment.
+  quantity             Int?
+  /// Raw ERP status string (Active/Expired/Cancelled) from tabEquipment
+  /// Tracking — kept separate from `status` (EquipStatus) above, which is
+  /// this app's own operational lifecycle and is never overwritten by the
+  /// sync (an SO going "Expired"/"Cancelled" in ERP is a commercial-side
+  /// event, not evidence the physical machine was decommissioned/sold).
+  erpTrackingStatus    String?
+  // Duplicate-flag pattern, mirrors Ticket's possibleDuplicateOfId exactly
+  // (see TicketsService.resolveDuplicate) — set on a newly-synced Equipment
+  // Tracking row when it looks like it might be the same physical unit as
+  // an existing (usually manually-entered) record, matched on
+  // customerId + itemCode (no reliable serial-number correlation exists
+  // between ERP's synthetic serial_id and a human-entered one). Admin
+  // resolves via Merge (copy useful synced fields onto the original, delete
+  // this row) or Dismiss (confirmed different units, clear the flag).
+  possibleDuplicateOfId    String?
+  possibleDuplicateOf      Equipment?   @relation("EquipmentDuplicateFlag", fields: [possibleDuplicateOfId], references: [id])
+  possibleDuplicatesOfThis Equipment[]  @relation("EquipmentDuplicateFlag")
+  duplicateFlagResolved    Boolean      @default(false)
   // Many-to-many: an equipment can have more than one AMC Contract over its
   // lifetime (e.g. last year's + this year's renewal both present per
   // §14.5's overlapping-contracts rule — system picks the later start_date
@@ -511,6 +533,19 @@ model Equipment {
   tickets              Ticket[]
   createdAt            DateTime       @default(now())
   updatedAt            DateTime       @updatedAt
+}
+
+/// Equipment Tracking sync (2026-07-30, ACE_Service_Module_SQL.md §2) — a row
+/// whose ERP `customer` name doesn't match any synced Customer yet. Same
+/// self-healing pattern as CustomerSyncSkipped/EquipmentSyncSkipped: rechecked
+/// every run, cleared automatically once the matching Customer exists.
+model EquipmentSyncSkipped {
+  id            String   @id @default(uuid())
+  erpSerialId   String   @unique
+  customerName  String
+  reason        String
+  firstSeenAt   DateTime @default(now())
+  lastCheckedAt DateTime @default(now())
 }
 
 model Ticket {

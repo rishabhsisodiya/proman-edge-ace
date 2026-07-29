@@ -35,6 +35,11 @@ export class SyncAdminController {
     return this.syncAdmin.employees();
   }
 
+  @Get('equipment-skipped')
+  equipmentSkipped() {
+    return this.syncAdmin.equipmentSkipped();
+  }
+
   @Post('failures/:id/retry')
   retryFailure(@Param('id') id: string) {
     return this.syncAdmin.retryFailure(id);

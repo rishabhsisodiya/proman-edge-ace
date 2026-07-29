@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma, WarrantyStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateEquipmentDto, UpdateEquipmentDto } from './dto/equipment.dto';
@@ -22,13 +22,22 @@ export class EquipmentService {
     if (filters.serialNo) where.serialNo = { contains: filters.serialNo, mode: 'insensitive' };
     if (filters.category) where.equipmentCategory = filters.category as any;
     if (filters.customerId) where.customerId = filters.customerId;
-    return this.prisma.equipment.findMany({ where, include: { customer: true, site: true } });
+    return this.prisma.equipment.findMany({
+      where,
+      include: { customer: true, site: true, possibleDuplicateOf: { select: { id: true, serialNo: true, itemName: true } } },
+    });
   }
 
   findOne(id: string) {
     return this.prisma.equipment.findUniqueOrThrow({
       where: { id },
-      include: { customer: true, site: true, tickets: true, amcContracts: true },
+      include: {
+        customer: true,
+        site: true,
+        tickets: true,
+        amcContracts: true,
+        possibleDuplicateOf: { select: { id: true, serialNo: true, itemName: true } },
+      },
     });
   }
 
@@ -89,5 +98,51 @@ export class EquipmentService {
       },
       include: { customer: true, site: true, amcContracts: true },
     });
+  }
+
+  /**
+   * Equipment Tracking sync duplicate flag (2026-07-30, mirrors
+   * TicketsService.resolveDuplicate exactly). "Merge" copies the
+   * ERP-sourced fields (warranty dates/months/status, delivery date,
+   * quantity, tracking status, and model number only if the original
+   * doesn't already have one) onto the original record, then deletes this
+   * one — safe because a newly-synced row can't have accumulated any
+   * Ticket/AmcContract references yet. "Dismiss" just clears the flag,
+   * confirming they're genuinely different physical units.
+   */
+  async resolveDuplicate(id: string, action: 'MERGE' | 'DISMISS') {
+    const equipment = await this.prisma.equipment.findUniqueOrThrow({
+      where: { id },
+      include: { possibleDuplicateOf: true },
+    });
+    if (!equipment.possibleDuplicateOfId || !equipment.possibleDuplicateOf) {
+      throw new BadRequestException('This equipment record has no unresolved duplicate flag');
+    }
+    if (equipment.duplicateFlagResolved) {
+      throw new BadRequestException('This duplicate flag has already been resolved');
+    }
+
+    if (action === 'MERGE') {
+      const original = equipment.possibleDuplicateOf;
+      await this.prisma.$transaction([
+        this.prisma.equipment.update({
+          where: { id: original.id },
+          data: {
+            warrantyStartDate: equipment.warrantyStartDate,
+            warrantyEndDate: equipment.warrantyEndDate,
+            warrantyPeriodMonths: equipment.warrantyPeriodMonths,
+            warrantyStatus: equipment.warrantyStatus,
+            deliveryDate: equipment.deliveryDate,
+            quantity: equipment.quantity,
+            erpTrackingStatus: equipment.erpTrackingStatus,
+            modelNumber: original.modelNumber ?? equipment.modelNumber,
+          },
+        }),
+        this.prisma.equipment.delete({ where: { id } }),
+      ]);
+      return this.prisma.equipment.findUniqueOrThrow({ where: { id: original.id } });
+    }
+
+    return this.prisma.equipment.update({ where: { id }, data: { duplicateFlagResolved: true } });
   }
 }

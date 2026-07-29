@@ -83,7 +83,16 @@ export default function EquipmentListPage() {
                 <td className="px-4 py-3 text-muted">{EQUIP_CATEGORY_LABEL[eq.equipmentCategory]}</td>
                 <td className="px-4 py-3 text-muted">{eq.customer?.customerName ?? "—"}</td>
                 <td className="px-4 py-3 text-muted">{eq.warrantyStatus.replace(/_/g, " ")}</td>
-                <td className="px-4 py-3 text-muted">{eq.status.replace(/_/g, " ")}</td>
+                <td className="px-4 py-3">
+                  <div className="flex flex-wrap gap-1">
+                    <span className="text-muted">{eq.status.replace(/_/g, " ")}</span>
+                    {eq.possibleDuplicateOfId && !eq.duplicateFlagResolved && (
+                      <span className="rounded-full bg-brand-amber-bg px-2 py-0.5 text-[10px] font-bold text-brand-amber">
+                        Possible duplicate
+                      </span>
+                    )}
+                  </div>
+                </td>
                 <td className="px-4 py-3 text-right">
                   <Link href={`/dashboard/admin/equipment/${eq.id}`} className="text-xs font-bold text-navy hover:underline">
                     Edit

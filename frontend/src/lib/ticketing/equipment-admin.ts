@@ -47,6 +47,11 @@ export interface EquipmentRecord {
   skillTagsRequired: string[];
   notes: string | null;
   amcContracts?: { id: string; contractReferenceNo: string }[];
+  quantity?: number | null;
+  erpTrackingStatus?: string | null;
+  possibleDuplicateOfId?: string | null;
+  possibleDuplicateOf?: { id: string; serialNo: string; itemName: string } | null;
+  duplicateFlagResolved?: boolean;
 }
 
 export interface EquipmentFormInput {
@@ -82,3 +87,6 @@ export const createEquipment = (input: EquipmentFormInput) =>
 
 export const updateEquipment = (id: string, input: EquipmentFormInput) =>
   apiFetch<EquipmentRecord>(`/equipment/${id}`, { method: "PATCH", body: JSON.stringify(input) });
+
+export const resolveEquipmentDuplicate = (id: string, action: "MERGE" | "DISMISS") =>
+  apiFetch<EquipmentRecord>(`/equipment/${id}/resolve-duplicate`, { method: "POST", body: JSON.stringify({ action }) });
