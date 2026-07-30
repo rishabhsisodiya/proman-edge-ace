@@ -50,7 +50,7 @@ function DashboardGrid({ items }: { items: { label: string; description: string;
 
 export default function DashboardsHubPage() {
   return (
-    <div className="mx-auto max-w-3xl space-y-8 px-6 py-10">
+    <div className="w-full space-y-8 px-6 py-10">
       <div>
         <h1 className="mb-1 text-xl font-bold text-navy">Dashboards</h1>
         <p className="text-sm text-muted">One place to reach every dashboard in the app.</p>

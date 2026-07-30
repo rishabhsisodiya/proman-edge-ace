@@ -103,7 +103,7 @@ export default function SyncMonitorPage() {
   const lastEquipmentRun = runs.find((r) => r.entity === "EquipmentTracking");
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-10">
+    <div className="w-full px-6 py-10">
       <a href="/dashboard/admin" className="mb-4 inline-block text-xs font-medium text-muted hover:text-navy">
         ← Admin Console
       </a>

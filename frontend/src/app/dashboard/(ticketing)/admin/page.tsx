@@ -83,7 +83,7 @@ const SECTIONS = [
 
 export default function AdminConsolePage() {
   return (
-    <div className="mx-auto max-w-4xl px-6 py-10">
+    <div className="w-full px-6 py-10">
       <h1 className="mb-1 text-xl font-bold text-navy">Admin Console</h1>
       <p className="mb-6 text-sm text-muted">System configuration and platform administration.</p>
 
