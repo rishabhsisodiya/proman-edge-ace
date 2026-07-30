@@ -17,14 +17,43 @@ function computeWarrantyStatus(warrantyEndDate: Date): WarrantyStatus {
 export class EquipmentService {
   constructor(private readonly prisma: PrismaService) {}
 
-  list(filters: { serialNo?: string; category?: string; customerId?: string }) {
+  /**
+   * Paginated + broadened search (2026-07-30 — was an unbounded `findMany`,
+   * fine while there were a handful of manually-entered records, not once
+   * this became the primary onboarding path per its own doc comment above).
+   * `search` matches serial no, item name, or customer name — `serialNo`
+   * kept as a separate, narrower filter for any caller that wants exact
+   * serial-only matching. Same {data,total,page,pageSize} shape as
+   * TicketsService.list(), same 25-default/500-cap.
+   */
+  list(filters: { search?: string; serialNo?: string; category?: string; customerId?: string; page?: string; pageSize?: string }) {
     const where: Prisma.EquipmentWhereInput = {};
     if (filters.serialNo) where.serialNo = { contains: filters.serialNo, mode: 'insensitive' };
     if (filters.category) where.equipmentCategory = filters.category as any;
     if (filters.customerId) where.customerId = filters.customerId;
-    return this.prisma.equipment.findMany({
-      where,
-      include: { customer: true, site: true, possibleDuplicateOf: { select: { id: true, serialNo: true, itemName: true } } },
+    if (filters.search) {
+      where.OR = [
+        { serialNo: { contains: filters.search, mode: 'insensitive' } },
+        { itemName: { contains: filters.search, mode: 'insensitive' } },
+        { customer: { customerName: { contains: filters.search, mode: 'insensitive' } } },
+      ];
+    }
+
+    const page = Math.max(1, parseInt(filters.page ?? '1', 10) || 1);
+    const pageSize = Math.min(500, Math.max(1, parseInt(filters.pageSize ?? '25', 10) || 25));
+
+    return this.prisma.$transaction(async (tx) => {
+      const [data, total] = await Promise.all([
+        tx.equipment.findMany({
+          where,
+          include: { customer: true, site: true, possibleDuplicateOf: { select: { id: true, serialNo: true, itemName: true } } },
+          orderBy: { createdAt: 'desc' },
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+        }),
+        tx.equipment.count({ where }),
+      ]);
+      return { data, total, page, pageSize };
     });
   }
 

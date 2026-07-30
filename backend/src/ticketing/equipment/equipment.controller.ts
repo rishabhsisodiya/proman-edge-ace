@@ -11,7 +11,7 @@ export class EquipmentController {
   constructor(private readonly equipment: EquipmentService) {}
 
   @Get()
-  list(@Query() filters: { serialNo?: string; category?: string; customerId?: string }) {
+  list(@Query() filters: { search?: string; serialNo?: string; category?: string; customerId?: string; page?: string; pageSize?: string }) {
     return this.equipment.list(filters);
   }
 

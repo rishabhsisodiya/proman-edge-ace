@@ -1,4 +1,5 @@
 import { apiFetch } from "@/lib/api";
+import { Paginated } from "./types";
 
 export type EquipCategory =
   | "CRUSHER"
@@ -72,12 +73,14 @@ export interface EquipmentFormInput {
   amcContractIds?: string[];
 }
 
-export const listEquipment = (filters?: { serialNo?: string; customerId?: string }) => {
+export const listEquipment = (filters?: { search?: string; customerId?: string; page?: number; pageSize?: number }) => {
   const params = new URLSearchParams();
-  if (filters?.serialNo) params.set("serialNo", filters.serialNo);
+  if (filters?.search) params.set("search", filters.search);
   if (filters?.customerId) params.set("customerId", filters.customerId);
+  if (filters?.page) params.set("page", String(filters.page));
+  if (filters?.pageSize) params.set("pageSize", String(filters.pageSize));
   const qs = params.toString();
-  return apiFetch<EquipmentRecord[]>(`/equipment${qs ? `?${qs}` : ""}`);
+  return apiFetch<Paginated<EquipmentRecord>>(`/equipment${qs ? `?${qs}` : ""}`);
 };
 
 export const getEquipment = (id: string) => apiFetch<EquipmentRecord>(`/equipment/${id}`);

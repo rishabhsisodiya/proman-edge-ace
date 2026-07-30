@@ -3,18 +3,27 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ApiError } from "@/lib/api";
+import { Pagination } from "@/components/Pagination";
 import { EQUIP_CATEGORY_LABEL, EquipmentRecord, listEquipment } from "@/lib/ticketing/equipment-admin";
+
+const PAGE_SIZE = 25;
 
 export default function EquipmentListPage() {
   const [equipment, setEquipment] = useState<EquipmentRecord[]>([]);
+  const [total, setTotal] = useState(0);
+  const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   function load() {
     setLoading(true);
-    listEquipment(search ? { serialNo: search } : undefined)
-      .then(setEquipment)
+    listEquipment({ search: search || undefined, page, pageSize: PAGE_SIZE })
+      .then((res) => {
+        setEquipment(res.data);
+        setTotal(res.total);
+      })
       .catch((err) => {
         if (err instanceof ApiError && err.status === 403) setError("Access required.");
         else setError("Could not load equipment.");
@@ -22,10 +31,15 @@ export default function EquipmentListPage() {
       .finally(() => setLoading(false));
   }
 
-  useEffect(load, []);
+  useEffect(load, [search, page]);
+
+  function onSearch() {
+    setPage(1);
+    setSearch(searchInput.trim());
+  }
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-10">
+    <div className="w-full px-6 py-10">
       <a href="/dashboard/admin" className="mb-4 inline-block text-xs font-medium text-muted hover:text-navy">
         ← Admin Console
       </a>
@@ -45,13 +59,13 @@ export default function EquipmentListPage() {
       <div className="mb-4 flex gap-2">
         <input
           type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && load()}
-          placeholder="Search by serial no…"
-          className="h-9 w-64 rounded-md border border-line px-3 text-sm text-navy placeholder:text-text-disabled"
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && onSearch()}
+          placeholder="Search by serial no, item, or customer…"
+          className="h-9 w-80 rounded-md border border-line px-3 text-sm text-navy placeholder:text-text-disabled"
         />
-        <button onClick={load} className="rounded-md bg-navy-tint px-3 py-1.5 text-xs font-bold text-navy">
+        <button onClick={onSearch} className="rounded-md bg-navy-tint px-3 py-1.5 text-xs font-bold text-navy">
           Search
         </button>
       </div>
@@ -102,6 +116,10 @@ export default function EquipmentListPage() {
             ))}
           </tbody>
         </table>
+      )}
+
+      {!loading && total > 0 && (
+        <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} itemLabel="equipment record" />
       )}
     </div>
   );

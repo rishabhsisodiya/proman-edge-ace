@@ -5,11 +5,14 @@ export function Pagination({
   pageSize,
   total,
   onPageChange,
+  itemLabel = "ticket",
 }: {
   page: number;
   pageSize: number;
   total: number;
   onPageChange: (page: number) => void;
+  /** Singular noun for the count label, e.g. "equipment record" — pluralized with a trailing "s". Defaults to "ticket" for existing callers. */
+  itemLabel?: string;
 }) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   if (totalPages <= 1) return null;
@@ -17,7 +20,8 @@ export function Pagination({
   return (
     <div className="flex items-center justify-between px-1 py-2">
       <p className="text-xs text-muted">
-        Page {page} of {totalPages} · {total} ticket{total === 1 ? "" : "s"}
+        Page {page} of {totalPages} · {total} {itemLabel}
+        {total === 1 ? "" : "s"}
       </p>
       <div className="flex gap-2">
         <button
