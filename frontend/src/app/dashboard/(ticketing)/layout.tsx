@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
 import { AuthUser, getCurrentUser } from "@/lib/auth";
+import { registerPushNotifications } from "@/lib/push";
 
 // Static prefix-match, most-specific first — the TopBar title should reflect
 // what page you're actually on, not always the same brand name.
@@ -48,6 +49,7 @@ export default function DashboardLayout({
 
   useEffect(() => {
     setUser(getCurrentUser());
+    registerPushNotifications();
   }, []);
 
   return (

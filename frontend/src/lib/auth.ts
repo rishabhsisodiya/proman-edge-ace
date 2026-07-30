@@ -1,4 +1,5 @@
 import { apiFetch, deleteCookie, getCookie, setCookie } from "./api";
+import { unregisterPushNotifications } from "./push";
 
 export type Role =
   // ACE ticketing roles
@@ -50,6 +51,11 @@ export async function login(email: string, password: string): Promise<LoginRespo
 }
 
 export async function logout() {
+  // Unregister this browser's push token first — must happen while still
+  // authenticated (the endpoint needs a valid session) and before /auth/logout
+  // invalidates it. Never blocks logout on failure — see push.ts.
+  await unregisterPushNotifications();
+
   try {
     await apiFetch("/auth/logout", { method: "POST" });
   } finally {

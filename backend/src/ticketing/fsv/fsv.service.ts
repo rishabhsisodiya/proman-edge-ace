@@ -3,6 +3,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { WorkflowService } from '../workflow/workflow.service';
 import { RequestUser } from '../tickets/tickets.service';
 import { CreateFsvDto, UpdateFsvDto, AddFsvPartDto, AddFsvPhotoDto } from './dto/fsv.dto';
+import { NotificationService } from '../../notifications/notification.service';
+import { NotificationTemplateService } from '../../notifications/notification-template.service';
 
 const MIN_WORK_PERFORMED_LENGTH = 20;
 const MAX_PHOTOS = 5;
@@ -20,6 +22,8 @@ export class FsvService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly workflow: WorkflowService,
+    private readonly notifications: NotificationService,
+    private readonly notificationTemplates: NotificationTemplateService,
   ) {}
 
   async listForTicket(ticketId: string) {
@@ -163,7 +167,11 @@ export class FsvService {
   async submit(id: string, actor: RequestUser) {
     const visit = await this.prisma.fieldServiceVisit.findUniqueOrThrow({
       where: { id },
-      include: { parts: true, photos: true, ticket: true },
+      include: {
+        parts: true,
+        photos: true,
+        ticket: { include: { customer: true, assignedAsm: true, assignedEngineer: true } },
+      },
     });
 
     if (visit.status === 'SUBMITTED') {
@@ -215,6 +223,51 @@ export class FsvService {
         actorRole: actor.role,
         resolutionSummary: visit.workPerformed,
       });
+    }
+
+    // N-13 (FSV submitted / work complete) — notify customer + ASM.
+    const vars = {
+      ticket_no: visit.ticket.ticketNo,
+      engineer_name: visit.ticket.assignedEngineer?.fullName ?? 'Your engineer',
+    };
+    if (visit.ticket.customer.primaryContactEmail) {
+      const tpl = await this.notificationTemplates.render('N-13', 'EMAIL', vars);
+      if (tpl) {
+        await this.notifications.send({
+          channel: 'EMAIL',
+          recipient: visit.ticket.customer.primaryContactEmail,
+          templateName: 'N-13 FSV submitted',
+          subject: tpl.subject,
+          body: tpl.body,
+          ticketId: visit.ticketId,
+        });
+      }
+    }
+    if (visit.ticket.customer.primaryContactMobile) {
+      const tpl = await this.notificationTemplates.render('N-13', 'WHATSAPP', vars);
+      if (tpl) {
+        await this.notifications.send({
+          channel: 'WHATSAPP',
+          recipient: visit.ticket.customer.primaryContactMobile,
+          templateName: 'N-13 FSV submitted',
+          body: tpl.body,
+          ticketId: visit.ticketId,
+        });
+      }
+    }
+    if (visit.ticket.assignedAsm) {
+      const tpl = await this.notificationTemplates.render('N-13', 'PUSH', vars);
+      if (tpl) {
+        await this.notifications.send({
+          channel: 'PUSH',
+          recipient: visit.ticket.assignedAsm.email,
+          templateName: 'N-13 FSV submitted',
+          subject: tpl.subject,
+          body: tpl.body,
+          ticketId: visit.ticketId,
+          userId: visit.ticket.assignedAsm.id,
+        });
+      }
     }
 
     return submitted;

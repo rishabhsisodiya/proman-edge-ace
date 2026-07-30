@@ -21,6 +21,7 @@ import { BillingRateModule } from './ticketing/billing-rates/billing-rate.module
 import { PriceListModule } from './ticketing/price-lists/price-list.module';
 import { ErpWebhooksModule } from './ticketing/erp-webhooks/erp-webhooks.module';
 import { ErpModule } from './erp/erp.module';
+import { NotificationModule } from './notifications/notification.module';
 import { ManufacturingModule } from './dashboards/manufacturing/manufacturing.module';
 import { SalesModule } from './dashboards/sales/sales.module';
 import { FinanceModule } from './dashboards/finance/finance.module';
@@ -34,6 +35,7 @@ import { DispatchModule } from './dashboards/dispatch/dispatch.module';
     ScheduleModule.forRoot(),
     PrismaModule,
     ErpModule,
+    NotificationModule,
     AuthModule,
     WorkflowModule,
     UsersModule,

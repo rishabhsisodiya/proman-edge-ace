@@ -3,6 +3,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { RequestUser } from '../tickets/tickets.service';
 import { ErpWritebackService } from '../erp-writeback/erp-writeback.service';
 import { PriceListService } from '../price-lists/price-list.service';
+import { NotificationService } from '../../notifications/notification.service';
+import { NotificationTemplateService } from '../../notifications/notification-template.service';
 import {
   AddQuotationItemDto,
   CreateQuotationDto,
@@ -37,6 +39,8 @@ export class QuotationService {
     private readonly prisma: PrismaService,
     private readonly erpWriteback: ErpWritebackService,
     private readonly priceLists: PriceListService,
+    private readonly notifications: NotificationService,
+    private readonly notificationTemplates: NotificationTemplateService,
   ) {}
 
   /**
@@ -207,7 +211,7 @@ export class QuotationService {
   async pushToErpNext(id: string) {
     const quotation = await this.prisma.quotation.findUniqueOrThrow({
       where: { id },
-      include: { items: true, customer: true },
+      include: { items: true, customer: true, ticket: true },
     });
     if (quotation.erpnextQuotationId) throw new BadRequestException('Already pushed to ERPNext');
     if (quotation.items.length === 0) throw new BadRequestException('Add at least one item first');
@@ -223,10 +227,45 @@ export class QuotationService {
       quotation.sellingPriceList ?? undefined,
     );
 
-    return this.prisma.quotation.update({
+    const updated = await this.prisma.quotation.update({
       where: { id },
       data: { status: 'SENT', sentAt: new Date(), erpnextQuotationId },
     });
+
+    // N-10 (FSD §9) — notify customer the quotation is ready.
+    const vars = {
+      quotation_no: quotation.quotationNo,
+      ticket_no: quotation.ticket.ticketNo,
+      grand_total: quotation.grandTotal?.toString() ?? '0',
+      valid_until: quotation.validUntil.toISOString().slice(0, 10),
+    };
+    if (quotation.customer.primaryContactEmail) {
+      const tpl = await this.notificationTemplates.render('N-10', 'EMAIL', vars);
+      if (tpl) {
+        await this.notifications.send({
+          channel: 'EMAIL',
+          recipient: quotation.customer.primaryContactEmail,
+          templateName: 'N-10 Quotation sent',
+          subject: tpl.subject,
+          body: tpl.body,
+          ticketId: quotation.ticketId,
+        });
+      }
+    }
+    if (quotation.customer.primaryContactMobile) {
+      const tpl = await this.notificationTemplates.render('N-10', 'WHATSAPP', vars);
+      if (tpl) {
+        await this.notifications.send({
+          channel: 'WHATSAPP',
+          recipient: quotation.customer.primaryContactMobile,
+          templateName: 'N-10 Quotation sent',
+          body: tpl.body,
+          ticketId: quotation.ticketId,
+        });
+      }
+    }
+
+    return updated;
   }
 
   /**
@@ -264,6 +303,7 @@ export class QuotationService {
       return;
     }
     await this.prisma.quotation.update({ where: { id: quotation.id }, data: { erpnextDeliveryNoteId: deliveryNoteName } });
+    await this.fireDeliveryConfirmedNotification(quotation.ticketId);
 
     if (quotation.erpnextInvoiceId) return; // idempotency guard
     const soStatus = await this.erpWriteback.getDocStatus('Sales Order', erpnextSalesOrderId);
@@ -322,7 +362,44 @@ export class QuotationService {
     if (!deliveryNoteName) {
       throw new BadRequestException('No Delivery Note has been raised against this Sales Order in ERPNext yet');
     }
-    return this.prisma.quotation.update({ where: { id }, data: { erpnextDeliveryNoteId: deliveryNoteName } });
+    const updated = await this.prisma.quotation.update({ where: { id }, data: { erpnextDeliveryNoteId: deliveryNoteName } });
+    await this.fireDeliveryConfirmedNotification(quotation.ticketId);
+    return updated;
+  }
+
+  /** N-12 (FSD §9) — fires once, guarded by callers only reaching this when erpnextDeliveryNoteId was previously unset. */
+  private async fireDeliveryConfirmedNotification(ticketId: string) {
+    const ticket = await this.prisma.ticket.findUniqueOrThrow({
+      where: { id: ticketId },
+      include: { customer: true, assignedEngineer: true },
+    });
+    const vars = { ticket_no: ticket.ticketNo, site_name: ticket.customer.customerName };
+    if (ticket.assignedEngineer) {
+      const tpl = await this.notificationTemplates.render('N-12', 'PUSH', vars);
+      if (tpl) {
+        await this.notifications.send({
+          channel: 'PUSH',
+          recipient: ticket.assignedEngineer.email,
+          templateName: 'N-12 Delivery confirmed',
+          subject: tpl.subject,
+          body: tpl.body,
+          ticketId,
+          userId: ticket.assignedEngineer.id,
+        });
+      }
+    }
+    if (ticket.customer.primaryContactMobile) {
+      const tpl = await this.notificationTemplates.render('N-12', 'WHATSAPP', vars);
+      if (tpl) {
+        await this.notifications.send({
+          channel: 'WHATSAPP',
+          recipient: ticket.customer.primaryContactMobile,
+          templateName: 'N-12 Delivery confirmed',
+          body: tpl.body,
+          ticketId,
+        });
+      }
+    }
   }
 
   /**

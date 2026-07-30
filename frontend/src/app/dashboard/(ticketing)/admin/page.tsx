@@ -57,7 +57,11 @@ const SECTIONS = [
     description: "Generate/revoke API keys for the partner/IoT ticket-creation webhook",
     href: "/dashboard/admin/partner-api-keys",
   },
-  { label: "Notification Templates", description: "23 trigger templates, per channel", href: null },
+  {
+    label: "Notification Templates",
+    description: "Per-trigger, per-channel message content (13 of 23 triggers wired so far)",
+    href: "/dashboard/admin/notification-templates",
+  },
   { label: "Skill Tags", description: "Standard engineer skill-tag list", href: null },
   {
     label: "Billing Rates",

@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { SlaClockStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationService } from '../../notifications/notification.service';
+import { NotificationTemplateService } from '../../notifications/notification-template.service';
 
 /**
  * SLA breach monitoring cron (2026-07-28, FSD §14.3 — was ❌ pending in the
@@ -10,19 +12,20 @@ import { PrismaService } from '../../prisma/prisma.service';
  * Assigned) and the resolution clock (stops at Engineer Resolved, does NOT
  * pause during Pending — counts against SLA).
  *
- * Does NOT send any real notification — the gateway/dispatch service is
- * entirely unbuilt (0 of 23 triggers wired, per the build plan). Each place
- * a notification would fire is marked with a TODO and a log line instead,
- * so wiring the real one later is a matter of replacing that one line, not
- * rebuilding the detection logic. State is persisted on the ticket
+ * N-15/16/17 (FSD §9) wired 2026-07-30 — response breach, resolution 90%
+ * warning, resolution breach, respectively. State is persisted on the ticket
  * (slaResponseStatus/slaResolutionStatus) so it's badge-able/filterable in
- * the UI without a notification ever needing to exist.
+ * the UI independent of whether the notification itself succeeds.
  */
 @Injectable()
 export class SlaBreachCron {
   private readonly logger = new Logger(SlaBreachCron.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationService,
+    private readonly notificationTemplates: NotificationTemplateService,
+  ) {}
 
   @Cron('*/15 * * * *') // every 15 minutes — SLA windows can be as short as a few hours
   async run() {
@@ -35,6 +38,7 @@ export class SlaBreachCron {
           { slaResolutionMet: false, slaResolutionDue: { not: null } },
         ],
       },
+      include: { customer: true, assignedAsm: true, assignedEngineer: true },
     });
 
     let checked = 0;
@@ -52,10 +56,9 @@ export class SlaBreachCron {
         if (next !== t.slaResponseStatus) {
           data.slaResponseStatus = next;
           auditEntries.push({ fieldName: 'slaResponseStatus', oldValue: t.slaResponseStatus, newValue: next });
-          // TODO(notification): wire to the real gateway once built — this is
-          // trigger N-## "SLA response 90%/breach" from the FSD's 23-trigger
-          // table. For now, just a log line + Timeline audit entry mark the spot.
-          this.logger.warn(`TODO: notification trigger — SLA response ${next} for ticket ${t.ticketNo}`);
+          if (next === 'BREACHED') {
+            await this.fireResponseBreach(t);
+          }
         }
       }
 
@@ -65,10 +68,11 @@ export class SlaBreachCron {
         if (next !== t.slaResolutionStatus) {
           data.slaResolutionStatus = next;
           auditEntries.push({ fieldName: 'slaResolutionStatus', oldValue: t.slaResolutionStatus, newValue: next });
-          // TODO(notification): wire to the real gateway once built — this is
-          // trigger N-## "SLA resolution 90%/breach" from the FSD's 23-trigger
-          // table. For now, just a log line + Timeline audit entry mark the spot.
-          this.logger.warn(`TODO: notification trigger — SLA resolution ${next} for ticket ${t.ticketNo}`);
+          if (next === 'WARNING_90') {
+            await this.fireResolutionWarning(t);
+          } else if (next === 'BREACHED') {
+            await this.fireResolutionBreach(t);
+          }
         }
       }
 
@@ -92,6 +96,93 @@ export class SlaBreachCron {
     }
 
     this.logger.log(`SLA breach cron complete — ${checked} ticket(s) checked, ${changed} status change(s)`);
+  }
+
+  private async managers() {
+    return this.prisma.user.findMany({ where: { role: 'MANAGER', isActive: true } });
+  }
+
+  private async callCenterUsers() {
+    return this.prisma.user.findMany({ where: { role: 'CALL_CENTER', isActive: true } });
+  }
+
+  /** N-15 — SLA response breach: ASM + Call Center + Manager, Email + Push. */
+  private async fireResponseBreach(t: { id: string; ticketNo: string; priority: string; slaResponseDue: Date | null; assignedAsm: { id: string; email: string } | null }) {
+    const vars = { ticket_no: t.ticketNo, priority: t.priority, sla_response_due: t.slaResponseDue?.toISOString() ?? 'N/A' };
+    const recipients: { email: string; userId: string }[] = [];
+    if (t.assignedAsm) recipients.push({ email: t.assignedAsm.email, userId: t.assignedAsm.id });
+    recipients.push(...(await this.callCenterUsers()).map((u) => ({ email: u.email, userId: u.id })));
+    recipients.push(...(await this.managers()).map((u) => ({ email: u.email, userId: u.id })));
+    await this.sendToAll('N-15', recipients, vars, t.id);
+  }
+
+  /** N-16 — SLA resolution 90% warning: ASM + Engineer, Push + Email. */
+  private async fireResolutionWarning(t: {
+    id: string;
+    ticketNo: string;
+    status: string;
+    assignedAsm: { id: string; email: string } | null;
+    assignedEngineer: { id: string; email: string } | null;
+  }) {
+    const vars = { ticket_no: t.ticketNo, status: t.status };
+    const recipients: { email: string; userId: string }[] = [];
+    if (t.assignedAsm) recipients.push({ email: t.assignedAsm.email, userId: t.assignedAsm.id });
+    if (t.assignedEngineer) recipients.push({ email: t.assignedEngineer.email, userId: t.assignedEngineer.id });
+    await this.sendToAll('N-16', recipients, vars, t.id);
+  }
+
+  /** N-17 — SLA resolution breach: ASM + Manager, Email + WhatsApp (no WhatsApp number for internal users — sent via Email + Push instead). */
+  private async fireResolutionBreach(t: {
+    id: string;
+    ticketNo: string;
+    status: string;
+    slaResolutionDue: Date | null;
+    assignedAsm: { id: string; email: string } | null;
+  }) {
+    const vars = {
+      ticket_no: t.ticketNo,
+      status: t.status,
+      sla_resolution_due: t.slaResolutionDue?.toISOString() ?? 'N/A',
+    };
+    const recipients: { email: string; userId: string }[] = [];
+    if (t.assignedAsm) recipients.push({ email: t.assignedAsm.email, userId: t.assignedAsm.id });
+    recipients.push(...(await this.managers()).map((u) => ({ email: u.email, userId: u.id })));
+    // WhatsApp needs a phone number, not an email — internal users (ASM/Manager)
+    // only have email on file, so N-17 goes out via Email + Push for them
+    // despite the FSD listing WhatsApp; the customer-facing WhatsApp triggers
+    // (N-01 etc.) use the customer's mobile instead.
+    for (const r of recipients) {
+      await this.sendOne('N-17', 'EMAIL', r.email, vars, t.id);
+      await this.sendOne('N-17', 'PUSH', r.email, vars, t.id, r.userId);
+    }
+  }
+
+  private async sendToAll(triggerCode: string, recipients: { email: string; userId: string }[], vars: Record<string, string>, ticketId: string) {
+    for (const r of recipients) {
+      await this.sendOne(triggerCode, 'EMAIL', r.email, vars, ticketId);
+      await this.sendOne(triggerCode, 'PUSH', r.email, vars, ticketId, r.userId);
+    }
+  }
+
+  private async sendOne(
+    triggerCode: string,
+    channel: 'EMAIL' | 'PUSH' | 'WHATSAPP',
+    recipient: string,
+    vars: Record<string, string>,
+    ticketId: string,
+    userId?: string,
+  ) {
+    const template = await this.notificationTemplates.render(triggerCode, channel, vars);
+    if (!template) return;
+    await this.notifications.send({
+      channel,
+      recipient,
+      templateName: triggerCode,
+      subject: template.subject,
+      body: template.body,
+      ticketId,
+      userId,
+    });
   }
 
   /** Same PARTNER_ACTOR_USER_ID-or-first-ADMIN pattern as createFromPartner()/createFromAmcSchedule() — a cron has no logged-in user to attribute the audit entry to. */

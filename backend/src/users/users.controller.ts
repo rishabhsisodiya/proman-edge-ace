@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -53,5 +53,17 @@ export class UsersController {
   @Post(':id/reset-password')
   resetPassword(@Param('id') id: string, @Body() dto: ResetPasswordDto) {
     return this.users.resetPassword(id, dto.newPassword);
+  }
+
+  // No @Roles() — any authenticated user registers/unregisters their own
+  // device, this isn't an Admin-only action.
+  @Post('me/push-tokens')
+  registerPushToken(@Req() req: any, @Body('token') token: string, @Body('deviceInfo') deviceInfo?: string) {
+    return this.users.registerPushToken(req.user.userId, token, deviceInfo);
+  }
+
+  @Delete('me/push-tokens/:token')
+  unregisterPushToken(@Param('token') token: string) {
+    return this.users.unregisterPushToken(token);
   }
 }

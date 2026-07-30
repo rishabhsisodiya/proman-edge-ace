@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, Role, ServiceType, Priority, Source, PendingReason, TicketStatus, CustomerCategory } from '@prisma/client';
+import { Prisma, Role, ServiceType, Priority, Source, PendingReason, TicketStatus, CustomerCategory, NotifChannel } from '@prisma/client';
 import { parse } from 'csv-parse/sync';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
@@ -7,6 +7,8 @@ import { nextTicketNo } from './ticket-number.util';
 import { addBusinessHours } from './business-hours.util';
 import { WorkflowService } from '../workflow/workflow.service';
 import { SlaPolicyService } from '../sla-policy/sla-policy.service';
+import { NotificationService } from '../../notifications/notification.service';
+import { NotificationTemplateService } from '../../notifications/notification-template.service';
 
 /**
  * FSD §7.1 rule 4 — auto-classification for auto-sources (AMC->Scheduled PM/
@@ -77,7 +79,102 @@ export class TicketsService {
     private readonly prisma: PrismaService,
     private readonly workflow: WorkflowService,
     private readonly slaPolicies: SlaPolicyService,
+    private readonly notifications: NotificationService,
+    private readonly notificationTemplates: NotificationTemplateService,
   ) {}
+
+  /**
+   * N-01/N-02 (FSD §9) — fires after the create() transaction commits (a
+   * notification failure must never roll back ticket creation, and
+   * NotificationService never throws anyway, but this keeps the concerns
+   * separate). N-01 always fires (customer); N-02 only if auto-routing
+   * actually found an ASM to assign.
+   */
+  private async fireTicketCreatedNotifications(ticketId: string) {
+    const ticket = await this.prisma.ticket.findUniqueOrThrow({
+      where: { id: ticketId },
+      include: { customer: true, equipment: true, site: true, assignedAsm: true },
+    });
+    const vars = {
+      ticket_no: ticket.ticketNo,
+      equipment_model: ticket.equipment?.itemName ?? 'N/A',
+      site_name: ticket.site?.siteName ?? ticket.customer.customerName,
+      service_type: ticket.serviceType ?? 'Unassigned',
+      priority: ticket.priority,
+      customer_name: ticket.customer.customerName,
+    };
+
+    const emailTemplate = await this.notificationTemplates.render('N-01', 'EMAIL', vars);
+    if (emailTemplate && ticket.customer.primaryContactEmail) {
+      await this.notifications.send({
+        channel: 'EMAIL',
+        recipient: ticket.customer.primaryContactEmail,
+        templateName: 'N-01 Ticket created',
+        subject: emailTemplate.subject,
+        body: emailTemplate.body,
+        ticketId: ticket.id,
+      });
+    }
+    const waTemplate = await this.notificationTemplates.render('N-01', 'WHATSAPP', vars);
+    if (waTemplate && ticket.customer.primaryContactMobile) {
+      await this.notifications.send({
+        channel: 'WHATSAPP',
+        recipient: ticket.customer.primaryContactMobile,
+        templateName: 'N-01 Ticket created',
+        body: waTemplate.body,
+        ticketId: ticket.id,
+      });
+    }
+
+    if (ticket.assignedAsm) {
+      const asmVars = { ...vars };
+      const asmEmailTemplate = await this.notificationTemplates.render('N-02', 'EMAIL', asmVars);
+      if (asmEmailTemplate) {
+        await this.notifications.send({
+          channel: 'EMAIL',
+          recipient: ticket.assignedAsm.email,
+          templateName: 'N-02 Ticket assigned to ASM',
+          subject: asmEmailTemplate.subject,
+          body: asmEmailTemplate.body,
+          ticketId: ticket.id,
+        });
+      }
+      const asmPushTemplate = await this.notificationTemplates.render('N-02', 'PUSH', asmVars);
+      if (asmPushTemplate) {
+        await this.notifications.send({
+          channel: 'PUSH',
+          recipient: ticket.assignedAsm.email,
+          templateName: 'N-02 Ticket assigned to ASM',
+          subject: asmPushTemplate.subject,
+          body: asmPushTemplate.body,
+          ticketId: ticket.id,
+          userId: ticket.assignedAsm.id,
+        });
+      }
+    }
+  }
+
+  /** Shared render+send for the per-status triggers (N-03 through N-09) — looks up the template, no-ops (no send) if that trigger/channel combination has no template row. */
+  private async fireNotification(
+    triggerCode: string,
+    channel: NotifChannel,
+    recipient: string,
+    vars: Record<string, string | number | null | undefined>,
+    ticketId: string,
+    userId?: string,
+  ) {
+    const template = await this.notificationTemplates.render(triggerCode, channel, vars);
+    if (!template) return;
+    await this.notifications.send({
+      channel,
+      recipient,
+      templateName: `${triggerCode}`,
+      subject: template.subject,
+      body: template.body,
+      ticketId,
+      userId,
+    });
+  }
 
   /**
    * The single ticket-creation entry point (FSD §7.1 rule 1) — every source
@@ -235,6 +332,8 @@ export class TicketsService {
 
       return ticket.id;
     });
+
+    await this.fireTicketCreatedNotifications(ticketId);
 
     return this.prisma.ticket.findUniqueOrThrow({ where: { id: ticketId } });
   }
@@ -404,7 +503,10 @@ export class TicketsService {
     const engineer = await this.prisma.user.findUniqueOrThrow({ where: { id: engineerId } });
     if (engineer.role !== 'ENGINEER') throw new BadRequestException('Target user is not an Engineer');
 
-    const ticket = await this.prisma.ticket.findUniqueOrThrow({ where: { id } });
+    const ticket = await this.prisma.ticket.findUniqueOrThrow({
+      where: { id },
+      include: { customer: true, equipment: true, site: true },
+    });
 
     await this.prisma.ticket.update({ where: { id }, data: { assignedEngineerId: engineerId } });
 
@@ -416,13 +518,26 @@ export class TicketsService {
         actorRole: actor.role,
       });
     }
-    return this.workflow.transition({
+    const result = await this.workflow.transition({
       ticketId: id,
       targetStatus: 'ENGINEER_ASSIGNED',
       actorUserId: actor.userId,
       actorRole: actor.role,
       comment: `Assigned to ${engineer.fullName}`,
     });
+
+    // N-03 (FSD §9) — notify the newly-assigned engineer.
+    const vars = {
+      ticket_no: ticket.ticketNo,
+      customer_name: ticket.customer.customerName,
+      site_name: ticket.site?.siteName ?? ticket.customer.customerName,
+      equipment_model: ticket.equipment?.itemName ?? 'N/A',
+      priority: ticket.priority,
+    };
+    await this.fireNotification('N-03', 'PUSH', engineer.email, vars, id, engineer.id);
+    await this.fireNotification('N-03', 'WHATSAPP', engineer.mobile, vars, id);
+
+    return result;
   }
 
   /**
@@ -470,13 +585,36 @@ export class TicketsService {
   }
 
   /** Engineer accepts an assignment. */
-  accept(id: string, actor: RequestUser) {
-    return this.workflow.transition({
+  async accept(id: string, actor: RequestUser) {
+    const result = await this.workflow.transition({
       ticketId: id,
       targetStatus: 'ACCEPTED',
       actorUserId: actor.userId,
       actorRole: actor.role,
     });
+
+    // N-04 (FSD §9) — notify customer + the ASM who assigned this engineer.
+    const ticket = await this.prisma.ticket.findUniqueOrThrow({
+      where: { id },
+      include: { customer: true, assignedAsm: true, assignedEngineer: true },
+    });
+    const vars = {
+      ticket_no: ticket.ticketNo,
+      engineer_name: ticket.assignedEngineer?.fullName ?? 'Your engineer',
+      site_name: ticket.customer.customerName,
+      visit_date: 'shortly', // no scheduled-visit-date concept on a manual ticket yet
+    };
+    if (ticket.customer.primaryContactEmail) {
+      await this.fireNotification('N-04', 'EMAIL', ticket.customer.primaryContactEmail, vars, id);
+    }
+    if (ticket.customer.primaryContactMobile) {
+      await this.fireNotification('N-04', 'WHATSAPP', ticket.customer.primaryContactMobile, vars, id);
+    }
+    if (ticket.assignedAsm) {
+      await this.fireNotification('N-04', 'PUSH', ticket.assignedAsm.email, vars, id, ticket.assignedAsm.id);
+    }
+
+    return result;
   }
 
   /**
@@ -488,7 +626,10 @@ export class TicketsService {
    * the tier for the caller to act on/display.
    */
   async reject(id: string, reason: string, actor: RequestUser) {
-    const ticket = await this.prisma.ticket.findUniqueOrThrow({ where: { id } });
+    const ticket = await this.prisma.ticket.findUniqueOrThrow({
+      where: { id },
+      include: { assignedAsm: true, assignedEngineer: true },
+    });
     const existingReasons = Array.isArray(ticket.rejectionReasons) ? ticket.rejectionReasons : [];
     const rejectionCount = ticket.rejectionCount + 1;
 
@@ -513,6 +654,26 @@ export class TicketsService {
 
     const escalationTier =
       rejectionCount >= 3 ? 'ESCALATED_TO_MANAGER' : rejectionCount === 2 ? 'MANAGER_ALERTED' : 'ASM_NOTIFIED';
+
+    // N-05/06/07 (FSD §9) — tier picked by rejection count. 2nd/3rd tiers also
+    // notify every active Manager (no "owning Manager" concept on a ticket).
+    const triggerCode = rejectionCount >= 3 ? 'N-07' : rejectionCount === 2 ? 'N-06' : 'N-05';
+    const vars = {
+      ticket_no: ticket.ticketNo,
+      engineer_name: ticket.assignedEngineer?.fullName ?? actor.userId,
+      rejection_reason: reason,
+    };
+    if (ticket.assignedAsm) {
+      await this.fireNotification(triggerCode, 'PUSH', ticket.assignedAsm.email, vars, id, ticket.assignedAsm.id);
+      await this.fireNotification(triggerCode, 'EMAIL', ticket.assignedAsm.email, vars, id);
+    }
+    if (rejectionCount >= 2) {
+      const managers = await this.prisma.user.findMany({ where: { role: 'MANAGER', isActive: true } });
+      for (const manager of managers) {
+        await this.fireNotification(triggerCode, 'EMAIL', manager.email, vars, id);
+        await this.fireNotification(triggerCode, 'PUSH', manager.email, vars, id, manager.id);
+      }
+    }
 
     return { ...updated, escalationTier };
   }
@@ -623,14 +784,33 @@ export class TicketsService {
   }
 
   /** Engineer marks arrival at the customer site. */
-  reachedSite(id: string, actor: RequestUser, comment?: string) {
-    return this.workflow.transition({
+  async reachedSite(id: string, actor: RequestUser, comment?: string) {
+    const result = await this.workflow.transition({
       ticketId: id,
       targetStatus: 'REACHED_SITE',
       actorUserId: actor.userId,
       actorRole: actor.role,
       comment,
     });
+
+    // N-08 (FSD §9) — notify customer + the ASM.
+    const ticket = await this.prisma.ticket.findUniqueOrThrow({
+      where: { id },
+      include: { customer: true, assignedAsm: true, assignedEngineer: true },
+    });
+    const vars = {
+      ticket_no: ticket.ticketNo,
+      engineer_name: ticket.assignedEngineer?.fullName ?? 'Your engineer',
+      site_name: ticket.customer.customerName,
+    };
+    if (ticket.customer.primaryContactMobile) {
+      await this.fireNotification('N-08', 'WHATSAPP', ticket.customer.primaryContactMobile, vars, id);
+    }
+    if (ticket.assignedAsm) {
+      await this.fireNotification('N-08', 'PUSH', ticket.assignedAsm.email, vars, id, ticket.assignedAsm.id);
+    }
+
+    return result;
   }
 
   /** Engineer begins on-site work. */
@@ -645,8 +825,8 @@ export class TicketsService {
   }
 
   /** Engineer pauses work (awaiting parts/customer/approval/other). SLA clock keeps running (§14.1 rule 21). */
-  markPending(id: string, pendingReason: PendingReason, pendingNotes: string | undefined, actor: RequestUser) {
-    return this.workflow.transition({
+  async markPending(id: string, pendingReason: PendingReason, pendingNotes: string | undefined, actor: RequestUser) {
+    const result = await this.workflow.transition({
       ticketId: id,
       targetStatus: 'PENDING',
       actorUserId: actor.userId,
@@ -654,6 +834,22 @@ export class TicketsService {
       pendingReason,
       pendingNotes,
     });
+
+    // N-09 (FSD §9) — notify customer + ASM + Call Center.
+    const ticket = await this.prisma.ticket.findUniqueOrThrow({ where: { id }, include: { customer: true, assignedAsm: true } });
+    const vars = { ticket_no: ticket.ticketNo, pending_reason: pendingNotes ? `${pendingReason} — ${pendingNotes}` : pendingReason };
+    if (ticket.customer.primaryContactMobile) {
+      await this.fireNotification('N-09', 'WHATSAPP', ticket.customer.primaryContactMobile, vars, id);
+    }
+    if (ticket.assignedAsm) {
+      await this.fireNotification('N-09', 'PUSH', ticket.assignedAsm.email, vars, id, ticket.assignedAsm.id);
+    }
+    const callCenterUsers = await this.prisma.user.findMany({ where: { role: 'CALL_CENTER', isActive: true } });
+    for (const cc of callCenterUsers) {
+      await this.fireNotification('N-09', 'PUSH', cc.email, vars, id, cc.id);
+    }
+
+    return result;
   }
 
   /** Engineer resumes work after Pending clears. */

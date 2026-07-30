@@ -209,4 +209,24 @@ export class UsersService {
     ]);
     return asAsm + asEngineer;
   }
+
+  /**
+   * FCM Web Push token registration (2026-07-30) — called by the frontend
+   * once the user grants browser notification permission. Upsert on token
+   * (not user+token) since the same browser token is stable across
+   * logins/reloads — re-registering just bumps lastUsedAt and re-points it at
+   * whichever user is currently logged in on that browser.
+   */
+  registerPushToken(userId: string, token: string, deviceInfo?: string) {
+    return this.prisma.userPushToken.upsert({
+      where: { token },
+      create: { userId, token, deviceInfo },
+      update: { userId, deviceInfo, lastUsedAt: new Date() },
+    });
+  }
+
+  async unregisterPushToken(token: string) {
+    await this.prisma.userPushToken.deleteMany({ where: { token } });
+    return { ok: true };
+  }
 }

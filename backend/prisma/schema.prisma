@@ -247,6 +247,7 @@ model User {
   engineerLevel       String?
   regions             UserRegion[]
   companies           UserCompany[]
+  pushTokens          UserPushToken[]
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
 
@@ -735,6 +736,30 @@ model FsvPhoto {
   caption String?
 }
 
+/// Admin-editable notification content (2026-07-30, FSD §5.2 + screen W-23:
+/// "Per-event email and SMS templates... merge fields... Edit email/SMS
+/// templates. Preview with sample merge fields."). One row per
+/// (triggerCode, channel) — a trigger using 2 channels (e.g. Email +
+/// WhatsApp) gets 2 rows, since content can differ per channel (e.g. Push
+/// needs a short title, Email doesn't). triggerCode matches the FSD's own
+/// N-01..N-23 numbering. Rows are seeded at migration time for the 13
+/// triggers actually wired (see build plan) — Admin edits subject/body only,
+/// there's no create/delete: trigger codes are tied to real code call-sites,
+/// not freely definable.
+model NotificationTemplate {
+  id          String       @id @default(uuid())
+  triggerCode String
+  triggerName String
+  channel     NotifChannel
+  /// {{merge_field}} placeholders, substituted at send time — see
+  /// NotificationTemplateService.render(). Email only; null for Push/WhatsApp.
+  subject     String?
+  body        String
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([triggerCode, channel])
+}
+
 model NotificationLog {
   id               String       @id @default(uuid())
   ticketId         String?
@@ -745,6 +770,21 @@ model NotificationLog {
   sentAt           DateTime     @default(now())
   deliveryStatus   NotifStatus
   gatewayMessageId String?
+}
+
+/// Web Push device tokens (2026-07-30, FCM) — one user can have multiple
+/// registered browsers/devices, hence a separate table rather than a single
+/// field on User. Registered by the frontend after the user grants
+/// notification permission (see NotificationService.sendPush, which sends to
+/// every token on file for a user and prunes ones FCM reports as invalid).
+model UserPushToken {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  token      String   @unique
+  deviceInfo String?
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
 }
 
 /// Daily capture of Manufacturing homepage KPIs — powers the "vs yesterday"
