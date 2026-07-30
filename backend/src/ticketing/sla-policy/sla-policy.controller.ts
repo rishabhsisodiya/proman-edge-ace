@@ -18,12 +18,12 @@ export class SlaPolicyController {
 
   @Post()
   create(@Body() dto: CreateSlaPolicyDto) {
-    return this.slaPolicies.create(dto.serviceType, dto.priority, dto.responseHours, dto.resolutionHours);
+    return this.slaPolicies.create(dto.serviceType, dto.priority, dto.responseHours ?? null, dto.resolutionHours ?? null);
   }
 
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateSlaPolicyDto) {
-    return this.slaPolicies.update(id, dto.responseHours, dto.resolutionHours);
+    return this.slaPolicies.update(id, dto.responseHours ?? null, dto.resolutionHours ?? null);
   }
 
   @Delete(':id')

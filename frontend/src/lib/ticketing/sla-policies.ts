@@ -5,8 +5,8 @@ export interface SlaPolicy {
   id: string;
   serviceType: ServiceType;
   priority: Priority;
-  responseHours: number;
-  resolutionHours: number;
+  responseHours: number | null;
+  resolutionHours: number | null;
   createdAt: string;
   updatedAt: string;
 }

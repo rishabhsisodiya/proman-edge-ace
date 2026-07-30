@@ -3,10 +3,11 @@ import { TicketsController } from './tickets.controller';
 import { TicketsService } from './tickets.service';
 import { WorkflowModule } from '../workflow/workflow.module';
 import { SlaPolicyModule } from '../sla-policy/sla-policy.module';
+import { HolidayModule } from '../holiday/holiday.module';
 import { SlaBreachCron } from './sla-breach.cron';
 
 @Module({
-  imports: [WorkflowModule, SlaPolicyModule],
+  imports: [WorkflowModule, SlaPolicyModule, HolidayModule],
   controllers: [TicketsController],
   providers: [TicketsService, SlaBreachCron],
   exports: [TicketsService],

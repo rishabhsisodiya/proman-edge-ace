@@ -18,13 +18,13 @@ export class SlaPolicyService {
     return this.prisma.slaPolicy.findMany({ orderBy: [{ serviceType: 'asc' }, { priority: 'asc' }] });
   }
 
-  async create(serviceType: ServiceType, priority: Priority, responseHours: number, resolutionHours: number) {
+  async create(serviceType: ServiceType, priority: Priority, responseHours: number | null, resolutionHours: number | null) {
     const existing = await this.prisma.slaPolicy.findUnique({ where: { serviceType_priority: { serviceType, priority } } });
     if (existing) throw new ConflictException('A policy for this service type + priority already exists');
     return this.prisma.slaPolicy.create({ data: { serviceType, priority, responseHours, resolutionHours } });
   }
 
-  update(id: string, responseHours: number, resolutionHours: number) {
+  update(id: string, responseHours: number | null, resolutionHours: number | null) {
     return this.prisma.slaPolicy.update({ where: { id }, data: { responseHours, resolutionHours } });
   }
 
@@ -32,8 +32,13 @@ export class SlaPolicyService {
     return this.prisma.slaPolicy.delete({ where: { id } });
   }
 
-  /** Used by TicketsService — not exposed via the controller. */
-  async resolve(serviceType: ServiceType | null, priority: Priority): Promise<{ id: string; responseHours: number; resolutionHours: number } | null> {
+  /**
+   * Used by TicketsService — not exposed via the controller. A row can exist
+   * with null hours (seeded blank, e.g. Breakdown/Low — no FSD-defined
+   * target yet); callers must treat that the same as no row at all, not
+   * dereference responseHours/resolutionHours as if guaranteed present.
+   */
+  async resolve(serviceType: ServiceType | null, priority: Priority): Promise<{ id: string; responseHours: number | null; resolutionHours: number | null } | null> {
     if (!serviceType) return null;
     return this.prisma.slaPolicy.findUnique({ where: { serviceType_priority: { serviceType, priority } } });
   }

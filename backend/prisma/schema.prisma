@@ -573,6 +573,16 @@ model Ticket {
   warrantyStatusAtCreation WarrantyStatus?
   warrantyEligible         Boolean             @default(false)
   overrideReason           String?
+  /// SLA Target Date (2026-07-30, FSD §14.3 client clarification) — required
+  /// at creation for SCHEDULED_PM ("Planned Date"), TECHNICAL_AUDIT ("Agreed
+  /// Date"), RETROFIT_UPGRADE ("Quotation Schedule Date"); one underlying
+  /// column, per-service-type UI label only. slaResolutionDue for these 3
+  /// types is set to exactly this value (no business-hours adjustment) and
+  /// never recomputed by pause/resume — client confirmed the fixed date
+  /// never moves regardless of paused duration. Null for every other
+  /// service type. Auto-populated from AmcScheduledVisit.plannedDate for
+  /// AMC-cron-created Scheduled PM tickets.
+  slaTargetDate            DateTime?
   slaResponseDue           DateTime?
   slaResolutionDue         DateTime?
   slaResponseMet           Boolean             @default(false)
@@ -644,8 +654,12 @@ model SlaPolicy {
   id              String       @id @default(uuid())
   serviceType     ServiceType
   priority        Priority
-  responseHours   Int
-  resolutionHours Int
+  // Nullable (2026-07-30): a row can exist with no hours set yet — e.g.
+  // Breakdown/Low, Warranty/Critical, Warranty/Low have no FSD-defined
+  // target, so they're seeded blank and shown in the admin screen for
+  // Admin to fill in later, rather than being absent (silently untracked).
+  responseHours   Int?
+  resolutionHours Int?
   tickets         Ticket[]
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
@@ -663,6 +677,18 @@ model SlaPauseState {
   id        String       @id @default(uuid())
   status    TicketStatus @unique
   createdAt DateTime     @default(now())
+}
+
+/// FSD §14.3 note — "Public holidays excluded (holiday list configurable by
+/// Admin)." One-off literal dates (not recurring), bulk-uploaded via CSV
+/// template once a year; Admin can still add/remove individual dates through
+/// the year. Read by addBusinessHours() to skip these days exactly like it
+/// already skips weekly off-days.
+model Holiday {
+  id        String   @id @default(uuid())
+  date      DateTime @unique @db.Date
+  label     String
+  createdAt DateTime @default(now())
 }
 
 model TicketAuditLog {

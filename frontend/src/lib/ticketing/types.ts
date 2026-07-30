@@ -97,6 +97,15 @@ export const SELECTABLE_SERVICE_TYPES = (Object.keys(SERVICE_TYPE_LABEL) as Serv
   (t) => t !== "AMC",
 );
 
+// SLA Target Date (2026-07-30, FSD §14.3 client clarification) — required at
+// creation for these 3 service types (always manually created, no auto/cron
+// path); one underlying field, per-service-type label only.
+export const SLA_TARGET_DATE_LABEL: Partial<Record<ServiceType, string>> = {
+  SCHEDULED_PM: "Planned Date",
+  TECHNICAL_AUDIT: "Agreed Date",
+  RETROFIT_UPGRADE: "Quotation Schedule Date",
+};
+
 export interface Customer {
   id: string;
   customerName: string;
@@ -132,11 +141,14 @@ export interface Ticket {
   serviceType: string;
   customerCategory?: CustomerCategory | null;
   warrantyEligible: boolean;
+  slaTargetDate: string | null;
+  slaResponseDue: string | null;
+  slaResponseMet: boolean;
   slaResolutionDue: string | null;
   slaResolutionMet: boolean;
   slaResponseStatus?: "ON_TRACK" | "WARNING_90" | "BREACHED";
   slaResolutionStatus?: "ON_TRACK" | "WARNING_90" | "BREACHED";
-  slaPolicy?: { responseHours: number; resolutionHours: number } | null;
+  slaPolicy?: { responseHours: number | null; resolutionHours: number | null } | null;
   pendingReason?: PendingReason | null;
   pendingNotes?: string | null;
   resolutionSummary?: string | null;

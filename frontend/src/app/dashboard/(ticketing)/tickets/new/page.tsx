@@ -12,6 +12,7 @@ import {
   Priority,
   SELECTABLE_SERVICE_TYPES,
   SERVICE_TYPE_LABEL,
+  SLA_TARGET_DATE_LABEL,
   SOURCE_LABEL,
   ServiceType,
   Source,
@@ -31,6 +32,8 @@ export default function NewTicketPage() {
   const [customerCategory, setCustomerCategory] = useState<CustomerCategory | "">("");
   const [serviceType, setServiceType] = useState<ServiceType | "">("");
   const [priority, setPriority] = useState<Priority>("MEDIUM");
+  const [slaTargetDate, setSlaTargetDate] = useState("");
+  const targetDateLabel = serviceType ? SLA_TARGET_DATE_LABEL[serviceType] : undefined;
 
   // Customer — searchable combobox, not a full dropdown (client flagged:
   // 4,500+ real customers, a plain <select> doesn't scale).
@@ -94,6 +97,10 @@ export default function NewTicketPage() {
       setError("Description is required.");
       return;
     }
+    if (targetDateLabel && !slaTargetDate) {
+      setError(`${targetDateLabel} is required for ${SERVICE_TYPE_LABEL[serviceType as ServiceType]} tickets.`);
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -106,6 +113,7 @@ export default function NewTicketPage() {
         equipmentId: equipmentId || undefined,
         subject: subject.trim() || undefined,
         description: description.trim(),
+        slaTargetDate: targetDateLabel && slaTargetDate ? new Date(slaTargetDate).toISOString() : undefined,
       });
       router.push(`/dashboard/tickets/${ticket.id}`);
     } catch (err) {
@@ -165,7 +173,11 @@ export default function NewTicketPage() {
             </label>
             <select
               value={serviceType}
-              onChange={(e) => setServiceType(e.target.value as ServiceType | "")}
+              onChange={(e) => {
+                const next = e.target.value as ServiceType | "";
+                setServiceType(next);
+                if (!next || !SLA_TARGET_DATE_LABEL[next]) setSlaTargetDate("");
+              }}
               className="h-11 w-full rounded-md border border-line px-3 text-sm text-navy"
             >
               <option value="">Not yet determined</option>
@@ -190,6 +202,18 @@ export default function NewTicketPage() {
               ))}
             </select>
           </div>
+          {targetDateLabel && (
+            <div>
+              <label className="mb-1.5 block text-xs font-bold text-navy">{targetDateLabel}</label>
+              <input
+                type="datetime-local"
+                value={slaTargetDate}
+                onChange={(e) => setSlaTargetDate(e.target.value)}
+                required
+                className="h-11 w-full rounded-md border border-line px-3 text-sm text-navy"
+              />
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

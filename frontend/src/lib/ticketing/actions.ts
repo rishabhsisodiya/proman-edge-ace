@@ -16,6 +16,7 @@ export interface CreateTicketInput {
   customerId: string;
   equipmentId?: string;
   subject?: string;
+  slaTargetDate?: string;
 }
 export const createTicket = (input: CreateTicketInput) => post<Ticket>(`/tickets`, input);
 
@@ -34,8 +35,8 @@ export const closeTicket = (id: string, comment?: string) => post<Ticket>(`/tick
 export const reopenTicket = (id: string) => post<Ticket>(`/tickets/${id}/reopen`);
 export const regularizeTicket = (id: string, targetStatus: TicketStatus, reason: string) =>
   post<Ticket>(`/tickets/${id}/regularize`, { targetStatus, reason });
-export const updateServiceType = (id: string, serviceType: ServiceType) =>
-  post<Ticket>(`/tickets/${id}/service-type`, { serviceType });
+export const updateServiceType = (id: string, serviceType: ServiceType, slaTargetDate?: string) =>
+  post<Ticket>(`/tickets/${id}/service-type`, { serviceType, slaTargetDate });
 export const updateCustomerCategory = (id: string, customerCategory: CustomerCategory) =>
   post<Ticket>(`/tickets/${id}/customer-category`, { customerCategory });
 export const resolveDuplicate = (id: string, action: "MERGE" | "DISMISS", reason?: string) =>

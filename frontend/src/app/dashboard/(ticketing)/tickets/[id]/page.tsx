@@ -28,6 +28,7 @@ import {
   worstSlaStatus,
   SELECTABLE_SERVICE_TYPES,
   SERVICE_TYPE_LABEL,
+  SLA_TARGET_DATE_LABEL,
   STATUS_LABEL,
   STATUS_STYLE,
   PendingReason,
@@ -361,7 +362,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         <div className="min-w-0">
           <p className="text-xs font-bold uppercase text-muted">SLA Policy</p>
           <p className="break-words text-navy">
-            {ticket.slaPolicy
+            {ticket.slaPolicy && ticket.slaPolicy.responseHours != null && ticket.slaPolicy.resolutionHours != null
               ? `${ticket.slaPolicy.responseHours}h response / ${ticket.slaPolicy.resolutionHours}h resolution`
               : "No policy set for this service type / priority"}
           </p>
@@ -425,6 +426,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
           )}
           {(role === "ASM" || role === "ENGINEER" || role === "MANAGER" || role === "ADMIN") &&
             ticket.status !== "CLOSED" && <ServiceTypeCard ticket={ticket} runAction={runAction} />}
+          <SlaFieldsCard ticket={ticket} />
         </div>
       </div>
     </div>
@@ -671,14 +673,20 @@ function ServiceTypeCard({
   runAction: <T>(action: () => Promise<T>, note?: string) => void;
 }) {
   const [serviceType, setServiceType] = useState<ServiceType | "">((ticket.serviceType as ServiceType) ?? "");
+  const [slaTargetDate, setSlaTargetDate] = useState("");
   const [saving, setSaving] = useState(false);
+  const targetDateLabel = serviceType ? SLA_TARGET_DATE_LABEL[serviceType] : undefined;
+  const needsNewTargetDate = targetDateLabel && serviceType !== ticket.serviceType;
 
   return (
     <div className="rounded-lg border border-line bg-white p-3 text-sm">
       <p className="mb-2 text-xs font-bold uppercase text-muted">Service Type</p>
       <select
         value={serviceType}
-        onChange={(e) => setServiceType(e.target.value as ServiceType | "")}
+        onChange={(e) => {
+          setServiceType(e.target.value as ServiceType | "");
+          setSlaTargetDate("");
+        }}
         className="mb-2 w-full rounded-md border border-line px-3 py-2 text-sm text-navy"
       >
         <option value="">Not yet determined</option>
@@ -688,20 +696,107 @@ function ServiceTypeCard({
           </option>
         ))}
       </select>
+      {needsNewTargetDate && (
+        <div className="mb-2">
+          <label className="mb-1 block text-xs font-bold text-navy">{targetDateLabel}</label>
+          <input
+            type="datetime-local"
+            value={slaTargetDate}
+            onChange={(e) => setSlaTargetDate(e.target.value)}
+            required
+            className="w-full rounded-md border border-line px-3 py-2 text-sm text-navy"
+          />
+        </div>
+      )}
       <ActionButton
         label={saving ? "Saving…" : "Update"}
         variant="secondary"
-        busy={saving || !serviceType || serviceType === ticket.serviceType}
+        busy={saving || !serviceType || serviceType === ticket.serviceType || Boolean(needsNewTargetDate && !slaTargetDate)}
         onClick={async () => {
           if (!serviceType) return;
           setSaving(true);
           try {
-            await runAction(() => updateServiceType(ticket.id, serviceType), "Service type updated.");
+            await runAction(
+              () => updateServiceType(ticket.id, serviceType, needsNewTargetDate ? new Date(slaTargetDate).toISOString() : undefined),
+              "Service type updated.",
+            );
           } finally {
             setSaving(false);
           }
         }}
       />
+    </div>
+  );
+}
+
+// "1 Aug 2026, 6:00 PM" — friendlier than the browser's raw locale format,
+// and a fixed relative-day hint ("Today"/"Tomorrow"/"in 3 days"/"2 days ago")
+// so Admin/ASM don't have to do date math to judge urgency at a glance.
+function slaFieldValue(v: string | null): string {
+  if (!v) return "—";
+  const d = new Date(v);
+  const datePart = d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  const timePart = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  return `${datePart}, ${timePart}`;
+}
+
+function relativeDayHint(v: string | null): string | null {
+  if (!v) return null;
+  const due = new Date(v);
+  const today = new Date();
+  const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate()).getTime();
+  const todayDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const diffDays = Math.round((dueDay - todayDay) / 86400000);
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Tomorrow";
+  if (diffDays === -1) return "Yesterday";
+  if (diffDays > 1) return `in ${diffDays} days`;
+  return `${Math.abs(diffDays)} days ago`;
+}
+
+/**
+ * "Met" is only ever set true once the clock is genuinely satisfied — false
+ * doesn't mean breached, it can just mean still in progress. Showing the
+ * live clock status (On Track/At Risk/Breached) as a color badge avoids
+ * reading an in-progress ticket as if it had already failed its SLA.
+ */
+function SlaClockRow({
+  label,
+  due,
+  met,
+  status,
+}: {
+  label: string;
+  due: string | null;
+  met: boolean;
+  status: SlaClockStatus | undefined;
+}) {
+  const hint = relativeDayHint(due);
+  const badgeLabel = !due ? null : met ? "Met" : SLA_STATUS_LABEL[status ?? "ON_TRACK"];
+  const badgeStyle = !due ? "" : met ? "bg-brand-green-bg text-brand-green" : SLA_STATUS_STYLE[status ?? "ON_TRACK"];
+
+  return (
+    <div className="rounded-md bg-navy-soft/50 p-2.5">
+      <div className="mb-1 flex items-center justify-between">
+        <p className="text-xs font-bold uppercase tracking-wide text-muted">{label}</p>
+        {badgeLabel && <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${badgeStyle}`}>{badgeLabel}</span>}
+      </div>
+      <p className="text-navy">{slaFieldValue(due)}</p>
+      {hint && <p className="text-xs text-muted">{hint}</p>}
+    </div>
+  );
+}
+
+/** New card (2026-07-30) — the 4 raw SLA fields (FSD Ticket entity table) weren't shown
+ * anywhere before; only the derived status badge existed. Right sidebar, below Service Type. */
+function SlaFieldsCard({ ticket }: { ticket: Ticket }) {
+  return (
+    <div className="rounded-lg border border-line bg-white p-3 text-sm">
+      <p className="mb-3 text-xs font-bold uppercase text-muted">SLA Details</p>
+      <div className="space-y-2">
+        <SlaClockRow label="Response Due" due={ticket.slaResponseDue} met={ticket.slaResponseMet} status={ticket.slaResponseStatus} />
+        <SlaClockRow label="Resolution Due" due={ticket.slaResolutionDue} met={ticket.slaResolutionMet} status={ticket.slaResolutionStatus} />
+      </div>
     </div>
   );
 }

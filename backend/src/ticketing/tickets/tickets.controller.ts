@@ -67,7 +67,7 @@ export class TicketsController {
   @Roles('ASM', 'ENGINEER', 'MANAGER', 'ADMIN')
   @Post(':id/service-type')
   updateServiceType(@Param('id') id: string, @Body() dto: UpdateServiceTypeDto, @Req() req: any) {
-    return this.tickets.updateServiceType(id, dto.serviceType, { userId: req.user.userId, role: req.user.role });
+    return this.tickets.updateServiceType(id, dto.serviceType, dto.slaTargetDate, { userId: req.user.userId, role: req.user.role });
   }
 
   // Client request (2026-07-25): set at creation by Call Center, editable

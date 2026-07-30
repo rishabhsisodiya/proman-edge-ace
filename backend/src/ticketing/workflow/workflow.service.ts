@@ -3,6 +3,7 @@ import { ChangeSource, Prisma, PendingReason, Role, Ticket, TicketStatus } from 
 import { PrismaService } from '../../prisma/prisma.service';
 import { TICKET_TRANSITIONS } from './workflow.constants';
 import { SlaPauseStateService } from '../sla-pause-state/sla-pause-state.service';
+import { SLA_TARGET_DATE_SERVICE_TYPES } from '../tickets/sla-policy.constants';
 
 const REGULARIZE_ROLES: Role[] = ['ADMIN', 'CALL_CENTER'];
 
@@ -159,7 +160,12 @@ export class WorkflowService {
       if (!ticket.slaResponseMet && ticket.slaResponseDue) {
         pauseData.slaResponseDue = new Date(ticket.slaResponseDue.getTime() + elapsedMs);
       }
-      if (!ticket.slaResolutionMet && ticket.slaResolutionDue) {
+      // SLA Target Date types (Scheduled PM/Technical Audit/Retrofit-Upgrade)
+      // — resolution due is a fixed calendar date the client agreed to, not
+      // a business-hours offset; client confirmed (2026-07-30) it never
+      // moves regardless of how long the ticket was paused.
+      const usesTargetDate = ticket.serviceType != null && SLA_TARGET_DATE_SERVICE_TYPES.includes(ticket.serviceType);
+      if (!usesTargetDate && !ticket.slaResolutionMet && ticket.slaResolutionDue) {
         pauseData.slaResolutionDue = new Date(ticket.slaResolutionDue.getTime() + elapsedMs);
       }
     }

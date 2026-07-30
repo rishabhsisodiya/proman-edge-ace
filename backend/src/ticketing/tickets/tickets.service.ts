@@ -5,8 +5,10 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { nextTicketNo } from './ticket-number.util';
 import { addBusinessHours } from './business-hours.util';
+import { SLA_TARGET_DATE_SERVICE_TYPES, SLA_TARGET_DATE_LABEL } from './sla-policy.constants';
 import { WorkflowService } from '../workflow/workflow.service';
 import { SlaPolicyService } from '../sla-policy/sla-policy.service';
+import { HolidayService } from '../holiday/holiday.service';
 import { NotificationService } from '../../notifications/notification.service';
 import { NotificationTemplateService } from '../../notifications/notification-template.service';
 
@@ -79,6 +81,7 @@ export class TicketsService {
     private readonly prisma: PrismaService,
     private readonly workflow: WorkflowService,
     private readonly slaPolicies: SlaPolicyService,
+    private readonly holidays: HolidayService,
     private readonly notifications: NotificationService,
     private readonly notificationTemplates: NotificationTemplateService,
   ) {}
@@ -243,10 +246,27 @@ export class TicketsService {
     const warrantyStatusAtCreation = equipment?.warrantyStatus ?? null;
     const warrantyEligible = warrantyStatusAtCreation === 'UNDER_WARRANTY';
 
+    // SLA Target Date types: slaResolutionDue is exactly the entered
+    // date/time, not a business-hours computation — the response clock is
+    // untouched, still computed from SlaPolicy as normal (Scheduled PM has
+    // no response SLA, so its policy row stays blank by design).
+    const usesTargetDate = serviceType != null && SLA_TARGET_DATE_SERVICE_TYPES.includes(serviceType);
+    if (usesTargetDate && !dto.slaTargetDate) {
+      throw new BadRequestException(
+        `${SLA_TARGET_DATE_LABEL[serviceType!]} is required for ${serviceTypeLabel(serviceType)} tickets.`,
+      );
+    }
+
     const policy = await this.slaPolicies.resolve(serviceType, priority);
+    const holidayDates = await this.holidays.listDateSet();
     const now = new Date();
-    const slaResponseDue = policy ? addBusinessHours(now, policy.responseHours) : null;
-    const slaResolutionDue = policy ? addBusinessHours(now, policy.resolutionHours) : null;
+    const slaResponseDue = policy?.responseHours != null ? addBusinessHours(now, policy.responseHours, holidayDates) : null;
+    const slaTargetDate = usesTargetDate ? new Date(dto.slaTargetDate!) : null;
+    const slaResolutionDue = usesTargetDate
+      ? slaTargetDate
+      : policy?.resolutionHours != null
+        ? addBusinessHours(now, policy.resolutionHours, holidayDates)
+        : null;
 
     const ticketNo = await nextTicketNo(this.prisma);
     const subject =
@@ -273,6 +293,7 @@ export class TicketsService {
           siteId: equipment?.siteId,
           warrantyStatusAtCreation,
           warrantyEligible,
+          slaTargetDate,
           slaResponseDue,
           slaResolutionDue,
           slaPolicyId: policy?.id,
@@ -735,17 +756,29 @@ export class TicketsService {
    * and SLA due dates are recomputed against the newly-known service type,
    * since there was no SLA clock running at all while it was unset.
    */
-  async updateServiceType(id: string, serviceType: ServiceType, actor: RequestUser) {
+  async updateServiceType(id: string, serviceType: ServiceType, slaTargetDate: string | undefined, actor: RequestUser) {
     const ticket = await this.prisma.ticket.findUniqueOrThrow({ where: { id } });
+    const usesTargetDate = SLA_TARGET_DATE_SERVICE_TYPES.includes(serviceType);
+    if (usesTargetDate && !slaTargetDate) {
+      throw new BadRequestException(`${SLA_TARGET_DATE_LABEL[serviceType]} is required for ${serviceTypeLabel(serviceType)} tickets.`);
+    }
+
     const policy = await this.slaPolicies.resolve(serviceType, ticket.priority);
+    const holidayDates = await this.holidays.listDateSet();
     const now = new Date();
+    const newTargetDate = usesTargetDate ? new Date(slaTargetDate!) : null;
 
     const updated = await this.prisma.ticket.update({
       where: { id },
       data: {
         serviceType,
-        slaResponseDue: policy ? addBusinessHours(now, policy.responseHours) : ticket.slaResponseDue,
-        slaResolutionDue: policy ? addBusinessHours(now, policy.resolutionHours) : ticket.slaResolutionDue,
+        slaTargetDate: newTargetDate,
+        slaResponseDue: policy?.responseHours != null ? addBusinessHours(now, policy.responseHours, holidayDates) : ticket.slaResponseDue,
+        slaResolutionDue: usesTargetDate
+          ? newTargetDate
+          : policy?.resolutionHours != null
+            ? addBusinessHours(now, policy.resolutionHours, holidayDates)
+            : ticket.slaResolutionDue,
         slaPolicyId: policy?.id ?? ticket.slaPolicyId,
       },
     });
@@ -904,7 +937,11 @@ export class TicketsService {
     return this.prisma.$transaction(async (tx) => {
       const ticket = await tx.ticket.findUniqueOrThrow({ where: { id } });
       const policy = await this.slaPolicies.resolve(ticket.serviceType, ticket.priority);
+      const holidayDates = await this.holidays.listDateSet();
       const now = new Date();
+      // SLA Target Date types: resolution due stays the fixed target date,
+      // unaffected by reopen — same "never moves" rule as pause/resume.
+      const usesTargetDate = ticket.serviceType != null && SLA_TARGET_DATE_SERVICE_TYPES.includes(ticket.serviceType);
 
       await tx.ticket.update({
         where: { id },
@@ -914,8 +951,12 @@ export class TicketsService {
           slaResolutionMet: false,
           slaResponseStatus: 'ON_TRACK',
           slaResolutionStatus: 'ON_TRACK',
-          slaResponseDue: policy ? addBusinessHours(now, policy.responseHours) : null,
-          slaResolutionDue: policy ? addBusinessHours(now, policy.resolutionHours) : null,
+          slaResponseDue: policy?.responseHours != null ? addBusinessHours(now, policy.responseHours, holidayDates) : null,
+          slaResolutionDue: usesTargetDate
+            ? ticket.slaTargetDate
+            : policy?.resolutionHours != null
+              ? addBusinessHours(now, policy.resolutionHours, holidayDates)
+              : null,
           slaPausedAt: null,
           slaPausedMinutes: 0,
         },

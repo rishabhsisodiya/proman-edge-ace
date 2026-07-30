@@ -35,6 +35,11 @@ const SECTIONS = [
     description: "Ticket statuses that pause the SLA clock (default: none)",
     href: "/dashboard/admin/sla-pause-states",
   },
+  {
+    label: "Holidays",
+    description: "Dates excluded from the business-hours SLA clock, on top of the weekly off-day",
+    href: "/dashboard/admin/holidays",
+  },
   { label: "Ticket Priorities", description: "Priority levels + Priority Matrix", href: null },
   { label: "Workflow States & Transitions", description: "Ticket lifecycle designer", href: null },
   {
