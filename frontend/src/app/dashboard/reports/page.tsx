@@ -159,7 +159,7 @@ export default function ReportsPage() {
       <div className="w-full px-6 py-8">
         {error && <p className="mb-4 rounded-md bg-brand-red-bg px-3 py-2 text-xs text-brand-red">{error}</p>}
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[260px_1fr]">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
           {/* Report picker */}
           <div className="rounded-lg border border-line bg-white p-2">
             {reports.map((r) => (
@@ -186,8 +186,14 @@ export default function ReportsPage() {
             </div>
           </div>
 
-          {/* Filters + results */}
-          <div>
+          {/* Filters + results — min-w-0 is required here: without it, a grid
+              item's intrinsic content width (the results table below, wide
+              from whitespace-nowrap cells) forces this 1fr track wider than
+              the viewport instead of scrolling within ReportResultTable's own
+              overflow-x-auto wrapper, which is what pushed the whole page out
+              and made the fixed header look like it had extra right-side
+              space (2026-08-01 bug report). */}
+          <div className="min-w-0">
             {!selected && <p className="text-sm text-muted">Pick a report from the list.</p>}
 
             {selected === ("__timeline__" as ReportKey) && (
