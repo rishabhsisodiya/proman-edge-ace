@@ -52,6 +52,7 @@ export default function AsmDashboardPage() {
   const [serviceType, setServiceType] = useState("");
   const [assigned, setAssigned] = useState("");
   const [slaBreached, setSlaBreached] = useState(false);
+  const [rejected, setRejected] = useState(false);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const pageSize = 25;
@@ -74,7 +75,7 @@ export default function AsmDashboardPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [status, priority, serviceType, assigned, slaBreached]);
+  }, [status, priority, serviceType, assigned, slaBreached, rejected]);
 
   useEffect(() => {
     setLoading(true);
@@ -86,6 +87,7 @@ export default function AsmDashboardPage() {
     if (serviceType) params.set("serviceType", serviceType);
     if (assigned) params.set("assigned", assigned);
     if (slaBreached) params.set("slaBreached", "true");
+    if (rejected) params.set("rejected", "true");
     params.set("page", String(page));
     params.set("pageSize", String(pageSize));
     params.set("sortBy", sortBy);
@@ -98,19 +100,21 @@ export default function AsmDashboardPage() {
       })
       .catch(() => setError("Could not load tickets. Is the backend running and seeded?"))
       .finally(() => setLoading(false));
-  }, [status, priority, serviceType, assigned, slaBreached, page, sortBy, sortDir]);
+  }, [status, priority, serviceType, assigned, slaBreached, rejected, page, sortBy, sortDir]);
 
   const stats = useMemo(() => {
     const open = allTickets.filter((t) => t.status !== "CLOSED").length;
     const pendingAcceptance = allTickets.filter((t) => t.status === "ENGINEER_ASSIGNED").length;
     const unassigned = allTickets.filter((t) => !t.assignedEngineer && t.status !== "CLOSED").length;
     const slaBreachedCount = allTickets.filter((t) => worstSlaStatus(t) === "BREACHED").length;
-    return { open, pendingAcceptance, unassigned, slaBreachedCount };
+    const rejectedCount = allTickets.filter((t) => (t.rejectionCount ?? 0) > 0 && t.status !== "CLOSED").length;
+    return { open, pendingAcceptance, unassigned, slaBreachedCount, rejectedCount };
   }, [allTickets]);
 
-  function quickFilter(preset: "unassigned" | "pending" | "all") {
+  function quickFilter(preset: "unassigned" | "pending" | "rejected" | "all") {
     setStatus(preset === "pending" ? "ENGINEER_ASSIGNED" : "");
     setAssigned(preset === "unassigned" ? "false" : "");
+    setRejected(preset === "rejected");
   }
 
   return (
@@ -128,49 +132,60 @@ export default function AsmDashboardPage() {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
         <Tile label="Open tickets (territory)" value={stats.open} />
         <Tile label="Unassigned" value={stats.unassigned} accent={stats.unassigned > 0 ? "text-brand-amber" : undefined} />
         <Tile label="Pending engineer acceptance" value={stats.pendingAcceptance} />
         <Tile label="SLA breached" value={stats.slaBreachedCount} accent={stats.slaBreachedCount > 0 ? "text-brand-red" : undefined} />
+        <Tile
+          label="Rejected — needs reassignment"
+          value={stats.rejectedCount}
+          accent={stats.rejectedCount > 0 ? "text-brand-amber" : undefined}
+        />
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-white p-3 shadow-[0_1px_4px_rgba(42,47,105,.06)]">
-        <div className="flex flex-wrap gap-2">
+      <div className="flex items-center gap-3 overflow-x-auto rounded-lg border border-line bg-white p-3 shadow-[0_1px_4px_rgba(42,47,105,.06)]">
+        <div className="flex shrink-0 gap-2">
           <button
             onClick={() => quickFilter("unassigned")}
-            className="rounded-md bg-navy-tint px-3 py-1.5 text-xs font-bold text-navy hover:bg-navy hover:text-white"
+            className="h-9 shrink-0 whitespace-nowrap rounded-md bg-navy-tint px-3 text-xs font-bold text-navy hover:bg-navy hover:text-white"
           >
             Unassigned
           </button>
           <button
             onClick={() => quickFilter("pending")}
-            className="rounded-md bg-navy-tint px-3 py-1.5 text-xs font-bold text-navy hover:bg-navy hover:text-white"
+            className="h-9 shrink-0 whitespace-nowrap rounded-md bg-navy-tint px-3 text-xs font-bold text-navy hover:bg-navy hover:text-white"
           >
             Pending Acceptance
           </button>
           <button
             onClick={() => setSlaBreached((v) => !v)}
-            className={`rounded-md px-3 py-1.5 text-xs font-bold ${slaBreached ? "bg-brand-red text-white" : "bg-navy-tint text-navy hover:bg-navy hover:text-white"}`}
+            className={`h-9 shrink-0 whitespace-nowrap rounded-md px-3 text-xs font-bold ${slaBreached ? "bg-brand-red text-white" : "bg-navy-tint text-navy hover:bg-navy hover:text-white"}`}
           >
             SLA Breached
+          </button>
+          <button
+            onClick={() => quickFilter(rejected ? "all" : "rejected")}
+            className={`h-9 shrink-0 whitespace-nowrap rounded-md px-3 text-xs font-bold ${rejected ? "bg-brand-amber text-white" : "bg-navy-tint text-navy hover:bg-navy hover:text-white"}`}
+          >
+            Rejected
           </button>
           <button
             onClick={() => {
               quickFilter("all");
               setSlaBreached(false);
             }}
-            className="rounded-md bg-navy-tint px-3 py-1.5 text-xs font-bold text-navy hover:bg-navy hover:text-white"
+            className="h-9 shrink-0 whitespace-nowrap rounded-md bg-navy-tint px-3 text-xs font-bold text-navy hover:bg-navy hover:text-white"
           >
             Clear
           </button>
         </div>
 
-        <div className="ml-auto flex flex-wrap gap-3">
+        <div className="ml-auto flex shrink-0 gap-3">
           <select
             value={assigned}
             onChange={(e) => setAssigned(e.target.value)}
-            className="rounded-lg border border-line px-3 py-1.5 text-sm"
+            className="h-9 shrink-0 rounded-md border border-line px-3 text-xs text-navy"
           >
             <option value="">Assigned + Unassigned</option>
             <option value="true">Assigned</option>
@@ -179,7 +194,7 @@ export default function AsmDashboardPage() {
           <select
             value={status}
             onChange={(e) => setStatus(e.target.value)}
-            className="rounded-lg border border-line px-3 py-1.5 text-sm"
+            className="h-9 shrink-0 rounded-md border border-line px-3 text-xs text-navy"
           >
             <option value="">All statuses (excl. Closed)</option>
             {STATUSES.map((s) => (
@@ -191,7 +206,7 @@ export default function AsmDashboardPage() {
           <select
             value={priority}
             onChange={(e) => setPriority(e.target.value)}
-            className="rounded-lg border border-line px-3 py-1.5 text-sm"
+            className="h-9 shrink-0 rounded-md border border-line px-3 text-xs text-navy"
           >
             <option value="">All priorities</option>
             {PRIORITIES.map((p) => (
@@ -203,7 +218,7 @@ export default function AsmDashboardPage() {
           <select
             value={serviceType}
             onChange={(e) => setServiceType(e.target.value)}
-            className="rounded-lg border border-line px-3 py-1.5 text-sm"
+            className="h-9 shrink-0 rounded-md border border-line px-3 text-xs text-navy"
           >
             <option value="">All service types</option>
             {SERVICE_TYPES.map((s) => (

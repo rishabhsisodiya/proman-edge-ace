@@ -10,6 +10,7 @@ import { RegionMappingModule } from './ticketing/region-mapping/region-mapping.m
 import { SlaPolicyModule } from './ticketing/sla-policy/sla-policy.module';
 import { SlaPauseStateModule } from './ticketing/sla-pause-state/sla-pause-state.module';
 import { HolidayModule } from './ticketing/holiday/holiday.module';
+import { CsatModule } from './ticketing/csat/csat.module';
 import { SyncModule } from './ticketing/sync/sync.module';
 import { EquipmentModule } from './ticketing/equipment/equipment.module';
 import { AmcModule } from './ticketing/amc/amc.module';
@@ -45,6 +46,7 @@ import { DispatchModule } from './dashboards/dispatch/dispatch.module';
     SlaPolicyModule,
     SlaPauseStateModule,
     HolidayModule,
+    CsatModule,
     SyncModule,
     EquipmentModule,
     AmcModule,

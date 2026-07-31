@@ -28,11 +28,12 @@ export const asmRejectResolution = (id: string, engineerId: string, reason: stri
 export const reachedSite = (id: string, comment?: string, gpsLat?: number, gpsLong?: number) =>
   post<Ticket>(`/tickets/${id}/reached-site`, { comment, gpsLat, gpsLong });
 export const startWorking = (id: string, comment?: string) => post<Ticket>(`/tickets/${id}/start-working`, { comment });
-export const markPending = (id: string, pendingReason: PendingReason, pendingNotes?: string) =>
+export const markPending = (id: string, pendingReason: PendingReason, pendingNotes: string) =>
   post<Ticket>(`/tickets/${id}/pending`, { pendingReason, pendingNotes });
 export const resumeTicket = (id: string) => post<Ticket>(`/tickets/${id}/resume`);
 export const asmResolveTicket = (id: string, comment?: string) => post<Ticket>(`/tickets/${id}/asm-resolve`, { comment });
 export const closeTicket = (id: string, comment?: string) => post<Ticket>(`/tickets/${id}/close`, { comment });
+export const resendCsatSurvey = (id: string) => post<{ ok: boolean }>(`/tickets/${id}/resend-csat`);
 export const reopenTicket = (id: string) => post<Ticket>(`/tickets/${id}/reopen`);
 export const regularizeTicket = (id: string, targetStatus: TicketStatus, reason: string) =>
   post<Ticket>(`/tickets/${id}/regularize`, { targetStatus, reason });

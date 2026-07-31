@@ -152,11 +152,17 @@ export interface Ticket {
   pendingReason?: PendingReason | null;
   pendingNotes?: string | null;
   resolutionSummary?: string | null;
+  csatSurveySent?: boolean;
+  csatScore?: number | null;
+  csatResponseText?: string | null;
   rejectionCount?: number;
+  rejectionReasons?: { engineerId: string; reason: string; timestamp: string }[];
   reOpenCount?: number;
   reachedSiteGpsLat?: number | null;
   reachedSiteGpsLong?: number | null;
   createdAt: string;
+  updatedAt?: string;
+  closedAt?: string | null;
   customer: Customer;
   site?: CustomerSite | null;
   equipment: Equipment | null;

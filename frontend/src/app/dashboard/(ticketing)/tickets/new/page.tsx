@@ -22,6 +22,21 @@ const CUSTOMER_CATEGORIES: CustomerCategory[] = ["WARRANTY", "NON_WARRANTY", "AM
 
 const PRIORITIES: Priority[] = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 
+// FSD rule: "system shall display the current Warranty Status of the
+// equipment [at ticket creation]. The Customer Category (In Warranty / Out
+// of Warranty) shall be decided manually based on this displayed status" —
+// this is purely informational, doesn't set Customer Category automatically.
+const WARRANTY_STATUS_LABEL: Record<string, string> = {
+  UNDER_WARRANTY: "Under Warranty",
+  EXPIRING_SOON: "Warranty Expiring Soon",
+  OUT_OF_WARRANTY: "Out of Warranty",
+};
+const WARRANTY_STATUS_STYLE: Record<string, string> = {
+  UNDER_WARRANTY: "bg-brand-green-bg text-brand-green",
+  EXPIRING_SOON: "bg-brand-amber-bg text-brand-amber",
+  OUT_OF_WARRANTY: "bg-brand-red-bg text-brand-red",
+};
+
 // §10.1 W-09 New Ticket. Manual creation only (Call Center/ASM/Manager, per
 // backend @Roles on POST /tickets) — auto-sources (AMC/warranty/predictive/
 // bulk/partner) aren't in this form, they're system-generated (§7.1).
@@ -45,6 +60,7 @@ export default function NewTicketPage() {
 
   const [equipment, setEquipment] = useState<EquipmentListItem[]>([]);
   const [equipmentId, setEquipmentId] = useState("");
+  const selectedEquipment = equipment.find((eq) => eq.id === equipmentId);
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
 
@@ -289,6 +305,21 @@ export default function NewTicketPage() {
                 </option>
               ))}
             </select>
+            {selectedEquipment && (
+              <p className="mt-1.5 text-xs text-muted">
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${WARRANTY_STATUS_STYLE[selectedEquipment.warrantyStatus] ?? ""}`}
+                >
+                  {WARRANTY_STATUS_LABEL[selectedEquipment.warrantyStatus] ?? selectedEquipment.warrantyStatus}
+                </span>
+                {selectedEquipment.warrantyEndDate && (
+                  <span className="ml-1.5">
+                    (until {new Date(selectedEquipment.warrantyEndDate).toLocaleDateString()}) — set the Customer
+                    Category above manually based on this.
+                  </span>
+                )}
+              </p>
+            )}
           </div>
         </div>
 

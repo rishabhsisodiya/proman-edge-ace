@@ -139,6 +139,12 @@ export class TicketsController {
     return this.tickets.close(id, { userId: req.user.userId, role: req.user.role }, dto.comment);
   }
 
+  @Roles('CALL_CENTER', 'ASM', 'MANAGER', 'ADMIN')
+  @Post(':id/resend-csat')
+  resendCsat(@Param('id') id: string) {
+    return this.tickets.resendCsatSurvey(id);
+  }
+
   @Roles('ADMIN')
   @Post(':id/reopen')
   reopen(@Param('id') id: string, @Req() req: any) {

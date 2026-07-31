@@ -14,6 +14,8 @@ export interface EquipmentListItem {
   itemName: string;
   equipmentCategory: string;
   status: string;
+  warrantyStatus: string;
+  warrantyEndDate: string;
 }
 
 export const listCustomers = (search?: string) =>

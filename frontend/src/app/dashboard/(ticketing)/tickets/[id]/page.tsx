@@ -50,6 +50,7 @@ import {
   regularizeTicket,
   rejectTicket,
   reopenTicket,
+  resendCsatSurvey,
   resolveDuplicate,
   resumeTicket,
   retryAutoRouting,
@@ -353,10 +354,34 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
           <p className="text-xs font-bold uppercase text-muted">Source</p>
           <p className="break-words text-navy">{SOURCE_LABEL[ticket.source] ?? ticket.source}</p>
         </div>
+        <div className="min-w-0">
+          <p className="text-xs font-bold uppercase text-muted">Created</p>
+          <p className="break-words text-navy">{new Date(ticket.createdAt).toLocaleString()}</p>
+        </div>
+        {ticket.updatedAt && (
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase text-muted">Last Updated</p>
+            <p className="break-words text-navy">{new Date(ticket.updatedAt).toLocaleString()}</p>
+          </div>
+        )}
+        {ticket.closedAt && (
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase text-muted">Closed</p>
+            <p className="break-words text-navy">{new Date(ticket.closedAt).toLocaleString()}</p>
+          </div>
+        )}
         {!!ticket.reOpenCount && (
           <div className="min-w-0">
             <p className="text-xs font-bold uppercase text-muted">Reopened</p>
             <p className="break-words text-navy">{ticket.reOpenCount} time{ticket.reOpenCount > 1 ? "s" : ""}</p>
+          </div>
+        )}
+        {!!ticket.rejectionCount && (
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase text-muted">Rejected</p>
+            <p className="break-words text-navy">
+              {ticket.rejectionCount} time{ticket.rejectionCount > 1 ? "s" : ""} — see Timeline for reasons
+            </p>
           </div>
         )}
         {ticket.reachedSiteGpsLat != null && ticket.reachedSiteGpsLong != null && (
@@ -372,14 +397,6 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             </a>
           </div>
         )}
-        <div className="min-w-0">
-          <p className="text-xs font-bold uppercase text-muted">SLA Policy</p>
-          <p className="break-words text-navy">
-            {ticket.slaPolicy && ticket.slaPolicy.responseHours != null && ticket.slaPolicy.resolutionHours != null
-              ? `${ticket.slaPolicy.responseHours}h response / ${ticket.slaPolicy.resolutionHours}h resolution`
-              : "No policy set for this service type / priority"}
-          </p>
-        </div>
         {ticket.status === "PENDING" && (
           <div className="min-w-0 sm:col-span-2">
             <p className="text-xs font-bold uppercase text-muted">Pending reason</p>
@@ -440,6 +457,10 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
           {(role === "ASM" || role === "ENGINEER" || role === "MANAGER" || role === "ADMIN") &&
             ticket.status !== "CLOSED" && <ServiceTypeCard ticket={ticket} runAction={runAction} />}
           <SlaFieldsCard ticket={ticket} />
+          {ticket.status === "CLOSED" &&
+            (role === "CALL_CENTER" || role === "ASM" || role === "MANAGER" || role === "ADMIN") && (
+              <CsatCard ticket={ticket} runAction={runAction} />
+            )}
         </div>
       </div>
     </div>
@@ -628,15 +649,15 @@ function EngineerActionCard({
           <textarea
             value={pendingNotes}
             onChange={(e) => setPendingNotes(e.target.value)}
-            placeholder="Notes (optional)"
+            placeholder="Notes (required) — what specifically is being waited on?"
             className="mb-2 h-16 w-full rounded-md border border-line p-2 text-sm"
           />
           <div className="flex gap-2">
             <ActionButton
               label="Mark Pending"
-              busy={busy}
+              busy={busy || !pendingNotes.trim()}
               onClick={() => {
-                runAction(() => markPending(ticket.id, pendingReason, pendingNotes || undefined), "Marked pending.");
+                runAction(() => markPending(ticket.id, pendingReason, pendingNotes.trim()), "Marked pending.");
                 setShowPending(false);
               }}
             />
@@ -765,6 +786,36 @@ function ServiceTypeCard({
   );
 }
 
+/** Manual-send fallback (2026-07-31, client request) — Call Center/ASM/Manager
+ * can copy the CSAT survey link themselves (e.g. to paste into a manual
+ * WhatsApp message) instead of relying solely on the automatic N-14 send. */
+function CsatLinkCopy({ ticketId }: { ticketId: string }) {
+  const [copied, setCopied] = useState(false);
+  const link = typeof window !== "undefined" ? `${window.location.origin}/csat/${ticketId}` : "";
+
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        readOnly
+        value={link}
+        onFocus={(e) => e.target.select()}
+        className="h-8 flex-1 rounded-md border border-line bg-navy-soft px-2 text-xs text-navy"
+      />
+      <button
+        type="button"
+        onClick={() => {
+          navigator.clipboard.writeText(link);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        }}
+        className="h-8 shrink-0 rounded-md bg-navy-tint px-3 text-xs font-bold text-navy hover:bg-navy hover:text-white"
+      >
+        {copied ? "Copied!" : "Copy"}
+      </button>
+    </div>
+  );
+}
+
 // "1 Aug 2026, 6:00 PM" — friendlier than the browser's raw locale format,
 // and a fixed relative-day hint ("Today"/"Tomorrow"/"in 3 days"/"2 days ago")
 // so Admin/ASM don't have to do date math to judge urgency at a glance.
@@ -824,15 +875,73 @@ function SlaClockRow({
 }
 
 /** New card (2026-07-30) — the 4 raw SLA fields (FSD Ticket entity table) weren't shown
- * anywhere before; only the derived status badge existed. Right sidebar, below Service Type. */
+ * anywhere before; only the derived status badge existed. Right sidebar, below Service Type.
+ * SLA Policy moved in here too (2026-07-31, client request) — was a separate
+ * field in the main info grid, now grouped with the rest of the SLA info. */
 function SlaFieldsCard({ ticket }: { ticket: Ticket }) {
+  const hasPolicy = ticket.slaPolicy && ticket.slaPolicy.responseHours != null && ticket.slaPolicy.resolutionHours != null;
   return (
     <div className="rounded-lg border border-line bg-white p-3 text-sm">
       <p className="mb-3 text-xs font-bold uppercase text-muted">SLA Details</p>
+      <div className="mb-3">
+        <p className="text-xs font-bold uppercase text-muted">Policy</p>
+        <p className="break-words text-navy">
+          {hasPolicy
+            ? `${ticket.slaPolicy!.responseHours}h response / ${ticket.slaPolicy!.resolutionHours}h resolution`
+            : "No policy set for this service type / priority"}
+        </p>
+      </div>
       <div className="space-y-2">
         <SlaClockRow label="Response Due" due={ticket.slaResponseDue} met={ticket.slaResponseMet} status={ticket.slaResponseStatus} />
         <SlaClockRow label="Resolution Due" due={ticket.slaResolutionDue} met={ticket.slaResolutionMet} status={ticket.slaResolutionStatus} />
       </div>
+    </div>
+  );
+}
+
+/**
+ * New dedicated card (2026-07-31, client request) — was inline rows in the
+ * main info grid, moved into its own card matching the SLA Details/Service
+ * Type pattern. Only shown once the ticket is Closed (CSAT is only ever
+ * sent at that point). Shows the customer's actual score/comment once
+ * submitted; otherwise a "Resend Survey" action to retrigger N-14 manually
+ * (e.g. if the original send silently failed — no real Email/WhatsApp
+ * credentials yet — or the customer just hasn't responded).
+ */
+function CsatCard({ ticket, runAction }: { ticket: Ticket; runAction: <T>(action: () => Promise<T>, note?: string) => void }) {
+  const [resending, setResending] = useState(false);
+
+  return (
+    <div className="rounded-lg border border-line bg-white p-3 text-sm">
+      <p className="mb-3 text-xs font-bold uppercase text-muted">Customer Feedback (CSAT)</p>
+      {ticket.csatScore != null ? (
+        <p className="break-words text-navy">
+          {ticket.csatScore}/5{ticket.csatResponseText ? ` — "${ticket.csatResponseText}"` : ""}
+        </p>
+      ) : (
+        <div>
+          <p className="mb-2 break-words text-muted">
+            {ticket.csatSurveySent ? "Not fulfilled yet — survey sent, awaiting customer response." : "Survey not yet sent."}
+          </p>
+          <p className="mb-1 text-xs font-bold uppercase text-muted">Survey link</p>
+          <div className="mb-3">
+            <CsatLinkCopy ticketId={ticket.id} />
+          </div>
+          <ActionButton
+            label={resending ? "Sending…" : "Resend Survey"}
+            variant="secondary"
+            busy={resending}
+            onClick={async () => {
+              setResending(true);
+              try {
+                await runAction(() => resendCsatSurvey(ticket.id), "CSAT survey re-sent.");
+              } finally {
+                setResending(false);
+              }
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }

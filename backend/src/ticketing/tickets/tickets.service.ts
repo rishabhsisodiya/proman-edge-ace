@@ -443,6 +443,9 @@ export class TicketsService {
     if (filters.slaBreached === 'true') {
       where.OR = [{ slaResponseStatus: 'BREACHED' }, { slaResolutionStatus: 'BREACHED' }];
     }
+    // Client feedback (2026-07-31) — rejected tickets weren't distinguishable
+    // from any other unassigned ASSIGNED ticket anywhere in the UI.
+    if (filters.rejected === 'true') where.rejectionCount = { gt: 0 };
 
     // Capped at 500 rather than 100 — a couple of dashboards (Call Center,
     // My Tickets) still need one unbounded-ish fetch for their own
@@ -725,11 +728,16 @@ export class TicketsService {
       },
     });
 
+    // Comment surfaces this in the Timeline (2026-07-31 fix — this transition
+    // previously passed no comment at all, so a rejection left literally no
+    // visible trace beyond the raw rejectionCount/rejectionReasons fields,
+    // which nothing in the UI read either).
     const updated = await this.workflow.transition({
       ticketId: id,
       targetStatus: 'ASSIGNED',
       actorUserId: actor.userId,
       actorRole: actor.role,
+      comment: `Rejected by ${ticket.assignedEngineer?.fullName ?? 'Engineer'}: ${reason}`,
     });
 
     const escalationTier =
@@ -925,7 +933,7 @@ export class TicketsService {
   }
 
   /** Engineer pauses work (awaiting parts/customer/approval/other). SLA clock keeps running (§14.1 rule 21). */
-  async markPending(id: string, pendingReason: PendingReason, pendingNotes: string | undefined, actor: RequestUser) {
+  async markPending(id: string, pendingReason: PendingReason, pendingNotes: string, actor: RequestUser) {
     const result = await this.workflow.transition({
       ticketId: id,
       targetStatus: 'PENDING',
@@ -937,7 +945,7 @@ export class TicketsService {
 
     // N-09 (FSD §9) — notify customer + ASM + Call Center.
     const ticket = await this.prisma.ticket.findUniqueOrThrow({ where: { id }, include: { customer: true, assignedAsm: true } });
-    const vars = { ticket_no: ticket.ticketNo, pending_reason: pendingNotes ? `${pendingReason} — ${pendingNotes}` : pendingReason };
+    const vars = { ticket_no: ticket.ticketNo, pending_reason: `${pendingReason} — ${pendingNotes}` };
     if (ticket.customer.primaryContactMobile) {
       await this.fireNotification('N-09', 'WHATSAPP', ticket.customer.primaryContactMobile, vars, id);
     }
@@ -981,14 +989,55 @@ export class TicketsService {
    * quotations/quotation.service.ts). Closing the ticket doesn't create,
    * gate on, or wait for an invoice at all anymore.
    */
-  close(id: string, actor: RequestUser, comment?: string) {
-    return this.workflow.transition({
+  async close(id: string, actor: RequestUser, comment?: string) {
+    const updated = await this.workflow.transition({
       ticketId: id,
       targetStatus: 'CLOSED',
       actorUserId: actor.userId,
       actorRole: actor.role,
       comment,
     });
+
+    await this.sendCsatSurvey(id);
+
+    return updated;
+  }
+
+  /**
+   * N-14 (FSD §9) — "Ticket closed / Feedback." FSD wording specifies
+   * Email + SMS; SMS is dropped project-wide (client decision, 2026-07-30),
+   * substituted with WhatsApp per the same pattern used for N-17. Survey
+   * link is just the ticket id (already an unguessable UUID) — no separate
+   * token needed, same reasoning as most one-time survey links. Extracted
+   * from close() so it can also be called as a manual "Resend Survey"
+   * action (2026-07-31, client request) — e.g. if the original send failed
+   * silently (no real Email/WhatsApp credentials yet) or the customer just
+   * never responded.
+   */
+  private async sendCsatSurvey(id: string) {
+    const ticket = await this.prisma.ticket.findUniqueOrThrow({ where: { id }, include: { customer: true } });
+    const surveyLink = `${process.env.FRONTEND_URL ?? 'http://localhost:3000'}/csat/${id}`;
+    const vars = { ticket_no: ticket.ticketNo, survey_link: surveyLink };
+    if (ticket.customer.primaryContactEmail) {
+      await this.fireNotification('N-14', 'EMAIL', ticket.customer.primaryContactEmail, vars, id);
+    }
+    if (ticket.customer.primaryContactMobile) {
+      await this.fireNotification('N-14', 'WHATSAPP', ticket.customer.primaryContactMobile, vars, id);
+    }
+    await this.prisma.ticket.update({ where: { id }, data: { csatSurveySent: true } });
+  }
+
+  /** Manual "Resend Survey" action (2026-07-31, client request) — Call Center/ASM/Manager/Admin can retrigger N-14 from the Ticket Detail page. */
+  async resendCsatSurvey(id: string) {
+    const ticket = await this.prisma.ticket.findUniqueOrThrow({ where: { id } });
+    if (ticket.status !== 'CLOSED') {
+      throw new BadRequestException('CSAT survey can only be sent for a Closed ticket');
+    }
+    if (ticket.csatScore != null) {
+      throw new BadRequestException('Customer has already submitted feedback for this ticket');
+    }
+    await this.sendCsatSurvey(id);
+    return { ok: true };
   }
 
   /**
