@@ -21,7 +21,7 @@ import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { RolesGuard } from '../../auth/roles.guard';
 import { Roles } from '../../auth/roles.decorator';
 import { FsvService } from './fsv.service';
-import { AddFsvPartDto, AddFsvPhotoDto, CreateFsvDto, UpdateFsvDto } from './dto/fsv.dto';
+import { AddFsvPartDto, AddFsvPhotoDto, CreateFsvDto, UpdateFsvDto, UpdateFsvPartDto } from './dto/fsv.dto';
 
 const FSV_PHOTO_UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'fsv-photos');
 const ALLOWED_PHOTO_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']);
@@ -63,6 +63,12 @@ export class FsvController {
   @Post('fsv/:id/parts')
   addPart(@Param('id') id: string, @Body() dto: AddFsvPartDto) {
     return this.fsv.addPart(id, dto);
+  }
+
+  @Roles('ENGINEER')
+  @Patch('fsv/:id/parts/:partId')
+  updatePart(@Param('id') id: string, @Param('partId') partId: string, @Body() dto: UpdateFsvPartDto) {
+    return this.fsv.updatePart(id, partId, dto);
   }
 
   @Roles('ENGINEER')

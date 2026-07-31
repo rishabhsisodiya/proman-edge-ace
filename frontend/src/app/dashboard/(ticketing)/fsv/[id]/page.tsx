@@ -11,11 +11,13 @@ import {
   removeFsvPart,
   submitFsv,
   updateFsv,
+  updateFsvPart,
   uploadFsvPhoto,
   uploadFsvReport,
   uploadFsvSignature,
 } from "@/lib/ticketing/fsv";
 import { ItemListItem, listItems } from "@/lib/ticketing/masters";
+import { listPriceLists, PriceList } from "@/lib/ticketing/price-lists";
 import { apiFetch } from "@/lib/api";
 
 interface ItemWarehouseStock {
@@ -85,15 +87,36 @@ export default function FsvDetailPage({ params }: { params: Promise<{ id: string
   return (
     <div className="mx-auto max-w-3xl space-y-6 px-6 py-8">
       <div>
-        <p className="font-mono text-xs text-muted">{fsv.visitNo}</p>
-        <h1 className="text-xl font-bold text-navy">Field Service Visit #{fsv.visitNumber}</h1>
-        <span
-          className={`mt-1 inline-block rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
-            readOnly ? "bg-brand-green-bg text-brand-green" : "bg-navy-tint text-navy"
-          }`}
-        >
-          {fsv.status}
-        </span>
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h1 className="text-2xl font-bold text-navy">Field Service Visit #{fsv.visitNumber}</h1>
+          <span className="font-mono text-sm font-bold text-navy">{fsv.visitNo}</span>
+          <span
+            className={`inline-block rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
+              readOnly ? "bg-brand-green-bg text-brand-green" : "bg-navy-tint text-navy"
+            }`}
+          >
+            {fsv.status}
+          </span>
+        </div>
+        <p className="mt-1 text-sm font-medium text-navy">{new Date(fsv.visitDate).toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</p>
+        {readOnly && (
+          <p className="mt-1 text-xs text-muted">
+            Submitted {fsv.submittedAt ? new Date(fsv.submittedAt).toLocaleString() : "—"} by {fsv.engineer?.fullName ?? "—"}
+          </p>
+        )}
+        {(fsv.gpsLatAtCheckin != null || fsv.gpsLongAtCheckin != null) && (
+          <p className="mt-1 text-xs text-muted">
+            GPS at check-in:{" "}
+            <a
+              href={`https://www.google.com/maps?q=${fsv.gpsLatAtCheckin},${fsv.gpsLongAtCheckin}`}
+              target="_blank"
+              rel="noreferrer"
+              className="font-bold text-navy underline"
+            >
+              {fsv.gpsLatAtCheckin}, {fsv.gpsLongAtCheckin}
+            </a>
+          </p>
+        )}
       </div>
 
       <TimestampRow fsv={fsv} readOnly={readOnly} onSave={saveField} />
@@ -230,20 +253,50 @@ function TimestampRow({
     { key: "workStartTime", label: "Work Start" },
     { key: "workEndTime", label: "Work End" },
   ];
+
+  // Client feedback (2026-07-31): "Total Travel/Work Hours fields are
+  // missing" — no such stored field exists, and shouldn't (it's fully
+  // derivable from the 4 timestamps above); computed here for display only.
+  function hoursBetween(a: string | null, b: string | null): string | null {
+    if (!a || !b) return null;
+    const hours = (new Date(b).getTime() - new Date(a).getTime()) / (1000 * 60 * 60);
+    return hours >= 0 ? hours.toFixed(1) : null;
+  }
+  const totalTravelHours = hoursBetween(fsv.travelStartTime, fsv.siteArrivalTime);
+  const totalWorkHours = hoursBetween(fsv.workStartTime, fsv.workEndTime);
+
   return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-      {fields.map((f) => (
-        <div key={f.key}>
-          <label className="mb-1.5 block text-xs font-bold text-navy">{f.label}</label>
-          <input
-            type="datetime-local"
-            defaultValue={(fsv[f.key] as string | null)?.slice(0, 16) ?? ""}
-            disabled={readOnly}
-            onBlur={(e) => e.target.value && onSave({ [f.key]: new Date(e.target.value).toISOString() })}
-            className="h-10 w-full rounded-md border border-line px-2 text-xs text-navy disabled:bg-navy-soft"
-          />
+    <div>
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        {fields.map((f) => (
+          <div key={f.key}>
+            <label className="mb-1.5 block text-xs font-bold text-navy">{f.label}</label>
+            <input
+              type="datetime-local"
+              defaultValue={(fsv[f.key] as string | null)?.slice(0, 16) ?? ""}
+              disabled={readOnly}
+              onBlur={(e) => e.target.value && onSave({ [f.key]: new Date(e.target.value).toISOString() })}
+              className="h-10 w-full rounded-md border border-line px-2 text-xs text-navy disabled:bg-navy-soft"
+            />
+          </div>
+        ))}
+      </div>
+      {(totalTravelHours || totalWorkHours) && (
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          {totalTravelHours && (
+            <div className="rounded-lg border border-line bg-navy-soft px-3 py-2">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-muted">Total Travel Hours</p>
+              <p className="text-lg font-bold text-navy">{totalTravelHours}h</p>
+            </div>
+          )}
+          {totalWorkHours && (
+            <div className="rounded-lg border border-line bg-navy-soft px-3 py-2">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-muted">Total Work Hours</p>
+              <p className="text-lg font-bold text-navy">{totalWorkHours}h</p>
+            </div>
+          )}
         </div>
-      ))}
+      )}
     </div>
   );
 }
@@ -271,19 +324,72 @@ function PartsSection({
   const [sellingRate, setSellingRate] = useState("0");
   const [busy, setBusy] = useState(false);
 
+  // Price List selection (client feedback 2026-07-31: "On Quotation it is
+  // showing so why not here?") — same per-line selector as the Quotation's
+  // Add Item flow, driving which rate the item search returns.
+  const [priceLists, setPriceLists] = useState<PriceList[]>([]);
+  const [priceListName, setPriceListName] = useState("");
+  useEffect(() => {
+    listPriceLists()
+      .then((all) => {
+        const active = all.filter((p) => p.isActive);
+        setPriceLists(active);
+        setPriceListName(fsv.priceListName ?? active.find((p) => p.isDefault)?.name ?? active[0]?.name ?? "");
+      })
+      .catch(() => setPriceLists([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editQty, setEditQty] = useState("");
+  const [editWarehouse, setEditWarehouse] = useState("");
+  const [editRate, setEditRate] = useState("");
+  const [editSellingRate, setEditSellingRate] = useState("");
+  const [editBusy, setEditBusy] = useState(false);
+
+  function startEdit(p: FieldServiceVisit["parts"][number]) {
+    setEditingId(p.id);
+    setEditQty(String(p.qty));
+    setEditWarehouse(p.warehouse);
+    setEditRate(String(p.rate));
+    setEditSellingRate(String(p.sellingRate));
+  }
+
+  async function saveEdit(partId: string) {
+    setEditBusy(true);
+    onError(null);
+    try {
+      await updateFsvPart(fsv.id, partId, {
+        qty: Number(editQty),
+        warehouse: editWarehouse,
+        rate: Number(editRate),
+        sellingRate: Number(editSellingRate),
+      });
+      setEditingId(null);
+      reload();
+    } catch (err) {
+      onError(
+        err instanceof ApiError ? (err.body as { message?: string | string[] })?.message?.toString() ?? "Could not update part." : "Could not update part.",
+      );
+    } finally {
+      setEditBusy(false);
+    }
+  }
+
   useEffect(() => {
     if (itemQuery.trim().length < 2) {
       setItemResults([]);
       return;
     }
     const handle = setTimeout(() => {
-      listItems(itemQuery.trim()).then(setItemResults).catch(() => setItemResults([]));
+      listItems(itemQuery.trim(), priceListName || undefined).then(setItemResults).catch(() => setItemResults([]));
     }, 250);
     return () => clearTimeout(handle);
-  }, [itemQuery]);
+  }, [itemQuery, priceListName]);
 
   async function pickItem(it: ItemListItem) {
-    const detail = await apiFetch<ItemDetail>(`/items/${encodeURIComponent(it.itemCode)}`);
+    const qs = priceListName ? `?priceListName=${encodeURIComponent(priceListName)}` : "";
+    const detail = await apiFetch<ItemDetail>(`/items/${encodeURIComponent(it.itemCode)}${qs}`);
     setSelectedItem(detail);
     setWarehouse(detail.warehouseStock[0]?.warehouse ?? "");
     const costRate = Number(detail.valuationRate ?? detail.standardRate ?? 0);
@@ -355,36 +461,93 @@ function PartsSection({
             </tr>
           </thead>
           <tbody>
-            {fsv.parts.map((p) => (
-              <tr key={p.id} className="border-b border-line last:border-0">
-                <td className="px-2 py-1.5 text-navy">{p.itemName}</td>
-                <td className="px-2 py-1.5 text-muted">
-                  {p.qty} {p.uom}
-                </td>
-                <td className="px-2 py-1.5 text-muted">{p.warehouse}</td>
-                <td className="px-2 py-1.5 text-muted">₹{p.amount}</td>
-                {!readOnly && (
-                  <td className="px-2 py-1.5 text-right">
-                    <button
-                      onClick={() =>
-                        removeFsvPart(fsv.id, p.id)
-                          .then(reload)
-                          .catch(() => onError("Could not remove part."))
-                      }
-                      className="font-bold text-brand-red"
-                    >
-                      Remove
+            {fsv.parts.map((p) =>
+              editingId === p.id ? (
+                <tr key={p.id} className="border-b border-line bg-navy-soft last:border-0">
+                  <td className="px-2 py-1.5 text-navy">{p.itemName}</td>
+                  <td className="px-2 py-1.5">
+                    <input
+                      type="number"
+                      value={editQty}
+                      onChange={(e) => setEditQty(e.target.value)}
+                      className="h-7 w-16 rounded-md border border-line px-1 text-xs"
+                    />
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <input
+                      type="text"
+                      value={editWarehouse}
+                      onChange={(e) => setEditWarehouse(e.target.value)}
+                      className="h-7 w-24 rounded-md border border-line px-1 text-xs"
+                    />
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <input
+                      type="number"
+                      value={editSellingRate}
+                      onChange={(e) => setEditSellingRate(e.target.value)}
+                      className="h-7 w-20 rounded-md border border-line px-1 text-xs"
+                    />
+                  </td>
+                  <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                    <button onClick={() => saveEdit(p.id)} disabled={editBusy} className="mr-2 font-bold text-brand-green disabled:opacity-50">
+                      Save
+                    </button>
+                    <button onClick={() => setEditingId(null)} className="font-bold text-muted">
+                      Cancel
                     </button>
                   </td>
-                )}
-              </tr>
-            ))}
+                </tr>
+              ) : (
+                <tr key={p.id} className="border-b border-line last:border-0">
+                  <td className="px-2 py-1.5 text-navy">{p.itemName}</td>
+                  <td className="px-2 py-1.5 text-muted">
+                    {p.qty} {p.uom}
+                  </td>
+                  <td className="px-2 py-1.5 text-muted">{p.warehouse}</td>
+                  <td className="px-2 py-1.5 text-muted">₹{p.amount}</td>
+                  {!readOnly && (
+                    <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                      <button onClick={() => startEdit(p)} className="mr-2 font-bold text-navy">
+                        Edit
+                      </button>
+                      <button
+                        onClick={() =>
+                          removeFsvPart(fsv.id, p.id)
+                            .then(reload)
+                            .catch(() => onError("Could not remove part."))
+                        }
+                        className="font-bold text-brand-red"
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  )}
+                </tr>
+              ),
+            )}
           </tbody>
         </table>
       )}
 
       {showAdd && (
         <div className="mt-2 space-y-2 rounded-md border border-line bg-navy-soft p-3">
+          {priceLists.length > 0 && (
+            <div>
+              <label className="text-xs text-muted">Price List</label>
+              <select
+                value={priceListName}
+                onChange={(e) => setPriceListName(e.target.value)}
+                className="h-9 w-full rounded-md border border-line px-2 text-sm"
+              >
+                {priceLists.map((p) => (
+                  <option key={p.id} value={p.name}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           {!selectedItem ? (
             <div className="relative">
               <input
@@ -424,17 +587,31 @@ function PartsSection({
                 </div>
                 <div>
                   <label className="text-xs text-muted">Warehouse</label>
-                  <select
-                    value={warehouse}
-                    onChange={(e) => setWarehouse(e.target.value)}
-                    className="h-9 w-full rounded-md border border-line px-2 text-sm"
-                  >
-                    {selectedItem.warehouseStock.map((w) => (
-                      <option key={w.warehouse} value={w.warehouse}>
-                        {w.warehouse} ({w.actualQty})
-                      </option>
-                    ))}
-                  </select>
+                  {selectedItem.warehouseStock.length > 0 ? (
+                    <select
+                      value={warehouse}
+                      onChange={(e) => setWarehouse(e.target.value)}
+                      className="h-9 w-full rounded-md border border-line px-2 text-sm"
+                    >
+                      {selectedItem.warehouseStock.map((w) => (
+                        <option key={w.warehouse} value={w.warehouse}>
+                          {w.warehouse} ({w.actualQty})
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    // No warehouse stock on file for this item (e.g. not yet
+                    // synced from ERPNext) — the select would otherwise have
+                    // zero options, permanently blocking Add (warehouse
+                    // stayed "" forever). Let the engineer type it manually.
+                    <input
+                      type="text"
+                      value={warehouse}
+                      onChange={(e) => setWarehouse(e.target.value)}
+                      placeholder="Enter warehouse name"
+                      className="h-9 w-full rounded-md border border-line px-2 text-sm"
+                    />
+                  )}
                 </div>
                 <div>
                   <label className="text-xs text-muted">Rate</label>
@@ -499,14 +676,27 @@ function PhotosSection({
   const [caption, setCaption] = useState("");
   const [uploading, setUploading] = useState(false);
 
+  // Client feedback (2026-07-31): "Multiple photos cannot be uploaded in a
+  // single FSV" — the backend already allowed up to 5 total (one at a time,
+  // repeated calls); the gap was the file picker only ever taking one file
+  // per click. Now accepts a multi-select and uploads each sequentially
+  // (not parallel — avoids exceeding MAX_PHOTOS mid-flight if the count is
+  // right at the limit).
   async function onFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // allow re-selecting the same file back-to-back
-    if (!file) return;
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = ""; // allow re-selecting the same file(s) back-to-back
+    if (files.length === 0) return;
+    const remaining = 5 - fsv.photos.length;
+    const toUpload = files.slice(0, remaining);
     setUploading(true);
     onError(null);
     try {
-      await uploadFsvPhoto(fsv.id, file, caption.trim() || undefined);
+      for (const file of toUpload) {
+        await uploadFsvPhoto(fsv.id, file, caption.trim() || undefined);
+      }
+      if (files.length > toUpload.length) {
+        onError(`Only ${toUpload.length} of ${files.length} photos uploaded — maximum 5 photos per visit.`);
+      }
       setCaption("");
       reload();
     } catch (err) {
@@ -539,9 +729,10 @@ function PhotosSection({
             className="h-9 w-40 rounded-md border border-line px-2 text-sm text-navy"
           />
           <label className="flex h-9 cursor-pointer items-center rounded-md bg-navy-tint px-3 text-xs font-bold text-navy">
-            {uploading ? "Uploading…" : "Upload Photo"}
+            {uploading ? "Uploading…" : "Upload Photo(s)"}
             <input
               type="file"
+              multiple
               accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
               onChange={onFileSelected}
               disabled={uploading}

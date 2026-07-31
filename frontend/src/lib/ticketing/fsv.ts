@@ -26,7 +26,9 @@ export interface FieldServiceVisit {
   ticketId: string;
   visitNumber: number;
   engineerId: string;
+  engineer?: { id: string; fullName: string };
   visitDate: string;
+  priceListName: string | null;
   travelStartTime: string | null;
   siteArrivalTime: string | null;
   workStartTime: string | null;
@@ -77,6 +79,13 @@ export interface FsvPartInput {
   sellingRate: number;
 }
 
+export interface FsvPartUpdateInput {
+  qty?: number;
+  warehouse?: string;
+  rate?: number;
+  sellingRate?: number;
+}
+
 function post<T>(path: string, body?: unknown): Promise<T> {
   return apiFetch<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined });
 }
@@ -84,8 +93,13 @@ function post<T>(path: string, body?: unknown): Promise<T> {
 export const listFsvForTicket = (ticketId: string) =>
   apiFetch<FieldServiceVisit[]>(`/tickets/${ticketId}/fsv`);
 
-export const createFsv = (ticketId: string, visitDate: string) =>
-  post<FieldServiceVisit>(`/tickets/${ticketId}/fsv`, { visitDate });
+export const createFsv = (
+  ticketId: string,
+  visitDate: string,
+  priceListName?: string,
+  gpsLatAtCheckin?: number,
+  gpsLongAtCheckin?: number,
+) => post<FieldServiceVisit>(`/tickets/${ticketId}/fsv`, { visitDate, priceListName, gpsLatAtCheckin, gpsLongAtCheckin });
 
 export const getFsv = (id: string) => apiFetch<FieldServiceVisit>(`/fsv/${id}`);
 
@@ -93,6 +107,9 @@ export const updateFsv = (id: string, input: FsvUpdateInput) =>
   apiFetch<FieldServiceVisit>(`/fsv/${id}`, { method: "PATCH", body: JSON.stringify(input) });
 
 export const addFsvPart = (id: string, input: FsvPartInput) => post<FsvPartConsumed>(`/fsv/${id}/parts`, input);
+
+export const updateFsvPart = (id: string, partId: string, input: FsvPartUpdateInput) =>
+  apiFetch<FsvPartConsumed>(`/fsv/${id}/parts/${partId}`, { method: "PATCH", body: JSON.stringify(input) });
 
 export const removeFsvPart = (id: string, partId: string) =>
   apiFetch<void>(`/fsv/${id}/parts/${partId}`, { method: "DELETE" });

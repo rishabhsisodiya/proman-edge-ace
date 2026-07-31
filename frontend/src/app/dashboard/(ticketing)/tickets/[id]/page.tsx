@@ -4,6 +4,7 @@ import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ApiError } from "@/lib/api";
 import { createFsv, FieldServiceVisit, listFsvForTicket } from "@/lib/ticketing/fsv";
+import { getBestEffortGpsPosition } from "@/lib/geolocation";
 import {
   Chargeability,
   createDirectSalesOrder,
@@ -468,26 +469,6 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
 }
 
 /**
- * Best-effort GPS point for "Reached Site" (2026-07-31) — never throws/blocks
- * the transition. Resolves null if geolocation isn't available, permission is
- * denied, or it just times out (5s — an engineer shouldn't be stuck waiting on
- * this to tap through a status change).
- */
-function getBestEffortGpsPosition(): Promise<{ lat: number; long: number } | null> {
-  return new Promise((resolve) => {
-    if (typeof navigator === "undefined" || !("geolocation" in navigator)) {
-      resolve(null);
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({ lat: pos.coords.latitude, long: pos.coords.longitude }),
-      () => resolve(null),
-      { timeout: 5000 },
-    );
-  });
-}
-
-/**
  * Engineer's own next-step card in the sidebar — not relevant to other
  * roles (they don't need "who's assigned" surfaced to themselves, they need
  * their own next action prominent instead, same reasoning that put Assign
@@ -526,7 +507,11 @@ function EngineerActionCard({
         router.push(`/dashboard/fsv/${existingDraft.id}`);
         return;
       }
-      const created = await createFsv(ticket.id, new Date().toISOString());
+      // "Check-in" GPS (2026-07-31) — captured once, at the moment the visit
+      // is opened, same best-effort pattern as Reached Site; this field
+      // existed on the schema since day one but was never actually set.
+      const gps = await getBestEffortGpsPosition();
+      const created = await createFsv(ticket.id, new Date().toISOString(), undefined, gps?.lat, gps?.long);
       router.push(`/dashboard/fsv/${created.id}`);
     } finally {
       setFsvBusy(false);
@@ -1031,25 +1016,47 @@ function TicketHistoryTabs({
           {visits.length === 0 ? (
             <p className="p-4 text-sm text-muted">No Field Service Visits yet.</p>
           ) : (
-            visits.map((v) => (
-              <a
-                key={v.id}
-                href={`/dashboard/fsv/${v.id}`}
-                className="flex items-center justify-between px-4 py-2.5 text-sm hover:bg-navy-tint"
-              >
-                <div>
-                  <p className="font-mono text-xs text-muted">{v.visitNo}</p>
-                  <p className="text-navy">Visit #{v.visitNumber}</p>
-                </div>
-                <span
-                  className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
-                    v.status === "SUBMITTED" ? "bg-brand-green-bg text-brand-green" : "bg-navy-tint text-navy"
-                  }`}
+            visits.map((v) => {
+              const travelHours = hoursBetweenTimestamps(v.travelStartTime, v.siteArrivalTime);
+              const workHours = hoursBetweenTimestamps(v.workStartTime, v.workEndTime);
+              return (
+                <a
+                  key={v.id}
+                  href={`/dashboard/fsv/${v.id}`}
+                  className="flex items-center justify-between px-4 py-2.5 text-sm hover:bg-navy-tint"
                 >
-                  {v.status}
-                </span>
-              </a>
-            ))
+                  <div>
+                    <p className="text-navy">
+                      <span className="font-bold">Visit #{v.visitNumber}</span>{" "}
+                      <span className="font-mono text-xs text-muted">{v.visitNo}</span>
+                    </p>
+                    <p className="text-xs text-muted">
+                      {new Date(v.visitDate).toLocaleDateString()}
+                      {v.engineer && <> · Created by {v.engineer.fullName}</>}
+                    </p>
+                    {(travelHours || workHours) && (
+                      <p className="text-xs text-muted">
+                        {travelHours && <>Travel: {travelHours}h</>}
+                        {travelHours && workHours && " · "}
+                        {workHours && <>Work: {workHours}h</>}
+                      </p>
+                    )}
+                    {(v.gpsLatAtCheckin != null || v.gpsLongAtCheckin != null) && (
+                      <p className="text-xs text-muted">
+                        GPS: {v.gpsLatAtCheckin}, {v.gpsLongAtCheckin}
+                      </p>
+                    )}
+                  </div>
+                  <span
+                    className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
+                      v.status === "SUBMITTED" ? "bg-brand-green-bg text-brand-green" : "bg-navy-tint text-navy"
+                    }`}
+                  >
+                    {v.status}
+                  </span>
+                </a>
+              );
+            })
           )}
         </div>
       )}
@@ -1059,6 +1066,16 @@ function TicketHistoryTabs({
 
 function statusLabelOrRaw(value: string): string {
   return STATUS_LABEL[value as TicketStatus] ?? value;
+}
+
+// Same computation as the FSV detail page's TimestampRow — surfaced in the
+// FSV tab's list too (client feedback 2026-07-31: "show these details in
+// FSV tab for that FSV visit"), so Travel/Work hours are visible without
+// opening each visit individually.
+function hoursBetweenTimestamps(a: string | null, b: string | null): string | null {
+  if (!a || !b) return null;
+  const hours = (new Date(b).getTime() - new Date(a).getTime()) / (1000 * 60 * 60);
+  return hours >= 0 ? hours.toFixed(1) : null;
 }
 
 // Renders each TicketAuditLog row (raw fieldName/oldValue/newValue) into a

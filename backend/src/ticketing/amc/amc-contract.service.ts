@@ -9,7 +9,7 @@ export class AmcContractService {
   list(customerId?: string) {
     return this.prisma.amcContract.findMany({
       where: customerId ? { customerId } : undefined,
-      include: { customer: true, coveredEquipment: true },
+      include: { customer: true, coveredEquipment: true, owningAsm: { select: { id: true, fullName: true } } },
       orderBy: { startDate: 'desc' },
     });
   }
@@ -17,7 +17,7 @@ export class AmcContractService {
   findOne(id: string) {
     return this.prisma.amcContract.findUniqueOrThrow({
       where: { id },
-      include: { customer: true, coveredEquipment: true, scheduledVisits: true },
+      include: { customer: true, coveredEquipment: true, scheduledVisits: true, owningAsm: { select: { id: true, fullName: true } } },
     });
   }
 
@@ -39,7 +39,7 @@ export class AmcContractService {
         termsAndConditions: dto.termsAndConditions,
         coveredEquipment: { connect: dto.coveredEquipmentIds.map((id) => ({ id })) },
       },
-      include: { customer: true, coveredEquipment: true },
+      include: { customer: true, coveredEquipment: true, owningAsm: { select: { id: true, fullName: true } } },
     });
     const overlapWarnings = await this.findOverlaps(contract.id, dto.coveredEquipmentIds, dto.startDate, dto.endDate);
     await this.generateScheduledVisits(contract.id, dto.visitsIncluded, dto.startDate, dto.endDate, dto.coveredEquipmentIds, dto.visitDates);
@@ -181,7 +181,7 @@ export class AmcContractService {
         termsAndConditions: dto.termsAndConditions,
         coveredEquipment: { set: dto.coveredEquipmentIds.map((eid) => ({ id: eid })) },
       },
-      include: { customer: true, coveredEquipment: true },
+      include: { customer: true, coveredEquipment: true, owningAsm: { select: { id: true, fullName: true } } },
     });
     const overlapWarnings = await this.findOverlaps(contract.id, dto.coveredEquipmentIds, dto.startDate, dto.endDate);
     return { contract, overlapWarnings };
@@ -225,7 +225,7 @@ export class AmcContractService {
     return this.prisma.amcContract.update({
       where: { id },
       data: { signedAgreementUrl: url },
-      include: { customer: true, coveredEquipment: true },
+      include: { customer: true, coveredEquipment: true, owningAsm: { select: { id: true, fullName: true } } },
     });
   }
 }

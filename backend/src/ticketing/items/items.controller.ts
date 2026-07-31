@@ -13,7 +13,7 @@ export class ItemsController {
   }
 
   @Get(':itemCode')
-  findOne(@Param('itemCode') itemCode: string) {
-    return this.items.findOne(itemCode);
+  findOne(@Param('itemCode') itemCode: string, @Query('priceListName') priceListName?: string) {
+    return this.items.findOne(itemCode, priceListName);
   }
 }

@@ -27,18 +27,18 @@ export class ItemsService {
   }
 
   /**
-   * Used by FSV's "Add Part" item picker, which — unlike the Quotation
-   * picker — has no per-line price-list selection of its own, so this
-   * auto-fills the selling rate from whichever SellingPriceList Admin
-   * marked default (same fix as the Quotation item search's rate join,
-   * 2026-07-25 — FSV parts had the identical "rate never comes through" gap).
+   * Used by FSV's "Add Part" item picker. FSV now has its own per-line
+   * price-list selector (2026-07-31, matching Quotation's) — pass
+   * priceListName to rate against that; falls back to whichever
+   * SellingPriceList Admin marked default if omitted.
    */
-  async findOne(itemCode: string) {
+  async findOne(itemCode: string, priceListName?: string) {
     const item = await this.prisma.item.findUniqueOrThrow({ where: { itemCode }, include: { warehouseStock: true } });
-    const defaultPriceList = await this.prisma.sellingPriceList.findFirst({ where: { isDefault: true, isActive: true } });
-    const priceRate = defaultPriceList
+    const resolvedPriceListName =
+      priceListName ?? (await this.prisma.sellingPriceList.findFirst({ where: { isDefault: true, isActive: true } }))?.name;
+    const priceRate = resolvedPriceListName
       ? await this.prisma.itemPriceListRate.findUnique({
-          where: { itemCode_priceListName: { itemCode, priceListName: defaultPriceList.name } },
+          where: { itemCode_priceListName: { itemCode, priceListName: resolvedPriceListName } },
         })
       : null;
     return { ...item, sellingRate: priceRate ? Number(priceRate.rate) : null };

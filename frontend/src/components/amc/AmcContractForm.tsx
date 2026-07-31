@@ -19,6 +19,7 @@ import {
   PartsCoverage,
 } from "@/lib/ticketing/amc";
 import { CustomerListItem, EquipmentListItem, equipmentForCustomer, listCustomers } from "@/lib/ticketing/masters";
+import { listUsers } from "@/lib/ticketing/users";
 
 const PARTS_COVERAGE_OPTIONS: PartsCoverage[] = ["NONE", "CONSUMABLES_ONLY", "ALL_PARTS"];
 
@@ -52,6 +53,17 @@ export default function AmcContractForm({ existing, fixedCustomer, onSaved, onCa
   const [termsAndConditions, setTermsAndConditions] = useState(existing?.termsAndConditions ?? "");
   const [signedAgreementUrl, setSignedAgreementUrl] = useState(existing?.signedAgreementUrl ?? null);
   const [uploadingDocument, setUploadingDocument] = useState(false);
+
+  // Owning ASM (client feedback 2026-07-31: field existed on the schema and
+  // backend DTO already, but the form never sent it and nothing displayed
+  // it — genuinely dropped on the floor, not just a display gap).
+  const [owningAsmId, setOwningAsmId] = useState(existing?.owningAsmId ?? "");
+  const [asmOptions, setAsmOptions] = useState<{ id: string; fullName: string }[]>([]);
+  useEffect(() => {
+    listUsers({ role: "ASM" })
+      .then((users) => setAsmOptions(users.map((u) => ({ id: u.id, fullName: u.fullName }))))
+      .catch(() => {});
+  }, []);
 
   const [customerEquipment, setCustomerEquipment] = useState<EquipmentListItem[]>([]);
   const [coveredEquipmentIds, setCoveredEquipmentIds] = useState<string[]>(
@@ -235,6 +247,7 @@ export default function AmcContractForm({ existing, fixedCustomer, onSaved, onCa
       scopeOfServices: scopeOfServices.trim() || undefined,
       exclusions: exclusions.trim() || undefined,
       termsAndConditions: termsAndConditions.trim() || undefined,
+      owningAsmId: owningAsmId || undefined,
       coveredEquipmentIds,
       visitDates: !existing ? visitDates : undefined,
     };
@@ -394,6 +407,22 @@ export default function AmcContractForm({ existing, fixedCustomer, onSaved, onCa
               {(existing ? visits.length : visitDates.filter((d) => d).length) > 0 ? "Edit Visit Schedule" : "Configure Visit Schedule →"}
             </button>
           )}
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-xs font-bold text-navy">Owning ASM</label>
+          <select
+            value={owningAsmId}
+            onChange={(e) => setOwningAsmId(e.target.value)}
+            className="h-10 w-full rounded-md border border-line px-3 text-sm text-navy"
+          >
+            <option value="">Unassigned</option>
+            {asmOptions.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.fullName}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div>
@@ -720,6 +749,12 @@ export default function AmcContractForm({ existing, fixedCustomer, onSaved, onCa
         </div>
       )}
       {error && <p className="rounded-md bg-brand-red-bg px-3 py-2 text-xs text-brand-red">{error}</p>}
+
+      {existing && (
+        <p className="text-xs text-muted">
+          Created {new Date(existing.createdAt).toLocaleString()} · Last updated {new Date(existing.updatedAt).toLocaleString()}
+        </p>
+      )}
 
       <div className="flex gap-2">
         <button

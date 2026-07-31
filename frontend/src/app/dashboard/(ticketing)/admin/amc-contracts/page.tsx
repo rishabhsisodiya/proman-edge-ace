@@ -61,6 +61,7 @@ export default function AmcContractsPage() {
               <th className="px-4 py-3">Customer</th>
               <th className="px-4 py-3">Period</th>
               <th className="px-4 py-3">Equipment Covered</th>
+              <th className="px-4 py-3">ASM</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3" />
             </tr>
@@ -74,6 +75,7 @@ export default function AmcContractsPage() {
                   {new Date(c.startDate).toLocaleDateString()} – {new Date(c.endDate).toLocaleDateString()}
                 </td>
                 <td className="px-4 py-3 text-muted">{c.coveredEquipment?.length ?? 0}</td>
+                <td className="px-4 py-3 text-muted">{c.owningAsm?.fullName ?? "Unassigned"}</td>
                 <td className="px-4 py-3">
                   <span
                     className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${RENEWAL_STYLE[c.renewalStatus] ?? "bg-navy-tint text-navy"}`}

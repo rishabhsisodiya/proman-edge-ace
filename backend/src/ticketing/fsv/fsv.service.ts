@@ -2,9 +2,10 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { PrismaService } from '../../prisma/prisma.service';
 import { WorkflowService } from '../workflow/workflow.service';
 import { RequestUser } from '../tickets/tickets.service';
-import { CreateFsvDto, UpdateFsvDto, AddFsvPartDto, AddFsvPhotoDto } from './dto/fsv.dto';
+import { CreateFsvDto, UpdateFsvDto, AddFsvPartDto, UpdateFsvPartDto, AddFsvPhotoDto } from './dto/fsv.dto';
 import { NotificationService } from '../../notifications/notification.service';
 import { NotificationTemplateService } from '../../notifications/notification-template.service';
+import { PriceListService } from '../price-lists/price-list.service';
 
 const MIN_WORK_PERFORMED_LENGTH = 20;
 const MAX_PHOTOS = 5;
@@ -24,12 +25,13 @@ export class FsvService {
     private readonly workflow: WorkflowService,
     private readonly notifications: NotificationService,
     private readonly notificationTemplates: NotificationTemplateService,
+    private readonly priceLists: PriceListService,
   ) {}
 
   async listForTicket(ticketId: string) {
     return this.prisma.fieldServiceVisit.findMany({
       where: { ticketId },
-      include: { parts: true, photos: true },
+      include: { parts: true, photos: true, engineer: { select: { id: true, fullName: true } } },
       orderBy: { visitNumber: 'asc' },
     });
   }
@@ -37,7 +39,7 @@ export class FsvService {
   async findOne(id: string) {
     return this.prisma.fieldServiceVisit.findUniqueOrThrow({
       where: { id },
-      include: { parts: true, photos: true, ticket: true },
+      include: { parts: true, photos: true, ticket: true, engineer: { select: { id: true, fullName: true } } },
     });
   }
 
@@ -50,6 +52,7 @@ export class FsvService {
 
     const visitNumber = (await this.prisma.fieldServiceVisit.count({ where: { ticketId } })) + 1;
     const visitNo = await nextVisitNo(this.prisma);
+    const priceListName = dto.priceListName ?? (await this.priceLists.defaultName());
 
     return this.prisma.fieldServiceVisit.create({
       data: {
@@ -58,6 +61,9 @@ export class FsvService {
         visitNumber,
         engineerId: actor.userId,
         visitDate: new Date(dto.visitDate),
+        priceListName,
+        gpsLatAtCheckin: dto.gpsLatAtCheckin,
+        gpsLongAtCheckin: dto.gpsLongAtCheckin,
       },
     });
   }
@@ -128,6 +134,20 @@ export class FsvService {
     const amount = dto.qty * dto.sellingRate;
     return this.prisma.fsvPartConsumed.create({
       data: { visitId: id, ...dto, amount },
+    });
+  }
+
+  async updatePart(id: string, partId: string, dto: UpdateFsvPartDto) {
+    const visit = await this.prisma.fieldServiceVisit.findUniqueOrThrow({ where: { id } });
+    if (visit.status === 'SUBMITTED') {
+      throw new BadRequestException('This Field Service Visit has already been submitted and is immutable');
+    }
+    const part = await this.prisma.fsvPartConsumed.findUniqueOrThrow({ where: { id: partId } });
+    const qty = dto.qty ?? Number(part.qty);
+    const sellingRate = dto.sellingRate ?? Number(part.sellingRate);
+    return this.prisma.fsvPartConsumed.update({
+      where: { id: partId },
+      data: { ...dto, amount: qty * sellingRate },
     });
   }
 

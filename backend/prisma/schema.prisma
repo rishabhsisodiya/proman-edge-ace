@@ -790,6 +790,11 @@ model FieldServiceVisit {
   engineerId             String
   engineer               User              @relation(fields: [engineerId], references: [id])
   visitDate              DateTime
+  /// Selling price list this visit's parts are rated against (client feedback
+  /// 2026-07-31: "Quotation has this, why doesn't FSV?") — same plain-string,
+  /// non-FK pattern as Quotation.sellingPriceList; defaults to the Admin's
+  /// default price list at creation if not explicitly chosen.
+  priceListName          String?
   travelStartTime        DateTime?
   siteArrivalTime        DateTime?
   workStartTime          DateTime?

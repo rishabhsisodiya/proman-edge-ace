@@ -47,11 +47,14 @@ export interface AmcContractRecord {
   exclusions: string | null;
   renewalStatus: RenewalStatus;
   owningAsmId: string | null;
+  owningAsm?: { id: string; fullName: string } | null;
   previousContractId: string | null;
   signedAgreementUrl: string | null;
   termsAndConditions: string | null;
   coveredEquipment?: { id: string; serialNo: string; itemName: string }[];
   scheduledVisits?: AmcScheduledVisit[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface AmcContractFormInput {
