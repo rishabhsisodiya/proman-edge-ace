@@ -64,6 +64,13 @@ export class ReportsService {
   // ------------------------------------------------------------- 1. Open Tickets by Status
   async openTicketsByStatus(f: ReportFilters): Promise<ReportResult> {
     const where: Prisma.TicketWhereInput = {
+      // Bug fix (2026-08-01, found while wiring the Executive Dashboard's
+      // "Open Tickets" tile): this never actually excluded CLOSED tickets,
+      // despite the report's own description saying "every ticket that is
+      // not yet Closed." Didn't change any number in the current dataset
+      // (no CLOSED tickets exist yet), but would have silently overcounted
+      // once some do.
+      status: { not: 'CLOSED' },
       ...(f.dateFrom || f.dateTo ? { createdAt: dateRange(f) } : {}),
       ...(f.region ? { customer: { region: f.region as any } } : {}),
       ...(f.serviceType ? { serviceType: f.serviceType as any } : {}),

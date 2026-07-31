@@ -13,5 +13,8 @@ import { ScheduledReportCron } from './scheduled-report.cron';
   // specificity).
   controllers: [ScheduledReportsController, ReportsController],
   providers: [ReportsService, ScheduledReportsService, ScheduledReportCron],
+  // Exported so DashboardsAceModule's Executive/MD summary can call the
+  // exact same report methods instead of re-deriving the same numbers.
+  exports: [ReportsService],
 })
 export class ReportsModule {}

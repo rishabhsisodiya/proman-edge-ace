@@ -13,6 +13,7 @@ import { HolidayModule } from './ticketing/holiday/holiday.module';
 import { CsatModule } from './ticketing/csat/csat.module';
 import { PredictiveRuleModule } from './ticketing/predictive-rules/predictive-rule.module';
 import { ReportsModule } from './reports/reports.module';
+import { DashboardsAceModule } from './dashboards-ace/dashboards-ace.module';
 import { SyncModule } from './ticketing/sync/sync.module';
 import { EquipmentModule } from './ticketing/equipment/equipment.module';
 import { AmcModule } from './ticketing/amc/amc.module';
@@ -51,6 +52,7 @@ import { DispatchModule } from './dashboards/dispatch/dispatch.module';
     CsatModule,
     PredictiveRuleModule,
     ReportsModule,
+    DashboardsAceModule,
     SyncModule,
     EquipmentModule,
     AmcModule,

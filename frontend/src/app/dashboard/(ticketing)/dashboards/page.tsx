@@ -2,15 +2,13 @@ import Link from "next/link";
 
 // Admin's "Dashboards" hub — one place to reach every dashboard in the app,
 // grouped by product area, instead of a flat sidebar list mixing ticketing
-// roles with unrelated ERP modules. KPI-style ticketing dashboards
-// (Executive/MD, CS Support) are placeholders until the aggregation layer
-// and Quotation module exist.
+// roles with unrelated ERP modules.
 const TICKETING_DASHBOARDS = [
   { label: "Call Center", description: "Intake, unassigned, SLA-at-risk", href: "/dashboard/call-center" },
   { label: "ASM", description: "Territory open tickets, pending acceptance", href: "/dashboard/asm" },
   { label: "Manager / Tickets", description: "Full ticket list, regional SLA overview", href: "/dashboard/service" },
-  { label: "Executive / MD", description: "Summary KPI tiles (read-only)", href: null },
-  { label: "CS Support", description: "Quotations pending PO, parts pending delivery", href: null },
+  { label: "Executive / MD", description: "Summary KPI tiles (read-only)", href: "/dashboard/executive" },
+  { label: "CS Support", description: "Quotations pending PO, parts pending delivery", href: "/dashboard/cs-support" },
 ];
 
 // The original Proman Edge ERP dashboards — a separate, already-complete

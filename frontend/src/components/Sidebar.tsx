@@ -23,6 +23,10 @@ function ticketingNavItem(role: Role | undefined): NavItem | null {
       return { label: "Dashboard", href: "/dashboard/asm", roles: [] };
     case "ENGINEER":
       return { label: "My Tickets", href: "/dashboard/my-tickets", roles: [] };
+    case "CS_SUPPORT":
+      return { label: "Dashboard", href: "/dashboard/cs-support", roles: [] };
+    case "MD":
+      return { label: "Dashboard", href: "/dashboard/executive", roles: [] };
     case "MANAGER":
     case "SERVICE_AFTERSALES_HEAD":
     case "ADMIN": // Admin browses the unscoped Manager-style view; Admin Console is separate

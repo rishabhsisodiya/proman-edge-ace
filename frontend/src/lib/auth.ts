@@ -8,6 +8,7 @@ export type Role =
   | "ENGINEER"
   | "MANAGER"
   | "ADMIN"
+  | "CS_SUPPORT"
   // Proman Edge dashboard roles
   | "MD"
   | "SALES_HEAD_AGGREGATE"

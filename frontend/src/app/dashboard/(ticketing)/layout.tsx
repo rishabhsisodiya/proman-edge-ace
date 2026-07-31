@@ -16,6 +16,8 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/dashboard/quotations/", title: "Quotation" },
   { prefix: "/dashboard/call-center", title: "Call Center Dashboard" },
   { prefix: "/dashboard/asm", title: "ASM Dashboard" },
+  { prefix: "/dashboard/cs-support", title: "CS Support Dashboard" },
+  { prefix: "/dashboard/executive", title: "Executive Dashboard" },
   { prefix: "/dashboard/my-tickets", title: "My Tickets" },
   { prefix: "/dashboard/admin/users", title: "User Management" },
   { prefix: "/dashboard/admin/region-mapping", title: "Regions & Territories" },

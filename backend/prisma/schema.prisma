@@ -14,6 +14,10 @@ enum Role {
   ENGINEER
   MANAGER
   ADMIN
+  /// Added 2026-08-01 (CS Support Dashboard build) — also the role N-11
+  /// ("Customer PO received") has been blocked on; N-11 itself is not wired
+  /// yet, deliberately deferred until Customer PO capture is resolved.
+  CS_SUPPORT
 
   // Proman Edge dashboard roles (BUILD-Role-based Homepages.html)
   MD
