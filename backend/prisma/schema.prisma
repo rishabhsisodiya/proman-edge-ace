@@ -513,6 +513,12 @@ model Equipment {
   /// to null whenever warrantyEndDate is pushed to a later date (renewed),
   /// so a future expiry cycle can fire its own outreach ticket again.
   warrantyOutreachSentAt DateTime?
+  /// FSD §7.4 predictive rule 3 (operating hours interval) — "crosses" a
+  /// threshold, not "is above" it, so a simple >= check would refire every
+  /// day forever once past the first threshold. This tracks the meter value
+  /// at which the last predictive ticket fired; the next one only fires once
+  /// the meter has moved a further full interval past this checkpoint.
+  predictiveHoursCheckpoint Float?
   erpnextSerialNo      String?
   /// Equipment Tracking sync (2026-07-30, ACE_Service_Module_SQL.md §2) — one
   /// Equipment Tracking row = one SO line, which may cover more than one
@@ -706,6 +712,26 @@ model Holiday {
   date      DateTime @unique @db.Date
   label     String
   createdAt DateTime @default(now())
+}
+
+/// FSD §7.4 Predictive maintenance rules — Phase 1 rule-based triggers,
+/// per-equipment-category thresholds. The FSD only explicitly calls
+/// monthsSinceService/operatingHoursInterval "configured per
+/// equipment_category" — breakdownFrequencyThreshold/WindowMonths were a
+/// fixed FSD constant (3 tickets in 6 months) until client request
+/// (2026-07-31) made them admin-configurable too, per-category, as a
+/// superset of the FSD's literal wording rather than a deviation from it.
+/// One row per EquipCategory (8 total), seeded with the FSD's own stated
+/// defaults (6 months, 500 hours, 3-in-6-months) — Admin edits the numbers,
+/// same CRUD pattern as SLA Policies.
+model PredictiveRuleConfig {
+  id                             String        @id @default(uuid())
+  equipmentCategory              EquipCategory @unique
+  monthsSinceService             Int
+  operatingHoursInterval         Int
+  breakdownFrequencyThreshold    Int           @default(3)
+  breakdownFrequencyWindowMonths Int           @default(6)
+  updatedAt                      DateTime      @updatedAt
 }
 
 model TicketAuditLog {

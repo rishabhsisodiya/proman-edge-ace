@@ -68,7 +68,11 @@ const SECTIONS = [
     description: "ERPNext price list names selectable when creating a Quotation, plus the default",
     href: "/dashboard/admin/price-lists",
   },
-  { label: "Predictive Rules", description: "Time-since-service / breakdown-frequency / hours thresholds", href: null },
+  {
+    label: "Predictive Rules",
+    description: "Per-category thresholds for time-since-service, operating hours, and breakdown frequency",
+    href: "/dashboard/admin/predictive-rules",
+  },
 ];
 
 export default function AdminConsolePage() {

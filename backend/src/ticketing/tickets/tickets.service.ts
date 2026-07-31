@@ -128,6 +128,31 @@ export class TicketsService {
       return;
     }
 
+    // Same reasoning as WARRANTY_RENEWAL_OUTREACH above — system-generated,
+    // not a real customer request. N-22 goes to ASM (territory) + Manager,
+    // per FSD, instead of the generic N-01/N-02.
+    if (ticket.source === 'PREDICTIVE') {
+      const predictiveVars = {
+        // description already carries the specific reason (set by
+        // createFromPredictiveTrigger) — more accurate than re-deriving a
+        // rule name from serviceType alone, since two different rules both
+        // produce TECHNICAL_AUDIT tickets.
+        rule_name: ticket.description,
+        equipment_serial: ticket.equipment?.serialNo ?? 'N/A',
+        equipment_model: ticket.equipment?.itemName ?? 'N/A',
+        customer_name: ticket.customer.customerName,
+        ticket_no: ticket.ticketNo,
+      };
+      const recipients: { email: string; userId: string }[] = [];
+      if (ticket.assignedAsm) recipients.push({ email: ticket.assignedAsm.email, userId: ticket.assignedAsm.id });
+      recipients.push(...(await this.prisma.user.findMany({ where: { role: 'MANAGER', isActive: true } })).map((u) => ({ email: u.email, userId: u.id })));
+      for (const r of recipients) {
+        await this.fireNotification('N-22', 'EMAIL', r.email, predictiveVars, ticket.id);
+        await this.fireNotification('N-22', 'PUSH', r.email, predictiveVars, ticket.id, r.userId);
+      }
+      return;
+    }
+
     const emailTemplate = await this.notificationTemplates.render('N-01', 'EMAIL', vars);
     if (emailTemplate && ticket.customer.primaryContactEmail) {
       await this.notifications.send({
@@ -1358,6 +1383,34 @@ export class TicketsService {
       serviceType: 'WARRANTY_RENEWAL_OUTREACH',
       priority: 'LOW',
       description: `Warranty expiry outreach: ${params.equipmentSerialNo} warranty expires ${params.warrantyEndDate.toISOString().slice(0, 10)}. No AMC in place — contact customer for AMC proposal.`,
+      customerId: params.customerId,
+      equipmentId: params.equipmentId,
+    };
+
+    return this.create(dto, { userId: actorUserId, role: 'ADMIN' });
+  }
+
+  /** FSD §7.4 — Predictive maintenance rule fired (any of the 3). Always `source=predictive`; serviceType/priority vary by which rule fired (see PredictiveEngineCron). */
+  async createFromPredictiveTrigger(params: {
+    customerId: string;
+    equipmentId: string;
+    equipmentSerialNo: string;
+    serviceType: 'TECHNICAL_AUDIT' | 'SCHEDULED_PM';
+    priority: 'MEDIUM' | 'HIGH';
+    reasonNote: string;
+  }) {
+    let actorUserId = process.env.PARTNER_ACTOR_USER_ID;
+    if (!actorUserId) {
+      const admin = await this.prisma.user.findFirst({ where: { role: 'ADMIN' } });
+      if (!admin) throw new BadRequestException('No PARTNER_ACTOR_USER_ID configured and no ADMIN user exists to attribute this ticket to');
+      actorUserId = admin.id;
+    }
+
+    const dto: CreateTicketDto = {
+      source: 'PREDICTIVE',
+      serviceType: params.serviceType,
+      priority: params.priority,
+      description: `Predictive maintenance alert for ${params.equipmentSerialNo}: ${params.reasonNote}`,
       customerId: params.customerId,
       equipmentId: params.equipmentId,
     };
