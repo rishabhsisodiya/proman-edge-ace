@@ -11,6 +11,7 @@ import { AsmRejectResolutionDto } from './dto/asm-reject-resolution.dto';
 import { MarkPendingDto } from './dto/mark-pending.dto';
 import { RegularizeTicketDto } from './dto/regularize-ticket.dto';
 import { CommentDto } from './dto/comment.dto';
+import { ReachedSiteDto } from './dto/reached-site.dto';
 import { UpdateServiceTypeDto } from './dto/update-service-type.dto';
 import { UpdateCustomerCategoryDto } from './dto/update-customer-category.dto';
 import { ResolveDuplicateDto } from './dto/resolve-duplicate.dto';
@@ -101,8 +102,8 @@ export class TicketsController {
 
   @Roles('ENGINEER')
   @Post(':id/reached-site')
-  reachedSite(@Param('id') id: string, @Body() dto: CommentDto, @Req() req: any) {
-    return this.tickets.reachedSite(id, { userId: req.user.userId, role: req.user.role }, dto.comment);
+  reachedSite(@Param('id') id: string, @Body() dto: ReachedSiteDto, @Req() req: any) {
+    return this.tickets.reachedSite(id, { userId: req.user.userId, role: req.user.role }, dto.comment, dto.gpsLat, dto.gpsLong);
   }
 
   @Roles('ENGINEER')

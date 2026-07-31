@@ -573,6 +573,13 @@ model Ticket {
   warrantyStatusAtCreation WarrantyStatus?
   warrantyEligible         Boolean             @default(false)
   overrideReason           String?
+  /// GPS point captured client-side (navigator.geolocation) at the moment the
+  /// engineer taps "Reached Site" (2026-07-31) — best-effort, never blocks the
+  /// transition if location is denied/unavailable, same fail-safe philosophy
+  /// as the rest of this app. Distinct from FieldServiceVisit's own
+  /// gpsLatAtCheckin/gpsLongAtCheckin, which is a separate, later step.
+  reachedSiteGpsLat        Float?
+  reachedSiteGpsLong       Float?
   /// SLA Target Date (2026-07-30, FSD §14.3 client clarification) — required
   /// at creation for SCHEDULED_PM ("Planned Date"), TECHNICAL_AUDIT ("Agreed
   /// Date"), RETROFIT_UPGRADE ("Quotation Schedule Date"); one underlying

@@ -228,7 +228,7 @@ export class TicketsService {
 
     let equipment = null;
     if (dto.equipmentId) {
-      equipment = await this.prisma.equipment.findUniqueOrThrow({ where: { id: dto.equipmentId } });
+      equipment = await this.prisma.equipment.findUniqueOrThrow({ where: { id: dto.equipmentId }, include: { site: true } });
       if (equipment.status === 'DECOMMISSIONED' || equipment.status === 'SOLD') {
         throw new BadRequestException(
           `Equipment ${equipment.serialNo} is decommissioned. Please contact the system administrator to update the equipment record.`,
@@ -304,9 +304,14 @@ export class TicketsService {
         : null;
 
     const ticketNo = await nextTicketNo(this.prisma);
+    // §14.1 rule 18 / FSD-Analysis Q11 — auto-generated subject format is
+    // "[Equipment model] — [service_type] — [customer.site_name]"; was
+    // customer.customerName here, not the ticket's actual site (fixed
+    // 2026-07-31). Falls back to the customer name only if this equipment
+    // has no site on file yet.
     const subject =
       dto.subject ??
-      `${equipment?.itemName ?? 'General'} — ${serviceTypeLabel(serviceType)} — ${customer.customerName}`;
+      `${equipment?.itemName ?? 'General'} — ${serviceTypeLabel(serviceType)} — ${equipment?.site?.siteName ?? customer.customerName}`;
 
     // Ticket creation + duplicate note + auto-assignment + the ASSIGNED
     // transition all happen in one transaction — a failure at any step
@@ -850,8 +855,12 @@ export class TicketsService {
     return updated;
   }
 
-  /** Engineer marks arrival at the customer site. */
-  async reachedSite(id: string, actor: RequestUser, comment?: string) {
+  /**
+   * Engineer marks arrival at the customer site. `gpsLat`/`gpsLong` are a
+   * best-effort client-captured GPS point (2026-07-31) — both optional, a
+   * denied/unavailable location never blocks the transition itself.
+   */
+  async reachedSite(id: string, actor: RequestUser, comment?: string, gpsLat?: number, gpsLong?: number) {
     const result = await this.workflow.transition({
       ticketId: id,
       targetStatus: 'REACHED_SITE',
@@ -859,6 +868,10 @@ export class TicketsService {
       actorRole: actor.role,
       comment,
     });
+
+    if (gpsLat != null && gpsLong != null) {
+      await this.prisma.ticket.update({ where: { id }, data: { reachedSiteGpsLat: gpsLat, reachedSiteGpsLong: gpsLong } });
+    }
 
     // N-08 (FSD §9) — notify customer + the ASM.
     const ticket = await this.prisma.ticket.findUniqueOrThrow({

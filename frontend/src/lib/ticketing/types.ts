@@ -154,6 +154,8 @@ export interface Ticket {
   resolutionSummary?: string | null;
   rejectionCount?: number;
   reOpenCount?: number;
+  reachedSiteGpsLat?: number | null;
+  reachedSiteGpsLong?: number | null;
   createdAt: string;
   customer: Customer;
   site?: CustomerSite | null;

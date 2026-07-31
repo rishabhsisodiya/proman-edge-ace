@@ -25,7 +25,8 @@ export const rejectTicket = (id: string, reason: string) =>
   post<Ticket & { escalationTier: string }>(`/tickets/${id}/reject`, { reason });
 export const asmRejectResolution = (id: string, engineerId: string, reason: string) =>
   post<Ticket & { escalationTier: string }>(`/tickets/${id}/reject-resolution`, { engineerId, reason });
-export const reachedSite = (id: string, comment?: string) => post<Ticket>(`/tickets/${id}/reached-site`, { comment });
+export const reachedSite = (id: string, comment?: string, gpsLat?: number, gpsLong?: number) =>
+  post<Ticket>(`/tickets/${id}/reached-site`, { comment, gpsLat, gpsLong });
 export const startWorking = (id: string, comment?: string) => post<Ticket>(`/tickets/${id}/start-working`, { comment });
 export const markPending = (id: string, pendingReason: PendingReason, pendingNotes?: string) =>
   post<Ticket>(`/tickets/${id}/pending`, { pendingReason, pendingNotes });

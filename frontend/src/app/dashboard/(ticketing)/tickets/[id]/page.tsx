@@ -359,6 +359,19 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             <p className="break-words text-navy">{ticket.reOpenCount} time{ticket.reOpenCount > 1 ? "s" : ""}</p>
           </div>
         )}
+        {ticket.reachedSiteGpsLat != null && ticket.reachedSiteGpsLong != null && (
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase text-muted">Reached Site Location</p>
+            <a
+              href={`https://www.google.com/maps?q=${ticket.reachedSiteGpsLat},${ticket.reachedSiteGpsLong}`}
+              target="_blank"
+              rel="noreferrer"
+              className="break-words font-bold text-navy underline"
+            >
+              View on map
+            </a>
+          </div>
+        )}
         <div className="min-w-0">
           <p className="text-xs font-bold uppercase text-muted">SLA Policy</p>
           <p className="break-words text-navy">
@@ -434,6 +447,26 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
 }
 
 /**
+ * Best-effort GPS point for "Reached Site" (2026-07-31) — never throws/blocks
+ * the transition. Resolves null if geolocation isn't available, permission is
+ * denied, or it just times out (5s — an engineer shouldn't be stuck waiting on
+ * this to tap through a status change).
+ */
+function getBestEffortGpsPosition(): Promise<{ lat: number; long: number } | null> {
+  return new Promise((resolve) => {
+    if (typeof navigator === "undefined" || !("geolocation" in navigator)) {
+      resolve(null);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, long: pos.coords.longitude }),
+      () => resolve(null),
+      { timeout: 5000 },
+    );
+  });
+}
+
+/**
  * Engineer's own next-step card in the sidebar — not relevant to other
  * roles (they don't need "who's assigned" surfaced to themselves, they need
  * their own next action prominent instead, same reasoning that put Assign
@@ -498,7 +531,10 @@ function EngineerActionCard({
         value={reachedComment}
         onChange={setReachedComment}
         onSubmit={() =>
-          runAction(() => reachedSite(ticket.id, reachedComment.trim() || undefined), "Marked as reached site.")
+          runAction(async () => {
+            const gps = await getBestEffortGpsPosition();
+            return reachedSite(ticket.id, reachedComment.trim() || undefined, gps?.lat, gps?.long);
+          }, "Marked as reached site.")
         }
       />,
     );

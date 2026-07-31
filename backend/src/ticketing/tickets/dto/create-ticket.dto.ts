@@ -1,4 +1,4 @@
-import { IsEnum, IsISO8601, IsOptional, IsString, IsUUID, ValidateIf } from 'class-validator';
+import { IsEnum, IsISO8601, IsOptional, IsString, IsUUID, MaxLength, ValidateIf } from 'class-validator';
 import { Source, ServiceType, Priority, CustomerCategory } from '@prisma/client';
 import { SLA_TARGET_DATE_SERVICE_TYPES } from '../sla-policy.constants';
 
@@ -30,9 +30,13 @@ export class CreateTicketDto {
   @IsUUID()
   equipmentId?: string; // required unless Spares Supply ticket (FSD §5.3)
 
+  // FSD §5.3 — 200-char cap on the manual subject (free text, no structured
+  // format enforced for manual entry per FSD-Analysis Q11). Auto-generated
+  // fallback when omitted is always well under this, so no cap needed there.
   @IsOptional()
   @IsString()
-  subject?: string; // auto-generated from equipment+serviceType+site if omitted
+  @MaxLength(200)
+  subject?: string;
 
   // Required (ISO 8601) only when serviceType is one of the 3 SLA-Target-Date
   // types; ignored otherwise. Per-type UI label: Planned Date/Agreed Date/
