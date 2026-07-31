@@ -40,6 +40,10 @@ export interface Quotation {
   quotationNo: string;
   ticketId: string;
   customerId: string;
+  createdByUserId: string;
+  createdByUser?: { id: string; fullName: string };
+  quotationDate: string;
+  deliveryStatus: DeliveryStatus;
   validUntil: string;
   labourCharges: string | number | null;
   subtotal: string | number | null;

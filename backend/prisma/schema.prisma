@@ -261,6 +261,7 @@ model User {
   partnerApiKeysCreated PartnerApiKey[]
   amcContractsOwned     AmcContract[]       @relation("OwningAsm")
   scheduledReportsCreated ScheduledReport[]
+  quotationsCreated     Quotation[]         @relation("QuotationCreatedBy")
 }
 
 model UserRegion {
@@ -1041,6 +1042,9 @@ model Quotation {
   customerId            String
   customer              Customer        @relation(fields: [customerId], references: [id])
   createdByUserId       String
+  /// Added 2026-08-01 (client feedback: "Created By" wasn't displayable —
+  /// only the raw scalar existed, no relation to join the name through).
+  createdByUser         User            @relation("QuotationCreatedBy", fields: [createdByUserId], references: [id])
   amcContractId         String?
   amcContract           AmcContract?    @relation(fields: [amcContractId], references: [id])
   quotationDate         DateTime        @default(now())

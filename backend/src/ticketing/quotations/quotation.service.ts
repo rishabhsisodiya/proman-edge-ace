@@ -128,7 +128,7 @@ export class QuotationService {
   findOne(id: string) {
     return this.prisma.quotation.findUniqueOrThrow({
       where: { id },
-      include: { items: true, deliveries: true, customer: true, ticket: true },
+      include: { items: true, deliveries: true, customer: true, ticket: true, createdByUser: { select: { id: true, fullName: true } } },
     });
   }
 

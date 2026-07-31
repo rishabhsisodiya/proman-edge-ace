@@ -116,6 +116,8 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
         </p>
       )}
 
+      <InfoBlock quotation={quotation} />
+
       <HeaderFields quotation={quotation} editable={editable} onSave={(patch) => run(() => updateQuotation(quotation.id, patch))} />
 
       <ItemsSection quotation={quotation} editable={editable} run={run} />
@@ -301,6 +303,51 @@ function StatusRow({
     <div className={`flex items-center justify-between ${className ?? ""}`}>
       <span className="text-muted">{label}</span>
       <span className={value ? "font-bold text-navy" : "text-xs text-muted"}>{value ?? pending ?? "—"}</span>
+    </div>
+  );
+}
+
+const DELIVERY_STATUS_LABEL: Record<string, string> = {
+  PENDING: "Pending",
+  PARTIAL: "Partial",
+  DELIVERED: "Delivered",
+};
+
+/**
+ * Read-only info block (2026-08-01, client feedback) — every field here was
+ * already returned by the backend, just never rendered anywhere on this
+ * page. HeaderFields below only ever covered the fields someone actively
+ * edits (Valid Until, Labour, Notes, T&C); this covers the system-tracked /
+ * informational ones (who created it, when, PO paperwork, delivery status).
+ */
+function InfoBlock({ quotation }: { quotation: Quotation }) {
+  const rows: { label: string; value: React.ReactNode }[] = [
+    { label: "Customer ID", value: <span className="font-mono text-xs">{quotation.customerId}</span> },
+    { label: "Created By", value: quotation.createdByUser?.fullName ?? "—" },
+    { label: "Quotation Date", value: new Date(quotation.quotationDate).toLocaleDateString() },
+    { label: "Sent At", value: quotation.sentAt ? new Date(quotation.sentAt).toLocaleString() : "—" },
+    { label: "Delivery Status", value: DELIVERY_STATUS_LABEL[quotation.deliveryStatus] ?? quotation.deliveryStatus },
+    { label: "Customer PO Number", value: quotation.customerPoNumber ?? "—" },
+    { label: "Customer PO Date", value: quotation.customerPoDate ? new Date(quotation.customerPoDate).toLocaleDateString() : "—" },
+    {
+      label: "Customer PO Document",
+      value: quotation.customerPoDocUrl ? (
+        <a href={quotation.customerPoDocUrl} target="_blank" rel="noreferrer" className="font-bold text-navy underline">
+          View
+        </a>
+      ) : (
+        "—"
+      ),
+    },
+  ];
+  return (
+    <div className="grid grid-cols-1 gap-x-4 gap-y-3 rounded-lg border border-line bg-white p-4 text-sm sm:grid-cols-2 md:grid-cols-4">
+      {rows.map((r) => (
+        <div key={r.label} className="min-w-0">
+          <p className="text-xs font-bold uppercase text-muted">{r.label}</p>
+          <p className="break-words text-navy">{r.value}</p>
+        </div>
+      ))}
     </div>
   );
 }
