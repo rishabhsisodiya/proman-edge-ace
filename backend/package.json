@@ -13,6 +13,7 @@
     "prisma:seed": "ts-node prisma/seed.ts",
     "prisma:seed-region-mappings": "ts-node prisma/seed-region-mappings.ts",
     "prisma:seed-sla-policies": "ts-node prisma/seed-sla-policies.ts",
+    "prisma:seed-notification-templates": "ts-node prisma/seed-notification-templates.ts",
     "lint": "eslint \"src/**/*.ts\""
   },
   "prisma": {

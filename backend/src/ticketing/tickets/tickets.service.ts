@@ -163,7 +163,7 @@ export class TicketsService {
     channel: NotifChannel,
     recipient: string,
     vars: Record<string, string | number | null | undefined>,
-    ticketId: string,
+    ticketId?: string,
     userId?: string,
   ) {
     const template = await this.notificationTemplates.render(triggerCode, channel, vars);
@@ -220,9 +220,29 @@ export class TicketsService {
    */
   async create(dto: CreateTicketDto, actor: RequestUser) {
     const customer = await this.prisma.customer.findUniqueOrThrow({ where: { id: dto.customerId } });
-    if (customer.accountStatus === 'BLACKLISTED') {
+
+    // FSD Customer entity spec — "Inactive/Blacklisted block new ticket
+    // creation by default" (both statuses, not just Blacklisted — the
+    // original check here only tested BLACKLISTED, an FSD gap fixed
+    // 2026-07-31). FSD-Analysis Q2's resolved override flow: Manager already
+    // has unconditional "Create ticket" rights (§15.1 Permission Matrix), so
+    // Manager bypasses this block entirely rather than a separate
+    // approval-request object — Call Center/ASM's blocked attempt instead
+    // notifies every Manager so one of them can create it directly.
+    if ((customer.accountStatus === 'INACTIVE' || customer.accountStatus === 'BLACKLISTED') && actor.role !== 'MANAGER') {
+      const attemptedBy = await this.prisma.user.findUnique({ where: { id: actor.userId }, select: { fullName: true } });
+      const managers = await this.prisma.user.findMany({ where: { role: 'MANAGER', isActive: true } });
+      const vars = {
+        customer_name: customer.customerName,
+        account_status: customer.accountStatus === 'BLACKLISTED' ? 'Blacklisted' : 'Inactive',
+        attempted_by: attemptedBy?.fullName ?? 'A Call Center/ASM user',
+      };
+      for (const manager of managers) {
+        await this.fireNotification('CUST-BLOCKED', 'EMAIL', manager.email, vars);
+        await this.fireNotification('CUST-BLOCKED', 'PUSH', manager.email, vars, undefined, manager.id);
+      }
       throw new ForbiddenException(
-        'Customer is blacklisted. Manager approval required to create a ticket for this account.',
+        `Customer account is ${customer.accountStatus === 'BLACKLISTED' ? 'blacklisted' : 'inactive'}. A Manager has been notified and can create this ticket directly.`,
       );
     }
 
