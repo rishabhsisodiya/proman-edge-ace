@@ -76,7 +76,8 @@ export type ServiceType =
   | "TECHNICAL_AUDIT"
   | "RETROFIT_UPGRADE"
   | "AMC"
-  | "SPARES_SUPPLY_INSTALLATION";
+  | "SPARES_SUPPLY_INSTALLATION"
+  | "WARRANTY_RENEWAL_OUTREACH";
 export const SERVICE_TYPE_LABEL: Record<ServiceType, string> = {
   WARRANTY_REPAIR: "Warranty Repair",
   // Client request: drop "(Chargeable)" from the display label — billing
@@ -87,14 +88,19 @@ export const SERVICE_TYPE_LABEL: Record<ServiceType, string> = {
   RETROFIT_UPGRADE: "Retrofit / Upgrade",
   AMC: "AMC",
   SPARES_SUPPLY_INSTALLATION: "Spares Supply (with installation)",
+  // FSD §7.3 rule 15 — nightly warranty-engine outreach ticket, a sales lead
+  // auto-created by the system, never manually selectable at creation.
+  WARRANTY_RENEWAL_OUTREACH: "Warranty Renewal Outreach",
 };
 
 // Client request (Ashwath feedback, 20 Jul 2026): remove AMC from the Service
 // Type list. AMC stays in the ServiceType enum/SERVICE_TYPE_LABEL above so an
 // existing AMC-tagged ticket (TCKT-2026-000001) still displays correctly —
 // this list only controls what's *selectable* going forward.
+// WARRANTY_RENEWAL_OUTREACH (2026-07-31) excluded the same way — auto-created
+// only, never a manual choice.
 export const SELECTABLE_SERVICE_TYPES = (Object.keys(SERVICE_TYPE_LABEL) as ServiceType[]).filter(
-  (t) => t !== "AMC",
+  (t) => t !== "AMC" && t !== "WARRANTY_RENEWAL_OUTREACH",
 );
 
 // SLA Target Date (2026-07-30, FSD §14.3 client clarification) — required at

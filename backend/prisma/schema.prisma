@@ -113,6 +113,10 @@ enum ServiceType {
   RETROFIT_UPGRADE
   AMC
   SPARES_SUPPLY_INSTALLATION
+  /// FSD §7.3 rule 15 — nightly warranty-engine outreach ticket (45 days
+  /// before warranty_end_date, no AMC in place). A sales lead routed to the
+  /// ASM, not a real service call — never manually selectable at creation.
+  WARRANTY_RENEWAL_OUTREACH
 }
 
 /// Manual "Customer Category" dropdown (Ashwath feedback 2026-07-25) — a
@@ -504,6 +508,11 @@ model Equipment {
   status               EquipStatus    @default(ACTIVE)
   skillTagsRequired    String[]
   notes                String?
+  /// FSD §7.3 rule 15 — nightly warranty-engine outreach ticket, "once" per
+  /// expiry cycle (mirrors AmcContract's renewalAlert*SentAt pattern). Reset
+  /// to null whenever warrantyEndDate is pushed to a later date (renewed),
+  /// so a future expiry cycle can fire its own outreach ticket again.
+  warrantyOutreachSentAt DateTime?
   erpnextSerialNo      String?
   /// Equipment Tracking sync (2026-07-30, ACE_Service_Module_SQL.md §2) — one
   /// Equipment Tracking row = one SO line, which may cover more than one

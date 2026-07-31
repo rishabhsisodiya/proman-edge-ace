@@ -38,6 +38,7 @@ const DEFAULT_PRIORITY_BY_SERVICE_TYPE: Record<ServiceType, Priority> = {
   SCHEDULED_PM: 'MEDIUM',
   AMC: 'MEDIUM',
   SPARES_SUPPLY_INSTALLATION: 'LOW',
+  WARRANTY_RENEWAL_OUTREACH: 'LOW',
 };
 // Used when service type isn't known yet at creation — same neutral default
 // as the priority-picker's own fallback.
@@ -64,6 +65,7 @@ const SERVICE_TYPE_LABEL: Record<ServiceType, string> = {
   RETROFIT_UPGRADE: 'Retrofit / Upgrade',
   AMC: 'AMC',
   SPARES_SUPPLY_INSTALLATION: 'Spares Supply (with installation)',
+  WARRANTY_RENEWAL_OUTREACH: 'Warranty Renewal Outreach',
 };
 const NOT_YET_DETERMINED_LABEL = 'Not Yet Determined';
 function serviceTypeLabel(s: ServiceType | null): string {
@@ -92,6 +94,12 @@ export class TicketsService {
    * NotificationService never throws anyway, but this keeps the concerns
    * separate). N-01 always fires (customer); N-02 only if auto-routing
    * actually found an ASM to assign.
+   *
+   * WARRANTY_RENEWAL_OUTREACH is the one exception (2026-07-31) — it's a
+   * system-generated sales lead, not a real customer service request, so
+   * N-01's "your service request has been registered" would be actively
+   * wrong to send the customer. N-23 (the FSD's actual trigger for this
+   * ticket type) goes to the ASM instead of the generic N-02.
    */
   private async fireTicketCreatedNotifications(ticketId: string) {
     const ticket = await this.prisma.ticket.findUniqueOrThrow({
@@ -106,6 +114,19 @@ export class TicketsService {
       priority: ticket.priority,
       customer_name: ticket.customer.customerName,
     };
+
+    if (ticket.serviceType === 'WARRANTY_RENEWAL_OUTREACH') {
+      if (ticket.assignedAsm) {
+        const outreachVars = {
+          equipment_serial: ticket.equipment?.serialNo ?? 'N/A',
+          warranty_end_date: ticket.equipment?.warrantyEndDate?.toISOString().slice(0, 10) ?? 'N/A',
+          ticket_no: ticket.ticketNo,
+        };
+        await this.fireNotification('N-23', 'EMAIL', ticket.assignedAsm.email, outreachVars, ticket.id);
+        await this.fireNotification('N-23', 'PUSH', ticket.assignedAsm.email, outreachVars, ticket.id, ticket.assignedAsm.id);
+      }
+      return;
+    }
 
     const emailTemplate = await this.notificationTemplates.render('N-01', 'EMAIL', vars);
     if (emailTemplate && ticket.customer.primaryContactEmail) {
@@ -1309,6 +1330,34 @@ export class TicketsService {
       serviceType: 'AMC',
       customerCategory: 'AMC',
       description: `Scheduled AMC visit #${params.visitSeqNo} for contract ${params.contractReferenceNo}`,
+      customerId: params.customerId,
+      equipmentId: params.equipmentId,
+    };
+
+    return this.create(dto, { userId: actorUserId, role: 'ADMIN' });
+  }
+
+  /**
+   * FSD §7.3 rule 15 — warranty-engine 45-day outreach ticket. "Routed to
+   * owning ASM as a sales lead rather than a service job. Does not trigger
+   * engineer assignment" — satisfied by going through the same create()
+   * path every other ticket uses: region-based ASM auto-routing already
+   * happens there, and engineer assignment was never automatic for any
+   * ticket (a separate manual step), so nothing extra needs suppressing.
+   */
+  async createFromWarrantyOutreach(params: { customerId: string; equipmentId: string; equipmentSerialNo: string; warrantyEndDate: Date }) {
+    let actorUserId = process.env.PARTNER_ACTOR_USER_ID;
+    if (!actorUserId) {
+      const admin = await this.prisma.user.findFirst({ where: { role: 'ADMIN' } });
+      if (!admin) throw new BadRequestException('No PARTNER_ACTOR_USER_ID configured and no ADMIN user exists to attribute this ticket to');
+      actorUserId = admin.id;
+    }
+
+    const dto: CreateTicketDto = {
+      source: 'WARRANTY_TRIGGERED',
+      serviceType: 'WARRANTY_RENEWAL_OUTREACH',
+      priority: 'LOW',
+      description: `Warranty expiry outreach: ${params.equipmentSerialNo} warranty expires ${params.warrantyEndDate.toISOString().slice(0, 10)}. No AMC in place — contact customer for AMC proposal.`,
       customerId: params.customerId,
       equipmentId: params.equipmentId,
     };

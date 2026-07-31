@@ -3,10 +3,14 @@ import { Prisma, WarrantyStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateEquipmentDto, UpdateEquipmentDto } from './dto/equipment.dto';
 
-const EXPIRING_SOON_DAYS = 45;
+export const EXPIRING_SOON_DAYS = 45;
 
-/** §7.3: Under Warranty / Expiring Soon (45 days) / Out of Warranty — recomputed nightly, but also set on create/update so it's never left stale between runs. */
-function computeWarrantyStatus(warrantyEndDate: Date): WarrantyStatus {
+/** §7.3 rule 12: Under Warranty / Expiring Soon (45 days) / Out of Warranty —
+ * recomputed nightly by WarrantyEngineCron (2026-07-31 — was set on create/
+ * update only, never recomputed on a schedule, so a record left untouched
+ * for months would show a stale status), also set on create/update so it's
+ * never left stale between nightly runs either. */
+export function computeWarrantyStatus(warrantyEndDate: Date): WarrantyStatus {
   const daysUntilExpiry = (warrantyEndDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24);
   if (daysUntilExpiry < 0) return 'OUT_OF_WARRANTY';
   if (daysUntilExpiry <= EXPIRING_SOON_DAYS) return 'EXPIRING_SOON';
@@ -99,11 +103,17 @@ export class EquipmentService {
     });
   }
 
-  update(id: string, dto: UpdateEquipmentDto) {
+  async update(id: string, dto: UpdateEquipmentDto) {
+    const existing = await this.prisma.equipment.findUniqueOrThrow({ where: { id } });
     const warrantyEndDate = new Date(dto.warrantyEndDate);
+    // Warranty renewed/extended — let a future expiry cycle fire its own
+    // 45-day outreach ticket again (FSD §7.3 rule 15).
+    const renewed = warrantyEndDate.getTime() > existing.warrantyEndDate.getTime();
+
     return this.prisma.equipment.update({
       where: { id },
       data: {
+        warrantyOutreachSentAt: renewed ? null : undefined,
         serialNo: dto.serialNo,
         itemCode: dto.itemCode,
         itemName: dto.itemName,
