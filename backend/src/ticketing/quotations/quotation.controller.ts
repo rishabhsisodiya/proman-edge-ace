@@ -1,8 +1,10 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Response } from 'express';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { RolesGuard } from '../../auth/roles.guard';
 import { Roles } from '../../auth/roles.decorator';
 import { QuotationService } from './quotation.service';
+import { QuotationPdfService } from './quotation-pdf.service';
 import {
   AddQuotationItemDto,
   CreateQuotationDto,
@@ -14,7 +16,10 @@ import {
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller()
 export class QuotationController {
-  constructor(private readonly quotations: QuotationService) {}
+  constructor(
+    private readonly quotations: QuotationService,
+    private readonly quotationPdf: QuotationPdfService,
+  ) {}
 
   @Get('tickets/:ticketId/quotations')
   listForTicket(@Param('ticketId') ticketId: string) {
@@ -52,6 +57,13 @@ export class QuotationController {
   @Get('quotations/:id')
   findOne(@Param('id') id: string) {
     return this.quotations.findOne(id);
+  }
+
+  @Get('quotations/:id/pdf')
+  async downloadPdf(@Param('id') id: string, @Res() res: Response) {
+    const buffer = await this.quotationPdf.generate(id);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="quotation-${id}.pdf"` });
+    res.send(buffer);
   }
 
   @Roles('CALL_CENTER', 'ASM', 'MANAGER', 'ENGINEER')

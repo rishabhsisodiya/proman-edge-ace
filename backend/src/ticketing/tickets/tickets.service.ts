@@ -884,6 +884,34 @@ export class TicketsService {
   }
 
   /**
+   * FSD §14.5 rule 34 / §15.1 permission matrix ("Override warranty flag" —
+   * Manager/Admin) — the endpoint itself didn't exist at all until now
+   * (2026-07-31); `Ticket.overrideReason` was a scaffolded, never-written
+   * field. `warrantyStatusAtCreation` (the immutable auto-computed snapshot)
+   * is deliberately left untouched here — only the functional
+   * `warrantyEligible` flag changes, same "auto value stays, functional
+   * classification changes" rule the client confirmed elsewhere for the
+   * Customer Category override case.
+   */
+  async overrideWarrantyEligible(id: string, warrantyEligible: boolean, overrideReason: string, actor: RequestUser) {
+    const ticket = await this.prisma.ticket.findUniqueOrThrow({ where: { id } });
+    const updated = await this.prisma.ticket.update({ where: { id }, data: { warrantyEligible, overrideReason } });
+
+    await this.prisma.ticketAuditLog.create({
+      data: {
+        ticketId: id,
+        fieldName: 'warrantyEligible',
+        oldValue: String(ticket.warrantyEligible),
+        newValue: `${warrantyEligible} (${overrideReason})`,
+        changedByUserId: actor.userId,
+        changeSource: 'WEB_UI',
+      },
+    });
+
+    return updated;
+  }
+
+  /**
    * Engineer marks arrival at the customer site. `gpsLat`/`gpsLong` are a
    * best-effort client-captured GPS point (2026-07-31) — both optional, a
    * denied/unavailable location never blocks the transition itself.

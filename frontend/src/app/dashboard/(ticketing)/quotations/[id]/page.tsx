@@ -88,12 +88,22 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-6 py-8">
-      <div>
-        <p className="font-mono text-xs text-muted">{quotation.quotationNo}</p>
-        <h1 className="text-xl font-bold text-navy">{quotation.customer?.customerName}</h1>
-        <span className="mt-1 inline-block rounded-full bg-navy-tint px-2.5 py-0.5 text-[10px] font-bold text-navy">
-          {STATUS_LABEL[quotation.status]}
-        </span>
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="font-mono text-xs text-muted">{quotation.quotationNo}</p>
+          <h1 className="text-xl font-bold text-navy">{quotation.customer?.customerName}</h1>
+          <span className="mt-1 inline-block rounded-full bg-navy-tint px-2.5 py-0.5 text-[10px] font-bold text-navy">
+            {STATUS_LABEL[quotation.status]}
+          </span>
+        </div>
+        <a
+          href={`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4100/api/v1"}/quotations/${quotation.id}/pdf`}
+          target="_blank"
+          rel="noreferrer"
+          className="rounded-md bg-navy-tint px-3 py-1.5 text-xs font-bold text-navy hover:bg-navy hover:text-white"
+        >
+          Download PDF
+        </a>
       </div>
 
       {notice && <p className="rounded-md bg-brand-green-bg px-3 py-2 text-xs text-brand-green">{notice}</p>}

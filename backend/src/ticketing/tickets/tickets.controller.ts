@@ -12,6 +12,7 @@ import { MarkPendingDto } from './dto/mark-pending.dto';
 import { RegularizeTicketDto } from './dto/regularize-ticket.dto';
 import { CommentDto } from './dto/comment.dto';
 import { ReachedSiteDto } from './dto/reached-site.dto';
+import { OverrideWarrantyDto } from './dto/override-warranty.dto';
 import { UpdateServiceTypeDto } from './dto/update-service-type.dto';
 import { UpdateCustomerCategoryDto } from './dto/update-customer-category.dto';
 import { ResolveDuplicateDto } from './dto/resolve-duplicate.dto';
@@ -98,6 +99,16 @@ export class TicketsController {
   @Post(':id/reject-resolution')
   rejectResolution(@Param('id') id: string, @Body() dto: AsmRejectResolutionDto, @Req() req: any) {
     return this.tickets.asmRejectResolution(id, dto.engineerId, dto.reason, { userId: req.user.userId, role: req.user.role });
+  }
+
+  // FSD §15.1 permission matrix — "Override warranty flag" is Manager/Admin only.
+  @Roles('MANAGER', 'ADMIN')
+  @Post(':id/override-warranty')
+  overrideWarranty(@Param('id') id: string, @Body() dto: OverrideWarrantyDto, @Req() req: any) {
+    return this.tickets.overrideWarrantyEligible(id, dto.warrantyEligible, dto.overrideReason, {
+      userId: req.user.userId,
+      role: req.user.role,
+    });
   }
 
   @Roles('ENGINEER')

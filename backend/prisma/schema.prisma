@@ -255,6 +255,7 @@ model User {
   ticketsAsEngineer     Ticket[]            @relation("EngineerTickets")
   fsvs                  FieldServiceVisit[]
   partnerApiKeysCreated PartnerApiKey[]
+  amcContractsOwned     AmcContract[]       @relation("OwningAsm")
 }
 
 model UserRegion {
@@ -910,7 +911,17 @@ model AmcContract {
   scopeOfServices     String?
   exclusions          String?
   renewalStatus       RenewalStatus       @default(ACTIVE)
+  /// AMC renewal alert ladder (FSD §9 N-18/19/20, "once each") — tracked as
+  /// separate sent-at timestamps rather than folded entirely into
+  /// `renewalStatus`, since there are 3 distinct alert points (30/15/7 days)
+  /// but only 2 meaningful pre-lapse statuses (RENEWAL_DUE/FINAL_NOTICE).
+  /// Null = not sent yet; set once, never re-sent even if the cron re-runs
+  /// or misses a day.
+  renewalAlert30SentAt DateTime?
+  renewalAlert15SentAt DateTime?
+  renewalAlert7SentAt  DateTime?
   owningAsmId         String?
+  owningAsm           User?               @relation("OwningAsm", fields: [owningAsmId], references: [id])
   previousContractId  String?
   signedAgreementUrl  String?
   /// Client request (2026-07-27) — a T&C text box on the AMC Contract form,

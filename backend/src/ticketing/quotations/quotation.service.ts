@@ -146,13 +146,21 @@ export class QuotationService {
   async update(id: string, dto: UpdateQuotationDto) {
     const quotation = await this.prisma.quotation.findUniqueOrThrow({ where: { id } });
     this.assertEditable(quotation);
+    const newValidUntil = dto.validUntil ? new Date(dto.validUntil) : undefined;
+
+    // FSD §14.4 rule 29 — "CS Support can reactivate by extending" validUntil.
+    // Only reactivates if the new date is actually in the future; reverts to
+    // SENT if it had been sent to the customer before, else DRAFT.
+    const reactivating = quotation.status === 'EXPIRED' && newValidUntil && newValidUntil.getTime() > Date.now();
+
     const updated = await this.prisma.quotation.update({
       where: { id },
       data: {
-        validUntil: dto.validUntil ? new Date(dto.validUntil) : undefined,
+        validUntil: newValidUntil,
         labourCharges: dto.labourCharges,
         notesToCustomer: dto.notesToCustomer,
         termsAndConditions: dto.termsAndConditions,
+        status: reactivating ? (quotation.sentAt ? 'SENT' : 'DRAFT') : undefined,
       },
     });
     return this.recomputeTotals(updated.id);
@@ -225,6 +233,10 @@ export class QuotationService {
       quotation.items.map((it) => ({ itemCode: it.itemCode, qty: Number(it.qty), rate: Number(it.unitPrice), uom: it.uom })),
       quotation.validUntil.toISOString().slice(0, 10),
       quotation.sellingPriceList ?? undefined,
+      // FSD §14.4 rule 27 — CGST+SGST vs IGST by comparing customer state to
+      // Proman's own (ACE_COMPANY_STATE env var; falls back to the intra-state
+      // default if either state is unknown, same as before this fix).
+      this.erpWriteback.resolveTaxesTemplate(quotation.customer.billingState),
     );
 
     const updated = await this.prisma.quotation.update({

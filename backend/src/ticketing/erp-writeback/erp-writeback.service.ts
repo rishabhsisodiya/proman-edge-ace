@@ -61,6 +61,26 @@ export class ErpWritebackService {
     return process.env.ACE_SALES_TAXES_TEMPLATE ?? 'Sales SGST 9% & CGST9% - PISPL';
   }
 
+  private salesIgstTemplate(): string {
+    return process.env.ACE_SALES_IGST_TEMPLATE ?? 'Sales IGST 18%';
+  }
+
+  /**
+   * FSD §14.4 rule 27/§5.6 — "GST computed as CGST+SGST or IGST by comparing
+   * customer GSTIN state vs. Proman GSTIN state" (2026-07-31 fix — this
+   * comparison never happened; `pushToErpNext()` always used the default
+   * intra-state template regardless of the customer's actual state).
+   * `ACE_COMPANY_STATE` isn't guessable/hardcodable here — must be set to
+   * Proman's actual registered GST state. Undefined → always intra-state
+   * (today's existing behavior, unchanged) rather than guessing wrong.
+   */
+  resolveTaxesTemplate(customerBillingState: string | null | undefined): string {
+    const companyState = process.env.ACE_COMPANY_STATE;
+    if (!companyState || !customerBillingState) return this.salesTaxesTemplate();
+    const sameState = companyState.trim().toLowerCase() === customerBillingState.trim().toLowerCase();
+    return sameState ? this.salesTaxesTemplate() : this.salesIgstTemplate();
+  }
+
   /**
    * Tax child rows for a Sales Taxes and Charges Template, via ERPNext's own
    * get_taxes_and_charges (nothing hard-coded on our side). Attaching the
