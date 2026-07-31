@@ -180,6 +180,41 @@ export class TicketsService {
   }
 
   /**
+   * §7.1 rule 5 — round-robin ASM assignment (client confirmed 2026-07-31,
+   * reversing the earlier Q12 load-based default). No separate "last
+   * assigned index" counter table needed: rotation is derived from each
+   * candidate's own most recent ticket assignment (`Ticket.createdAt` for
+   * the ticket where they're `assignedAsmId`) — whoever hasn't been handed a
+   * ticket in the longest time goes next; an ASM never yet assigned any
+   * ticket goes first. This is stateless/self-correcting (survives server
+   * restarts, doesn't drift if an ASM is added/removed from a region) unlike
+   * a plain incrementing index, at the cost of one extra query per routing
+   * decision — negligible next to ticket-creation's other DB calls.
+   * `candidateIds` should be in a stable order (caller orders by `userId`) so
+   * a tie between two never-assigned ASMs resolves deterministically rather
+   * than depending on query-result ordering.
+   */
+  private async pickRoundRobinAsm(db: PrismaService | Prisma.TransactionClient, candidateIds: string[]): Promise<string> {
+    const lastAssigned = await db.ticket.groupBy({
+      by: ['assignedAsmId'],
+      where: { assignedAsmId: { in: candidateIds } },
+      _max: { createdAt: true },
+    });
+    const lastAssignedAt = new Map(lastAssigned.map((r) => [r.assignedAsmId as string, r._max.createdAt as Date]));
+
+    let chosenId = candidateIds[0];
+    let chosenTime = lastAssignedAt.get(chosenId) ?? new Date(0);
+    for (const id of candidateIds.slice(1)) {
+      const t = lastAssignedAt.get(id) ?? new Date(0);
+      if (t < chosenTime) {
+        chosenId = id;
+        chosenTime = t;
+      }
+    }
+    return chosenId;
+  }
+
+  /**
    * The single ticket-creation entry point (FSD §7.1 rule 1) — every source
    * (call, WhatsApp, bulk import, partner API, internal) must go through this.
    */
@@ -322,24 +357,23 @@ export class TicketsService {
       }
 
       // §7.1 rule 5 — auto-routing to an ASM covering the customer's region,
-      // load-based (fewest current open tickets), per Q12's documented default.
-      // A customer whose region hasn't been resolved yet (needsReview from the
-      // nightly sync) can't be routed — falls through to unassigned, same as
-      // the "no ASM covers this region" case below.
+      // round-robin (client confirmed 2026-07-31, reversing the Q12
+      // load-based default — see pickRoundRobinAsm() for how rotation works
+      // without a separate counter table). A customer whose region hasn't
+      // been resolved yet (needsReview from the nightly sync) can't be
+      // routed — falls through to unassigned, same as the "no ASM covers
+      // this region" case below.
       const regionAsms = customer.region
         ? await tx.userRegion.findMany({
             where: { region: customer.region, user: { role: 'ASM' } },
-            include: {
-              user: { include: { _count: { select: { ticketsAsAsm: { where: { status: { not: 'CLOSED' } } } } } } },
-            },
+            include: { user: true },
+            orderBy: { userId: 'asc' },
           })
         : [];
       if (regionAsms.length > 0) {
-        const chosenAsm = regionAsms.reduce((best, cur) =>
-          cur.user._count.ticketsAsAsm < best.user._count.ticketsAsAsm ? cur : best,
-        ).user;
+        const chosenAsmId = await this.pickRoundRobinAsm(tx, regionAsms.map((r) => r.user.id));
 
-        await tx.ticket.update({ where: { id: ticket.id }, data: { assignedAsmId: chosenAsm.id } });
+        await tx.ticket.update({ where: { id: ticket.id }, data: { assignedAsmId: chosenAsmId } });
         await this.workflow.transition({
           ticketId: ticket.id,
           targetStatus: 'ASSIGNED',
@@ -585,15 +619,15 @@ export class TicketsService {
 
     const regionAsms = await this.prisma.userRegion.findMany({
       where: { region: ticket.customer.region, user: { role: 'ASM' } },
-      include: { user: { include: { _count: { select: { ticketsAsAsm: { where: { status: { not: 'CLOSED' } } } } } } } },
+      include: { user: true },
+      orderBy: { userId: 'asc' },
     });
     if (regionAsms.length === 0) {
       throw new BadRequestException(`Still no ASM covers region ${ticket.customer.region} — nothing to route to yet`);
     }
 
-    const chosenAsm = regionAsms.reduce((best, cur) =>
-      cur.user._count.ticketsAsAsm < best.user._count.ticketsAsAsm ? cur : best,
-    ).user;
+    const chosenAsmId = await this.pickRoundRobinAsm(this.prisma, regionAsms.map((r) => r.user.id));
+    const chosenAsm = regionAsms.find((r) => r.user.id === chosenAsmId)!.user;
 
     await this.prisma.ticket.update({ where: { id }, data: { assignedAsmId: chosenAsm.id } });
     return this.workflow.transition({
