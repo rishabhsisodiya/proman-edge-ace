@@ -12,6 +12,7 @@ import { SlaPauseStateModule } from './ticketing/sla-pause-state/sla-pause-state
 import { HolidayModule } from './ticketing/holiday/holiday.module';
 import { CsatModule } from './ticketing/csat/csat.module';
 import { PredictiveRuleModule } from './ticketing/predictive-rules/predictive-rule.module';
+import { WorkflowLabelModule } from './ticketing/workflow-labels/workflow-label.module';
 import { ReportsModule } from './reports/reports.module';
 import { DashboardsAceModule } from './dashboards-ace/dashboards-ace.module';
 import { SyncModule } from './ticketing/sync/sync.module';
@@ -51,6 +52,7 @@ import { DispatchModule } from './dashboards/dispatch/dispatch.module';
     HolidayModule,
     CsatModule,
     PredictiveRuleModule,
+    WorkflowLabelModule,
     ReportsModule,
     DashboardsAceModule,
     SyncModule,

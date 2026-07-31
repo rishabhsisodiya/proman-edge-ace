@@ -6,6 +6,7 @@ import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
 import { AuthUser, getCurrentUser } from "@/lib/auth";
 import { registerPushNotifications } from "@/lib/push";
+import { loadWorkflowLabelOverrides } from "@/lib/ticketing/workflow-labels";
 
 // Static prefix-match, most-specific first — the TopBar title should reflect
 // what page you're actually on, not always the same brand name.
@@ -25,6 +26,7 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/dashboard/admin/equipment", title: "Equipment" },
   { prefix: "/dashboard/admin/amc-contracts", title: "AMC Contracts" },
   { prefix: "/dashboard/admin/billing-rates", title: "Billing Rates" },
+  { prefix: "/dashboard/admin/workflow-labels", title: "Workflow States & Transitions" },
   { prefix: "/dashboard/admin", title: "Admin Console" },
   { prefix: "/dashboard/dashboards", title: "Dashboards" },
 ];
@@ -52,6 +54,7 @@ export default function DashboardLayout({
   useEffect(() => {
     setUser(getCurrentUser());
     registerPushNotifications();
+    loadWorkflowLabelOverrides();
   }, []);
 
   return (

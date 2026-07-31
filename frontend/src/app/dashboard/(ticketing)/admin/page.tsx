@@ -31,7 +31,11 @@ const SECTIONS = [
     href: "/dashboard/admin/sla",
   },
   { label: "Ticket Priorities", description: "Priority levels + Priority Matrix", href: null },
-  { label: "Workflow States & Transitions", description: "Ticket lifecycle designer", href: null },
+  {
+    label: "Workflow States & Transitions",
+    description: "Edit each status's display label (transitions/roles are not editable — labels only)",
+    href: "/dashboard/admin/workflow-labels",
+  },
   {
     label: "Regions & Territories",
     description: "ERPNext territory → Region mapping, used by the nightly Customer Sync job",

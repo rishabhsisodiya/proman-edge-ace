@@ -170,6 +170,17 @@ enum TicketStatus {
   CLOSED
 }
 
+/// Admin-editable display label per ticket status (2026-08-01, FSD §5.2
+/// "Workflow States & Transitions" scoped down to labels-only — the actual
+/// transitions/allowed-roles stay hardcoded in `workflow.constants.ts`,
+/// completely untouched by this table). Frontend's STATUS_LABEL constant is
+/// the fallback default if a row is somehow missing.
+model TicketStatusLabel {
+  status    TicketStatus @id
+  label     String
+  updatedAt DateTime     @updatedAt
+}
+
 enum PendingReason {
   AWAITING_PARTS
   AWAITING_CUSTOMER
