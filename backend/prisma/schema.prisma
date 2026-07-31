@@ -260,6 +260,7 @@ model User {
   fsvs                  FieldServiceVisit[]
   partnerApiKeysCreated PartnerApiKey[]
   amcContractsOwned     AmcContract[]       @relation("OwningAsm")
+  scheduledReportsCreated ScheduledReport[]
 }
 
 model UserRegion {
@@ -732,6 +733,37 @@ model PredictiveRuleConfig {
   breakdownFrequencyThreshold    Int           @default(3)
   breakdownFrequencyWindowMonths Int           @default(6)
   updatedAt                      DateTime      @updatedAt
+}
+
+enum ScheduledReportFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+// Reports & KPI (§6.3) Phase 2 — scheduled auto-email delivery (2026-07-31).
+// dateFrom/dateTo-style filters are deliberately NOT frozen here — only
+// relativeWindowDays is stored, and the cron recomputes the actual date
+// range at send time so a schedule never goes stale. Non-date filters
+// (region, service type, ids, etc.) are frozen as-is in `filters`.
+model ScheduledReport {
+  id                 String                   @id @default(uuid())
+  reportKey          String
+  filters            Json
+  relativeWindowDays Int?
+  format             String
+  recipients         String[]
+  frequency          ScheduledReportFrequency
+  dayOfWeek          Int? // 0-6, WEEKLY only
+  dayOfMonth         Int? // 1-28, MONTHLY only
+  sendHour           Int // 0-23, Asia/Kolkata
+  isActive           Boolean                  @default(true)
+  lastRunAt          DateTime?
+  lastRunStatus      String?
+  createdByUserId    String
+  createdByUser      User                     @relation(fields: [createdByUserId], references: [id])
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
 }
 
 model TicketAuditLog {

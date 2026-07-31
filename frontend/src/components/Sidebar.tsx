@@ -51,6 +51,11 @@ const ADMIN_ONLY_ITEMS: NavItem[] = [
   { label: "Admin", href: "/dashboard/admin", roles: [] },
 ];
 
+// Reports & KPI (FSD §6.3) — matches ReportsController's own @Roles('MANAGER',
+// 'ADMIN') guard exactly; Service-Aftersales-Head is not in that guard, so it
+// isn't listed here either.
+const REPORTS_NAV_ITEM: NavItem = { label: "Reports", href: "/dashboard/reports", roles: ["MANAGER", "ADMIN"] };
+
 export default function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const pathname = usePathname();
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -69,7 +74,8 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
   const ticketItem = ticketingNavItem(user?.role);
   const erpItems = ERP_NAV_ITEMS.filter((item) => user && item.roles.includes(user.role)); // strict — no Admin bypass here
   const adminItems = user?.role === "ADMIN" ? ADMIN_ONLY_ITEMS : [];
-  const items = [...(ticketItem ? [ticketItem] : []), ...erpItems, ...adminItems];
+  const reportsItems = user && REPORTS_NAV_ITEM.roles.includes(user.role) ? [REPORTS_NAV_ITEM] : [];
+  const items = [...(ticketItem ? [ticketItem] : []), ...erpItems, ...reportsItems, ...adminItems];
 
   return (
     <>

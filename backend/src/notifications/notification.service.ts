@@ -20,6 +20,8 @@ export interface SendNotificationParams {
   userId?: string;
   /** System-actor user id for the TicketAuditLog entry on failure — same PARTNER_ACTOR_USER_ID-or-first-ADMIN pattern used elsewhere (e.g. SlaBreachCron). */
   systemActorUserId?: string;
+  /** Email only — e.g. Scheduled Reports' Excel/PDF export. Nodemailer supports this natively; unused by every other trigger so far. */
+  attachments?: { filename: string; content: Buffer }[];
 }
 
 /**
@@ -139,6 +141,7 @@ export class NotificationService {
       to: params.recipient,
       subject: params.subject || params.templateName,
       text: params.body,
+      attachments: params.attachments,
     });
     return info.messageId;
   }

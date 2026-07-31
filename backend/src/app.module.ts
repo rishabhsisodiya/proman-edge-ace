@@ -12,6 +12,7 @@ import { SlaPauseStateModule } from './ticketing/sla-pause-state/sla-pause-state
 import { HolidayModule } from './ticketing/holiday/holiday.module';
 import { CsatModule } from './ticketing/csat/csat.module';
 import { PredictiveRuleModule } from './ticketing/predictive-rules/predictive-rule.module';
+import { ReportsModule } from './reports/reports.module';
 import { SyncModule } from './ticketing/sync/sync.module';
 import { EquipmentModule } from './ticketing/equipment/equipment.module';
 import { AmcModule } from './ticketing/amc/amc.module';
@@ -49,6 +50,7 @@ import { DispatchModule } from './dashboards/dispatch/dispatch.module';
     HolidayModule,
     CsatModule,
     PredictiveRuleModule,
+    ReportsModule,
     SyncModule,
     EquipmentModule,
     AmcModule,

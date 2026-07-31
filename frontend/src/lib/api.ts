@@ -63,3 +63,17 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
+
+/** For binary responses (Excel/PDF export downloads) — same auth/refresh handling as apiFetch, minus the JSON parsing. */
+export async function apiFetchBlob(path: string): Promise<Blob> {
+  let res = await fetch(`${API_URL}${path}`, { credentials: "include" });
+  if (res.status === 401) {
+    const refreshed = await fetch(`${API_URL}/auth/refresh`, { method: "POST", credentials: "include" });
+    if (refreshed.ok) res = await fetch(`${API_URL}${path}`, { credentials: "include" });
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new ApiError(res.status, body);
+  }
+  return res.blob();
+}
