@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { NotifChannel } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RequestUser } from '../tickets/tickets.service';
 import { ErpWritebackService } from '../erp-writeback/erp-writeback.service';
@@ -174,13 +175,61 @@ export class QuotationService {
    * settable even once item/price editing is locked.
    */
   async updateCustomerPo(id: string, customerPoNumber: string | undefined, customerPoDate: string | undefined) {
-    await this.prisma.quotation.findUniqueOrThrow({ where: { id } });
-    return this.prisma.quotation.update({
+    const existing = await this.prisma.quotation.findUniqueOrThrow({
+      where: { id },
+      include: { ticket: { include: { assignedAsm: true } }, customer: true },
+    });
+    const updated = await this.prisma.quotation.update({
       where: { id },
       data: {
         ...(customerPoNumber !== undefined ? { customerPoNumber } : {}),
         ...(customerPoDate !== undefined ? { customerPoDate: new Date(customerPoDate) } : {}),
       },
+    });
+
+    // N-11 "Customer PO received" (FSD §9) — fires once, the moment a PO
+    // number first appears on this quotation (not on every subsequent edit).
+    // Recipients per FSD: CS Support + the ticket's ASM, PUSH only.
+    if (!existing.customerPoNumber && customerPoNumber) {
+      const vars = { quotation_no: existing.quotationNo, customer_name: existing.customer.customerName };
+      const csSupportUsers = await this.prisma.user.findMany({ where: { role: 'CS_SUPPORT', isActive: true } });
+      for (const u of csSupportUsers) {
+        await this.fireNotification('N-11', 'PUSH', u.email, vars, existing.ticketId, u.id);
+      }
+      if (existing.ticket.assignedAsm) {
+        await this.fireNotification(
+          'N-11',
+          'PUSH',
+          existing.ticket.assignedAsm.email,
+          vars,
+          existing.ticketId,
+          existing.ticket.assignedAsm.id,
+        );
+      }
+    }
+
+    return updated;
+  }
+
+  /** Shared render+send — same pattern as TicketsService's own fireNotification, no-ops if the trigger/channel has no template row. */
+  private async fireNotification(
+    triggerCode: string,
+    channel: NotifChannel,
+    recipient: string,
+    vars: Record<string, string | number | null | undefined>,
+    ticketId?: string,
+    userId?: string,
+  ) {
+    const template = await this.notificationTemplates.render(triggerCode, channel, vars);
+    if (!template) return;
+    await this.notifications.send({
+      channel,
+      recipient,
+      templateName: triggerCode,
+      subject: template.subject,
+      body: template.body,
+      ticketId,
+      userId,
     });
   }
 
