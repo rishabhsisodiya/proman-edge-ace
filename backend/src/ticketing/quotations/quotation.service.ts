@@ -166,6 +166,29 @@ export class QuotationService {
     return this.recomputeTotals(updated.id);
   }
 
+  /**
+   * Customer PO capture (client decision, 2026-08-01: manual entry in ACE,
+   * not synced from ERPNext) — deliberately NOT gated by assertEditable().
+   * A PO normally arrives after the quotation is already negotiated and
+   * pushed to ERPNext (that's what a PO confirms), so this must stay
+   * settable even once item/price editing is locked.
+   */
+  async updateCustomerPo(id: string, customerPoNumber: string | undefined, customerPoDate: string | undefined) {
+    await this.prisma.quotation.findUniqueOrThrow({ where: { id } });
+    return this.prisma.quotation.update({
+      where: { id },
+      data: {
+        ...(customerPoNumber !== undefined ? { customerPoNumber } : {}),
+        ...(customerPoDate !== undefined ? { customerPoDate: new Date(customerPoDate) } : {}),
+      },
+    });
+  }
+
+  /** Uploaded Customer PO document — same manual-capture decision as updateCustomerPo(). */
+  uploadCustomerPoDocument(id: string, url: string) {
+    return this.prisma.quotation.update({ where: { id }, data: { customerPoDocUrl: url } });
+  }
+
   async addItem(id: string, dto: AddQuotationItemDto) {
     const quotation = await this.prisma.quotation.findUniqueOrThrow({ where: { id } });
     this.assertEditable(quotation);

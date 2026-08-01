@@ -1,4 +1,6 @@
-import { apiFetch } from "@/lib/api";
+import { apiFetch, ApiError } from "@/lib/api";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4100/api/v1";
 
 export type QuotationStatus =
   | "DRAFT"
@@ -116,6 +118,36 @@ export const updateQuotation = (
   id: string,
   input: { validUntil?: string; labourCharges?: number; notesToCustomer?: string; termsAndConditions?: string },
 ) => apiFetch<Quotation>(`/quotations/${id}`, { method: "PATCH", body: JSON.stringify(input) });
+
+// Customer PO capture (client decision, 2026-08-01: manual entry in ACE, not
+// synced from ERPNext). Own endpoint, not folded into updateQuotation — a PO
+// typically arrives after the quotation is already pushed to ERPNext, so it
+// must stay settable even when the rest of the quotation is locked.
+export const updateCustomerPo = (id: string, input: { customerPoNumber?: string; customerPoDate?: string }) =>
+  apiFetch<Quotation>(`/quotations/${id}/customer-po`, { method: "PATCH", body: JSON.stringify(input) });
+
+export async function uploadCustomerPoDocument(id: string, file: File): Promise<Quotation> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const send = () =>
+    fetch(`${API_URL}/quotations/${id}/customer-po/upload`, {
+      method: "POST",
+      credentials: "include",
+      body: formData,
+    });
+
+  let res = await send();
+  if (res.status === 401) {
+    const refreshed = await fetch(`${API_URL}/auth/refresh`, { method: "POST", credentials: "include" });
+    if (refreshed.ok) res = await send();
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new ApiError(res.status, body);
+  }
+  return res.json() as Promise<Quotation>;
+}
 
 export const addQuotationItem = (
   id: string,

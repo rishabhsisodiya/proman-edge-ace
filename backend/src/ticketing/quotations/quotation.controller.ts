@@ -1,5 +1,9 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
-import { Response } from 'express';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Req, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import type { Request, Response } from 'express';
+import * as path from 'path';
+import * as crypto from 'crypto';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { RolesGuard } from '../../auth/roles.guard';
 import { Roles } from '../../auth/roles.decorator';
@@ -8,10 +12,14 @@ import { QuotationPdfService } from './quotation-pdf.service';
 import {
   AddQuotationItemDto,
   CreateQuotationDto,
+  UpdateCustomerPoDto,
   UpdateDeliveryDto,
   UpdateQuotationDto,
   UpdateQuotationItemDto,
 } from './dto/quotation.dto';
+
+const CUSTOMER_PO_UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'customer-po-documents');
+const ALLOWED_CUSTOMER_PO_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'application/pdf']);
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller()
@@ -78,6 +86,39 @@ export class QuotationController {
   @Patch('quotations/:id')
   update(@Param('id') id: string, @Body() dto: UpdateQuotationDto) {
     return this.quotations.update(id, dto);
+  }
+
+  // Customer PO capture (client decision, 2026-08-01: manual entry in ACE,
+  // not synced from ERPNext) — CS_SUPPORT included since chasing/recording
+  // customer POs is their dashboard's whole purpose (§CS Support Dashboard).
+  @Roles('CALL_CENTER', 'ASM', 'MANAGER', 'ENGINEER', 'CS_SUPPORT')
+  @Patch('quotations/:id/customer-po')
+  updateCustomerPo(@Param('id') id: string, @Body() dto: UpdateCustomerPoDto) {
+    return this.quotations.updateCustomerPo(id, dto.customerPoNumber, dto.customerPoDate);
+  }
+
+  @Roles('CALL_CENTER', 'ASM', 'MANAGER', 'ENGINEER', 'CS_SUPPORT')
+  @Post('quotations/:id/customer-po/upload')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: CUSTOMER_PO_UPLOAD_DIR,
+        filename: (_req, file, cb) => cb(null, `${crypto.randomUUID()}${path.extname(file.originalname)}`),
+      }),
+      limits: { fileSize: 10 * 1024 * 1024 },
+      fileFilter: (_req, file, cb) => {
+        if (!ALLOWED_CUSTOMER_PO_MIME_TYPES.has(file.mimetype)) {
+          cb(new BadRequestException('Customer PO document must be a JPEG, PNG, or PDF file'), false);
+          return;
+        }
+        cb(null, true);
+      },
+    }),
+  )
+  uploadCustomerPoDocument(@Param('id') id: string, @UploadedFile() file: Express.Multer.File, @Req() req: Request) {
+    if (!file) throw new BadRequestException('No file uploaded');
+    const url = `${req.protocol}://${req.get('host')}/uploads/customer-po-documents/${file.filename}`;
+    return this.quotations.uploadCustomerPoDocument(id, url);
   }
 
   @Roles('CALL_CENTER', 'ASM', 'MANAGER', 'ENGINEER')

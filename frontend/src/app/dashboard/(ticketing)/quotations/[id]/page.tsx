@@ -12,8 +12,10 @@ import {
   Quotation,
   QuotationItem,
   removeQuotationItem,
+  updateCustomerPo,
   updateQuotation,
   updateQuotationItem,
+  uploadCustomerPoDocument,
 } from "@/lib/ticketing/quotation";
 import { ItemListItem, listItems } from "@/lib/ticketing/masters";
 import { listPriceLists, PriceList } from "@/lib/ticketing/price-lists";
@@ -116,7 +118,7 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
         </p>
       )}
 
-      <InfoBlock quotation={quotation} />
+      <InfoBlock quotation={quotation} reload={load} />
 
       <HeaderFields quotation={quotation} editable={editable} onSave={(patch) => run(() => updateQuotation(quotation.id, patch))} />
 
@@ -320,34 +322,114 @@ const DELIVERY_STATUS_LABEL: Record<string, string> = {
  * edits (Valid Until, Labour, Notes, T&C); this covers the system-tracked /
  * informational ones (who created it, when, PO paperwork, delivery status).
  */
-function InfoBlock({ quotation }: { quotation: Quotation }) {
+function InfoBlock({ quotation, reload }: { quotation: Quotation; reload: () => void }) {
   const rows: { label: string; value: React.ReactNode }[] = [
     { label: "Customer ID", value: <span className="font-mono text-xs">{quotation.customerId}</span> },
     { label: "Created By", value: quotation.createdByUser?.fullName ?? "—" },
     { label: "Quotation Date", value: new Date(quotation.quotationDate).toLocaleDateString() },
     { label: "Sent At", value: quotation.sentAt ? new Date(quotation.sentAt).toLocaleString() : "—" },
     { label: "Delivery Status", value: DELIVERY_STATUS_LABEL[quotation.deliveryStatus] ?? quotation.deliveryStatus },
-    { label: "Customer PO Number", value: quotation.customerPoNumber ?? "—" },
-    { label: "Customer PO Date", value: quotation.customerPoDate ? new Date(quotation.customerPoDate).toLocaleDateString() : "—" },
-    {
-      label: "Customer PO Document",
-      value: quotation.customerPoDocUrl ? (
-        <a href={quotation.customerPoDocUrl} target="_blank" rel="noreferrer" className="font-bold text-navy underline">
-          View
-        </a>
-      ) : (
-        "—"
-      ),
-    },
   ];
   return (
-    <div className="grid grid-cols-1 gap-x-4 gap-y-3 rounded-lg border border-line bg-white p-4 text-sm sm:grid-cols-2 md:grid-cols-4">
-      {rows.map((r) => (
-        <div key={r.label} className="min-w-0">
-          <p className="text-xs font-bold uppercase text-muted">{r.label}</p>
-          <p className="break-words text-navy">{r.value}</p>
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-x-4 gap-y-3 rounded-lg border border-line bg-white p-4 text-sm sm:grid-cols-2 md:grid-cols-5">
+        {rows.map((r) => (
+          <div key={r.label} className="min-w-0">
+            <p className="text-xs font-bold uppercase text-muted">{r.label}</p>
+            <p className="break-words text-navy">{r.value}</p>
+          </div>
+        ))}
+      </div>
+      <CustomerPoBlock quotation={quotation} reload={reload} />
+    </div>
+  );
+}
+
+/**
+ * Customer PO capture — client decision (2026-08-01): manual entry in ACE
+ * once the customer sends the PO (email/phone), not synced from ERPNext.
+ * Deliberately NOT gated by the quotation's own `editable` lock — a PO
+ * normally arrives after the quotation is already pushed to ERPNext, so
+ * this has to stay editable even when the rest of the page is read-only.
+ */
+function CustomerPoBlock({ quotation, reload }: { quotation: Quotation; reload: () => void }) {
+  const [poNumber, setPoNumber] = useState(quotation.customerPoNumber ?? "");
+  const [poDate, setPoDate] = useState(quotation.customerPoDate?.slice(0, 10) ?? "");
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function onSave() {
+    setSaving(true);
+    setError(null);
+    try {
+      await updateCustomerPo(quotation.id, {
+        customerPoNumber: poNumber.trim() || undefined,
+        customerPoDate: poDate || undefined,
+      });
+      reload();
+    } catch {
+      setError("Could not save the Customer PO details.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function onUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploading(true);
+    setError(null);
+    try {
+      await uploadCustomerPoDocument(quotation.id, file);
+      reload();
+    } catch {
+      setError("Could not upload the Customer PO document.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-line bg-white p-4">
+      <p className="mb-3 text-xs font-bold uppercase text-muted">Customer PO</p>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div>
+          <label className="mb-1.5 block text-xs font-bold text-navy">PO Number</label>
+          <input
+            value={poNumber}
+            onChange={(e) => setPoNumber(e.target.value)}
+            onBlur={onSave}
+            disabled={saving}
+            className="h-10 w-full rounded-md border border-line px-3 text-sm text-navy disabled:bg-navy-soft"
+          />
         </div>
-      ))}
+        <div>
+          <label className="mb-1.5 block text-xs font-bold text-navy">PO Date</label>
+          <input
+            type="date"
+            value={poDate}
+            onChange={(e) => setPoDate(e.target.value)}
+            onBlur={onSave}
+            disabled={saving}
+            className="h-10 w-full rounded-md border border-line px-3 text-sm text-navy disabled:bg-navy-soft"
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-bold text-navy">PO Document</label>
+          {quotation.customerPoDocUrl ? (
+            <a href={quotation.customerPoDocUrl} target="_blank" rel="noreferrer" className="block h-10 pt-2 text-sm font-bold text-navy underline">
+              View document
+            </a>
+          ) : null}
+          <label className="mt-1 flex h-9 w-fit cursor-pointer items-center rounded-md bg-navy-tint px-3 text-xs font-bold text-navy">
+            {uploading ? "Uploading…" : quotation.customerPoDocUrl ? "Replace" : "Upload"}
+            <input type="file" accept="image/jpeg,image/png,application/pdf" onChange={onUpload} disabled={uploading} className="hidden" />
+          </label>
+        </div>
+      </div>
+      {error && <p className="mt-2 text-xs text-brand-red">{error}</p>}
     </div>
   );
 }
