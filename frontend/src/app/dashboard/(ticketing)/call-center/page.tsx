@@ -43,10 +43,12 @@ export default function CallCenterDashboardPage() {
   }
 
   useEffect(() => {
-    // pageSize=500: this dashboard computes its own stats client-side over
-    // the whole set (no server-side aggregate endpoint yet) — not a
-    // paginated list view, so it needs the full-ish dataset, not page 1.
-    apiFetch<Paginated<Ticket>>("/tickets?pageSize=500")
+    // This dashboard computes its own stats client-side over the whole set
+    // (no server-side aggregate endpoint yet) — not a paginated list view,
+    // so it needs the full-ish dataset, not page 1. Bumped from 500 to 5000
+    // (2026-08-01 bug fix) — real ticket volume passed 500, silently
+    // undercounting SLA stats; see tickets.service.ts's matching comment.
+    apiFetch<Paginated<Ticket>>("/tickets?pageSize=5000")
       .then((res) => setTickets(res.data))
       .catch(() => setError("Could not load tickets. Is the backend running and seeded?"))
       .finally(() => setLoading(false));

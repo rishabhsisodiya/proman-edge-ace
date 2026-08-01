@@ -31,6 +31,11 @@ export const startWorking = (id: string, comment?: string) => post<Ticket>(`/tic
 export const markPending = (id: string, pendingReason: PendingReason, pendingNotes: string) =>
   post<Ticket>(`/tickets/${id}/pending`, { pendingReason, pendingNotes });
 export const resumeTicket = (id: string) => post<Ticket>(`/tickets/${id}/resume`);
+// Client feedback (2026-08-01) — separate resolve step, own screen outside
+// the FSV form. FSV is still mandatory first; backend rejects this call if
+// no FSV for the ticket has been submitted yet.
+export const engineerResolve = (id: string, resolutionSummary: string) =>
+  post<Ticket>(`/tickets/${id}/engineer-resolve`, { resolutionSummary });
 export const asmResolveTicket = (id: string, comment?: string) => post<Ticket>(`/tickets/${id}/asm-resolve`, { comment });
 export const closeTicket = (id: string, comment?: string) => post<Ticket>(`/tickets/${id}/close`, { comment });
 export const resendCsatSurvey = (id: string) => post<{ ok: boolean }>(`/tickets/${id}/resend-csat`);

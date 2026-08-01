@@ -8,19 +8,21 @@ import {
   Patch,
   Post,
   Req,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { RolesGuard } from '../../auth/roles.guard';
 import { Roles } from '../../auth/roles.decorator';
 import { FsvService } from './fsv.service';
+import { FsvPdfService } from './fsv-pdf.service';
 import { AddFsvPartDto, AddFsvPhotoDto, CreateFsvDto, UpdateFsvDto, UpdateFsvPartDto } from './dto/fsv.dto';
 
 const FSV_PHOTO_UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'fsv-photos');
@@ -35,7 +37,10 @@ const ALLOWED_REPORT_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'applicati
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller()
 export class FsvController {
-  constructor(private readonly fsv: FsvService) {}
+  constructor(
+    private readonly fsv: FsvService,
+    private readonly fsvPdf: FsvPdfService,
+  ) {}
 
   @Get('tickets/:ticketId/fsv')
   listForTicket(@Param('ticketId') ticketId: string) {
@@ -51,6 +56,16 @@ export class FsvController {
   @Get('fsv/:id')
   findOne(@Param('id') id: string) {
     return this.fsv.findOne(id);
+  }
+
+  // Client feedback (2026-08-01) — "download FSV PDF." Same navy/orange
+  // letterhead pattern as the Quotation PDF; rendered fresh from the FSV's
+  // own data, not the separately-uploaded scanned Service Report.
+  @Get('fsv/:id/pdf')
+  async downloadPdf(@Param('id') id: string, @Res() res: Response) {
+    const buffer = await this.fsvPdf.generate(id);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="fsv-${id}.pdf"` });
+    res.send(buffer);
   }
 
   @Roles('ENGINEER')

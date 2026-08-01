@@ -97,6 +97,14 @@ export default function FsvDetailPage({ params }: { params: Promise<{ id: string
           >
             {fsv.status}
           </span>
+          <a
+            href={`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4100/api/v1"}/fsv/${fsv.id}/pdf`}
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs font-bold text-navy underline"
+          >
+            Download PDF
+          </a>
         </div>
         <p className="mt-1 text-sm font-medium text-navy">{new Date(fsv.visitDate).toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</p>
         {readOnly && (
@@ -113,7 +121,7 @@ export default function FsvDetailPage({ params }: { params: Promise<{ id: string
               rel="noreferrer"
               className="font-bold text-navy underline"
             >
-              {fsv.gpsLatAtCheckin}, {fsv.gpsLongAtCheckin}
+              Open in Google Maps
             </a>
           </p>
         )}
@@ -214,7 +222,7 @@ export default function FsvDetailPage({ params }: { params: Promise<{ id: string
             setError(null);
             try {
               await submitFsv(fsv.id);
-              setNotice("Field Service Visit submitted — ticket marked Engineer Resolved.");
+              setNotice("Field Service Visit submitted. Add a resolution summary on the ticket page to mark it Engineer Resolved.");
               router.push(`/dashboard/tickets/${fsv.ticketId}`);
             } catch (err) {
               if (err instanceof ApiError) {
@@ -437,13 +445,15 @@ function PartsSection({
       </div>
 
       {!readOnly && (
-        <label className="mb-2 flex items-center gap-2 text-xs text-navy">
+        <label className={`mb-2 flex items-center gap-2 text-xs ${fsv.parts.length > 0 ? "text-muted" : "text-navy"}`}>
           <input
             type="checkbox"
             checked={fsv.noPartsUsed}
+            disabled={fsv.parts.length > 0}
             onChange={(e) => onSave({ noPartsUsed: e.target.checked })}
           />
           No parts were used on this visit
+          {fsv.parts.length > 0 && <span className="italic">(parts already logged)</span>}
         </label>
       )}
 

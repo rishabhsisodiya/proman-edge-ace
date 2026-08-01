@@ -1,6 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { WorkflowService } from '../workflow/workflow.service';
 import { RequestUser } from '../tickets/tickets.service';
 import { CreateFsvDto, UpdateFsvDto, AddFsvPartDto, UpdateFsvPartDto, AddFsvPhotoDto } from './dto/fsv.dto';
 import { NotificationService } from '../../notifications/notification.service';
@@ -22,7 +21,6 @@ async function nextVisitNo(prisma: PrismaService): Promise<string> {
 export class FsvService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly workflow: WorkflowService,
     private readonly notifications: NotificationService,
     private readonly notificationTemplates: NotificationTemplateService,
     private readonly priceLists: PriceListService,
@@ -132,6 +130,13 @@ export class FsvService {
       throw new BadRequestException('This Field Service Visit has already been submitted and is immutable');
     }
     const amount = dto.qty * dto.sellingRate;
+    // Client feedback (2026-08-01): once a real part is logged, "No parts
+    // used" is a contradiction — auto-clear it here (not just disabled in
+    // the UI) so it can never be true alongside an actual parts[] row,
+    // regardless of client.
+    if (visit.noPartsUsed) {
+      await this.prisma.fieldServiceVisit.update({ where: { id }, data: { noPartsUsed: false } });
+    }
     return this.prisma.fsvPartConsumed.create({
       data: { visitId: id, ...dto, amount },
     });
@@ -228,24 +233,19 @@ export class FsvService {
       data: { status: 'SUBMITTED', submittedAt: new Date(), submittedBy: actor.userId },
     });
 
-    // Only the *first* visit's submit drives the ticket to Engineer Resolved
-    // (the only status WORKING can legally move to ENGINEER_RESOLVED from,
-    // per TICKET_TRANSITIONS). A follow-up visit submitted later — e.g. after
-    // an ASM reject-and-reassign cycle sends the ticket back for a second
-    // site visit — locks that visit the same way, but doesn't re-force a
-    // transition the workflow engine wouldn't allow from wherever the ticket
-    // currently sits (already ENGINEER_RESOLVED/ASM_RESOLVED/PENDING).
-    if (visit.ticket.status === 'WORKING') {
-      await this.workflow.transition({
-        ticketId: visit.ticketId,
-        targetStatus: 'ENGINEER_RESOLVED',
-        actorUserId: actor.userId,
-        actorRole: actor.role,
-        resolutionSummary: visit.workPerformed,
-      });
-    }
+    // Client feedback (2026-08-01): FSV submission no longer auto-transitions
+    // the ticket to Engineer Resolved. It used to (single combined step) —
+    // now the two are deliberately decoupled: submitting the FSV locks the
+    // visit record (immutable, as before), but the ticket stays WORKING
+    // until the engineer separately provides a resolution summary and marks
+    // it resolved via TicketsService.resolve() (own screen, outside the
+    // FSV form) — see that method for the "at least one SUBMITTED FSV
+    // exists" gate that keeps FSV itself mandatory.
 
-    // N-13 (FSV submitted / work complete) — notify customer + ASM.
+    // N-13 (FSV submitted / work complete) — notify customer + ASM. Still
+    // fires here (not moved to the separate resolve step) since "the
+    // engineer physically finished the visit" is the real-world event this
+    // describes, regardless of when the ticket is formally marked resolved.
     const vars = {
       ticket_no: visit.ticket.ticketNo,
       engineer_name: visit.ticket.assignedEngineer?.fullName ?? 'Your engineer',

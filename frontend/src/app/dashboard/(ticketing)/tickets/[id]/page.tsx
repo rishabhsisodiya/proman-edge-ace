@@ -49,6 +49,7 @@ import {
   engineerCandidates,
   getTicket,
   markPending,
+  engineerResolve,
   reachedSite,
   regularizeTicket,
   rejectTicket,
@@ -475,7 +476,8 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
  * roles (they don't need "who's assigned" surfaced to themselves, they need
  * their own next action prominent instead, same reasoning that put Assign
  * Engineer in the sidebar for ASM/Manager). Covers the full Accept -> Reject
- * -> Reached Site -> Start Working -> Mark Pending/FSV -> Resume chain.
+ * -> Reached Site -> Start Working -> Mark Pending/FSV -> Resume -> Mark
+ * Resolved (after at least one FSV is submitted, 2026-08-01) chain.
  */
 function EngineerActionCard({
   ticket,
@@ -491,6 +493,8 @@ function EngineerActionCard({
   const [pendingReason, setPendingReason] = useState<PendingReason>("AWAITING_PARTS");
   const [pendingNotes, setPendingNotes] = useState("");
   const [showPending, setShowPending] = useState(false);
+  const [resolutionSummary, setResolutionSummary] = useState("");
+  const [showResolve, setShowResolve] = useState(false);
   const [fsvList, setFsvList] = useState<FieldServiceVisit[]>([]);
   const [fsvBusy, setFsvBusy] = useState(false);
   const [reachedComment, setReachedComment] = useState("");
@@ -559,8 +563,18 @@ function EngineerActionCard({
       />,
     );
   }
+  const hasSubmittedFsv = fsvList.some((v) => v.status === "SUBMITTED");
   if (ticket.status === "WORKING") {
     items.push(<ActionButton key="pending" label="Mark Pending" variant="secondary" busy={busy} onClick={() => setShowPending(true)} />);
+    // Client feedback (2026-08-01) — a separate resolve step, own screen
+    // outside the FSV form. FSV is still mandatory — submitting the FSV no
+    // longer auto-resolves the ticket (used to); this button only appears
+    // once a submitted FSV actually exists for this ticket.
+    if (hasSubmittedFsv) {
+      items.push(
+        <ActionButton key="engineer-resolve" label="Mark Resolved" variant="secondary" busy={busy} onClick={() => setShowResolve(true)} />,
+      );
+    }
   }
 
   const FSV_ELIGIBLE_STATUSES: TicketStatus[] = [
@@ -649,6 +663,30 @@ function EngineerActionCard({
               }}
             />
             <ActionButton label="Cancel" variant="secondary" busy={false} onClick={() => setShowPending(false)} />
+          </div>
+        </div>
+      )}
+
+      {showResolve && (
+        <div className="mt-3 border-t border-line pt-3">
+          <p className="mb-2 text-xs font-bold uppercase text-navy">Resolution Summary</p>
+          <textarea
+            value={resolutionSummary}
+            onChange={(e) => setResolutionSummary(e.target.value)}
+            placeholder="What was done to resolve this ticket? (min 20 characters)"
+            className="mb-2 h-20 w-full rounded-md border border-line p-2 text-sm"
+          />
+          <div className="flex gap-2">
+            <ActionButton
+              label="Mark Engineer Resolved"
+              busy={busy || resolutionSummary.trim().length < 20}
+              onClick={() => {
+                runAction(() => engineerResolve(ticket.id, resolutionSummary.trim()), "Marked Engineer Resolved.");
+                setShowResolve(false);
+                setResolutionSummary("");
+              }}
+            />
+            <ActionButton label="Cancel" variant="secondary" busy={false} onClick={() => setShowResolve(false)} />
           </div>
         </div>
       )}
@@ -1045,7 +1083,21 @@ function TicketHistoryTabs({
                     )}
                     {(v.gpsLatAtCheckin != null || v.gpsLongAtCheckin != null) && (
                       <p className="text-xs text-muted">
-                        GPS: {v.gpsLatAtCheckin}, {v.gpsLongAtCheckin}
+                        GPS:{" "}
+                        <span
+                          role="link"
+                          onClick={(e) => {
+                            // This whole row is already an <a> to the FSV detail
+                            // page — a nested <a> here would be invalid HTML, so
+                            // a click-handled span + explicit new-tab open instead.
+                            e.preventDefault();
+                            e.stopPropagation();
+                            window.open(`https://www.google.com/maps?q=${v.gpsLatAtCheckin},${v.gpsLongAtCheckin}`, "_blank", "noopener,noreferrer");
+                          }}
+                          className="cursor-pointer font-bold text-navy underline"
+                        >
+                          Open in Google Maps
+                        </span>
                       </p>
                     )}
                   </div>

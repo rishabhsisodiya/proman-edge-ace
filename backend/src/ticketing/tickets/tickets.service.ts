@@ -51,6 +51,9 @@ const DEFAULT_PRIORITY_WHEN_UNKNOWN: Priority = 'MEDIUM';
 // "auto" source that actually exists in our Source enum today — AMC/
 // warranty/predictive auto-sources don't exist yet (see autoClassify above).
 const DEDUP_WINDOW_HOURS = 24;
+// Same minimum as FSV's "Work Performed" field (fsv.service.ts) — resolving
+// a ticket without an FSV should require at least as much explanation, not less.
+const MIN_RESOLUTION_SUMMARY_LENGTH = 20;
 const AUTO_MERGE_SOURCES: Source[] = ['API_PARTNER'];
 
 // Human-readable labels for the auto-generated subject (§5.3) — using the raw
@@ -493,12 +496,18 @@ export class TicketsService {
     // from any other unassigned ASSIGNED ticket anywhere in the UI.
     if (filters.rejected === 'true') where.rejectionCount = { gt: 0 };
 
-    // Capped at 500 rather than 100 — a couple of dashboards (Call Center,
-    // My Tickets) still need one unbounded-ish fetch for their own
-    // client-side aggregate stats until they get a real server-side stats
-    // endpoint; true paginated list views (ASM, Manager) use the default 25.
+    // Capped well above 100 — a few dashboards (Call Center, ASM, Manager/
+    // Service) still need one unbounded-ish fetch for their own client-side
+    // aggregate stat tiles (SLA at risk/breached, etc.) until they get a real
+    // server-side stats endpoint; true paginated list views use the default
+    // 25. BUG FIX (2026-08-01): this was 500 — real ticket volume passed that
+    // (545 in this dataset), so Manager/Admin's SLA count tiles silently
+    // undercounted, missing whatever fell outside the first 500 rows. Bumped
+    // to 5000 as a stopgap with real headroom; the comment above about
+    // needing a real server-side stats endpoint still stands — this will
+    // eventually need to stop being a hardcoded ceiling entirely.
     const page = Math.max(1, parseInt(filters.page ?? '1', 10) || 1);
-    const pageSize = Math.min(500, Math.max(1, parseInt(filters.pageSize ?? '25', 10) || 25));
+    const pageSize = Math.min(5000, Math.max(1, parseInt(filters.pageSize ?? '25', 10) || 25));
 
     // Clickable column-header sorting (client request, 2026-07-27) — server-side
     // so it's consistent across pages, not just the currently-fetched one.
@@ -1032,6 +1041,42 @@ export class TicketsService {
     }
 
     return result;
+  }
+
+  /**
+   * Client feedback (2026-08-01) — resolves the "Engineer-Resolved UX
+   * clarification" pending item (reading B): a genuinely separate action
+   * from the FSV form, not a label/nav fix. **FSV remains mandatory** — this
+   * does not let an engineer skip it. What changes is that submitting the
+   * FSV no longer *automatically* moves the ticket to ENGINEER_RESOLVED
+   * (see FsvService.submit()); the engineer now takes this separate,
+   * explicit step afterward — own screen, own resolution-summary text —
+   * once at least one FSV for this ticket has actually been submitted.
+   * `WorkflowService.transition()` already requires `resolutionSummary` for
+   * this target status; it does NOT check generically whether the caller is
+   * *this ticket's* assigned engineer (only that their role is ENGINEER),
+   * so that ownership check lives here, same as the "has an FSV been
+   * submitted" gate that keeps this from being a bypass.
+   */
+  async engineerResolve(id: string, resolutionSummary: string, actor: RequestUser) {
+    const ticket = await this.prisma.ticket.findUniqueOrThrow({ where: { id }, include: { visits: true } });
+    if (ticket.assignedEngineerId !== actor.userId) {
+      throw new ForbiddenException('Only the assigned engineer can resolve this ticket');
+    }
+    if (!ticket.visits.some((v) => v.status === 'SUBMITTED')) {
+      throw new BadRequestException('Submit a Field Service Visit for this ticket before marking it resolved');
+    }
+    if (resolutionSummary.trim().length < MIN_RESOLUTION_SUMMARY_LENGTH) {
+      throw new BadRequestException(`Resolution summary must be at least ${MIN_RESOLUTION_SUMMARY_LENGTH} characters`);
+    }
+
+    return this.workflow.transition({
+      ticketId: id,
+      targetStatus: 'ENGINEER_RESOLVED',
+      actorUserId: actor.userId,
+      actorRole: actor.role,
+      resolutionSummary: resolutionSummary.trim(),
+    });
   }
 
   /** Engineer resumes work after Pending clears. */

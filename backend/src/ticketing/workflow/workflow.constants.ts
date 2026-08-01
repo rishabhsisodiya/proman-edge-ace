@@ -12,7 +12,10 @@ export const TICKET_TRANSITIONS: Record<TicketStatus, { next: TicketStatus[]; al
   ENGINEER_ASSIGNED: { next: ['ACCEPTED', 'ASSIGNED'], allowedRoles: ['ENGINEER'] }, // ASSIGNED = rejection path
   ACCEPTED: { next: ['REACHED_SITE'], allowedRoles: ['ENGINEER'] },
   REACHED_SITE: { next: ['WORKING'], allowedRoles: ['ENGINEER'] },
-  WORKING: { next: ['PENDING', 'ENGINEER_RESOLVED'], allowedRoles: ['ENGINEER'] }, // ENGINEER_RESOLVED via FSV submit only
+  // ENGINEER_RESOLVED reached via TicketsService.engineerResolve() (2026-08-01)
+  // — a separate action from FSV submission, gated on at least one SUBMITTED
+  // FSV existing for the ticket first (FSV itself stays mandatory).
+  WORKING: { next: ['PENDING', 'ENGINEER_RESOLVED'], allowedRoles: ['ENGINEER'] },
   PENDING: { next: ['WORKING'], allowedRoles: ['ENGINEER'] }, // resume once awaited item clears; SLA clock keeps running (§14.1 rule 21)
   // ENGINEER_ASSIGNED = ASM reject-after-resolved path (2026-07-27) — same
   // or a different engineer re-does the work, must Accept again either way.

@@ -72,7 +72,7 @@ export default function ManagerDashboardPage() {
   // sourced from a separate unfiltered fetch, same pattern as the ASM page.
   const [allTickets, setAllTickets] = useState<Ticket[]>([]);
   useEffect(() => {
-    apiFetch<Paginated<Ticket>>("/tickets?pageSize=500")
+    apiFetch<Paginated<Ticket>>("/tickets?pageSize=5000")
       .then((res) => setAllTickets(res.data))
       .catch(() => {});
   }, []);

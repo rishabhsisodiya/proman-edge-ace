@@ -9,6 +9,7 @@ import { AssignTicketDto } from './dto/assign-ticket.dto';
 import { RejectTicketDto } from './dto/reject-ticket.dto';
 import { AsmRejectResolutionDto } from './dto/asm-reject-resolution.dto';
 import { MarkPendingDto } from './dto/mark-pending.dto';
+import { EngineerResolveDto } from './dto/engineer-resolve.dto';
 import { RegularizeTicketDto } from './dto/regularize-ticket.dto';
 import { CommentDto } from './dto/comment.dto';
 import { ReachedSiteDto } from './dto/reached-site.dto';
@@ -130,6 +131,15 @@ export class TicketsController {
       userId: req.user.userId,
       role: req.user.role,
     });
+  }
+
+  // Client feedback (2026-08-01) — separate resolve step, own screen outside
+  // the FSV form. FSV is still mandatory first (service-layer gate checks at
+  // least one SUBMITTED FSV exists for this ticket).
+  @Roles('ENGINEER')
+  @Post(':id/engineer-resolve')
+  engineerResolve(@Param('id') id: string, @Body() dto: EngineerResolveDto, @Req() req: any) {
+    return this.tickets.engineerResolve(id, dto.resolutionSummary, { userId: req.user.userId, role: req.user.role });
   }
 
   @Roles('ENGINEER')

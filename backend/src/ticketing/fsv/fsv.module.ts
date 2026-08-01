@@ -1,13 +1,13 @@
 import { Module } from '@nestjs/common';
-import { WorkflowModule } from '../workflow/workflow.module';
 import { PriceListModule } from '../price-lists/price-list.module';
 import { FsvController } from './fsv.controller';
 import { FsvService } from './fsv.service';
+import { FsvPdfService } from './fsv-pdf.service';
 
 @Module({
-  imports: [WorkflowModule, PriceListModule],
+  imports: [PriceListModule],
   controllers: [FsvController],
-  providers: [FsvService],
+  providers: [FsvService, FsvPdfService],
   exports: [FsvService],
 })
 export class FsvModule {}

@@ -94,13 +94,16 @@ export const SERVICE_TYPE_LABEL: Record<ServiceType, string> = {
 };
 
 // Client request (Ashwath feedback, 20 Jul 2026): remove AMC from the Service
-// Type list. AMC stays in the ServiceType enum/SERVICE_TYPE_LABEL above so an
-// existing AMC-tagged ticket (TCKT-2026-000001) still displays correctly —
-// this list only controls what's *selectable* going forward.
-// WARRANTY_RENEWAL_OUTREACH (2026-07-31) excluded the same way — auto-created
-// only, never a manual choice.
+// Type list. **Reversed 2026-08-01, per Aditi**: AMC is back in the manual
+// dropdown — Call Center/ASM/Manager can once again hand-pick "AMC" as a
+// service type at ticket creation, same as any other type. No backend
+// change needed for this reversal — the original removal (Ashwath,
+// 2026-07-20) was always frontend-only, the backend never rejected AMC at
+// creation either way.
+// WARRANTY_RENEWAL_OUTREACH (2026-07-31) still excluded — auto-created
+// only, never a manual choice; that decision is unrelated and unchanged.
 export const SELECTABLE_SERVICE_TYPES = (Object.keys(SERVICE_TYPE_LABEL) as ServiceType[]).filter(
-  (t) => t !== "AMC" && t !== "WARRANTY_RENEWAL_OUTREACH",
+  (t) => t !== "WARRANTY_RENEWAL_OUTREACH",
 );
 
 // SLA Target Date (2026-07-30, FSD §14.3 client clarification) — required at
