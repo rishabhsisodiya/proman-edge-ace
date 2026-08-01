@@ -37,10 +37,18 @@ export class QuotationController {
     return this.quotations.create(ticketId, dto, { userId: req.user.userId, role: req.user.role });
   }
 
-  @Roles('CALL_CENTER', 'ASM', 'MANAGER', 'ENGINEER')
+  // CS_SUPPORT added 2026-08-01, per client decision that warranty direct-SO
+  // creation is manually triggered by CS Support/ASM/Engineer.
+  @Roles('CALL_CENTER', 'ASM', 'MANAGER', 'ENGINEER', 'CS_SUPPORT')
   @Post('tickets/:ticketId/direct-sales-order')
   createDirectSalesOrder(@Param('ticketId') ticketId: string) {
     return this.quotations.createDirectSalesOrder(ticketId);
+  }
+
+  @Roles('CALL_CENTER', 'ASM', 'MANAGER', 'ENGINEER', 'CS_SUPPORT')
+  @Post('tickets/:ticketId/direct-invoice')
+  createDirectInvoice(@Param('ticketId') ticketId: string) {
+    return this.quotations.createDirectInvoice(ticketId);
   }
 
   @Get('tickets/:ticketId/deliveries')

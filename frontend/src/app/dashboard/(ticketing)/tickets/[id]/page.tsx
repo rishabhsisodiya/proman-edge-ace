@@ -7,6 +7,7 @@ import { createFsv, FieldServiceVisit, listFsvForTicket } from "@/lib/ticketing/
 import { getBestEffortGpsPosition } from "@/lib/geolocation";
 import {
   Chargeability,
+  createDirectInvoice,
   createDirectSalesOrder,
   createQuotation,
   Delivery as DeliveryRecord,
@@ -1476,6 +1477,10 @@ function CommercialTab({ ticket }: { ticket: Ticket }) {
   const [deliveries, setDeliveries] = useState<DeliveryRecord[]>([]);
   const [commercialBusy, setCommercialBusy] = useState(false);
   const [resultModal, setResultModal] = useState<{ title: string; message: string; success: boolean } | null>(null);
+  // Local, since this component doesn't own/refetch the parent `ticket` —
+  // seeded from the prop, then updated directly from createDirectInvoice's
+  // own response so the UI reflects it immediately without a full reload.
+  const [directInvoiceId, setDirectInvoiceId] = useState(ticket.erpnextInvoiceId ?? null);
   const router = useRouter();
   const canCreateCommercial = COMMERCIAL_ALLOWED_STATUSES.includes(ticket.status);
 
@@ -1570,7 +1575,39 @@ function CommercialTab({ ticket }: { ticket: Ticket }) {
                 {d.quotationId ? "Sales Order via Quotation" : "Direct Sales Order (warranty/AMC)"} — delivery: {d.status}
               </p>
               {d.erpnextSalesOrderId ? (
-                <p className="text-brand-green">ERPNext Sales Order: {d.erpnextSalesOrderId}</p>
+                <div className="text-brand-green">
+                  <p>ERPNext Sales Order: {d.erpnextSalesOrderId}</p>
+                  {!d.quotationId && (
+                    <p>
+                      Sales Invoice:{" "}
+                      <span className={directInvoiceId ? "font-bold text-navy" : "text-muted"}>{directInvoiceId ?? "—"}</span>
+                      {!directInvoiceId && ticket.status === "CLOSED" && (
+                        <button
+                          type="button"
+                          className="ml-2 font-bold text-navy underline"
+                          onClick={async () => {
+                            setCommercialBusy(true);
+                            try {
+                              const result = await createDirectInvoice(ticket.id);
+                              setDirectInvoiceId(result.erpnextInvoiceId);
+                              setResultModal({
+                                title: "Sales Invoice created",
+                                message: "A zero-rate Sales Invoice was created in ERPNext from this Sales Order.",
+                                success: true,
+                              });
+                            } catch (err) {
+                              setResultModal({ title: "Could not create invoice", message: extractErrorMessage(err), success: false });
+                            } finally {
+                              setCommercialBusy(false);
+                            }
+                          }}
+                        >
+                          Create Invoice
+                        </button>
+                      )}
+                    </p>
+                  )}
+                </div>
               ) : (
                 <div className="flex items-center gap-2 text-brand-red">
                   <span>{d.erpnextSyncNote ?? "Not yet synced to ERPNext"}</span>

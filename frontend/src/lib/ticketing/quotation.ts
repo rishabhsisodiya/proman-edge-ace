@@ -104,6 +104,12 @@ export const createDirectSalesOrder = (ticketId: string) =>
 export const retryDirectSalesOrderErpSync = (deliveryId: string) =>
   post<Delivery>(`/deliveries/${deliveryId}/retry-erpnext`);
 
+// Warranty Cost Tracker mechanism (client-confirmed 2026-08-01) — the
+// direct-path equivalent of createInvoiceFromQuotation, since a direct
+// (warranty/AMC) Sales Order has no Quotation to key off. Creates a
+// zero-rate Sales Invoice from the (real-rate) direct Sales Order.
+export const createDirectInvoice = (ticketId: string) => post<{ id: string; erpnextInvoiceId: string }>(`/tickets/${ticketId}/direct-invoice`);
+
 export const getQuotation = (id: string) => apiFetch<Quotation>(`/quotations/${id}`);
 
 export const updateQuotation = (

@@ -169,6 +169,7 @@ export interface Ticket {
   createdAt: string;
   updatedAt?: string;
   closedAt?: string | null;
+  erpnextInvoiceId?: string | null;
   customer: Customer;
   site?: CustomerSite | null;
   equipment: Equipment | null;

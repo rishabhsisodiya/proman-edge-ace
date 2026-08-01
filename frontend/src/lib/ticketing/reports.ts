@@ -10,7 +10,8 @@ export type ReportKey =
   | "amc-portfolio-report"
   | "predictive-maintenance-alerts-log"
   | "engineer-performance-report"
-  | "amc-renewal-alert-summary";
+  | "amc-renewal-alert-summary"
+  | "warranty-cost-tracker";
 
 export interface ReportListItem {
   key: ReportKey;
@@ -59,6 +60,7 @@ export const REPORT_FILTER_FIELDS: Record<ReportKey, (keyof ReportFilters)[]> = 
   "predictive-maintenance-alerts-log": ["dateFrom", "dateTo", "equipmentCategory", "ruleType"],
   "engineer-performance-report": ["dateFrom", "dateTo", "region", "engineerId"],
   "amc-renewal-alert-summary": ["region", "month"],
+  "warranty-cost-tracker": ["dateFrom", "dateTo", "region"],
 };
 
 function qs(filters: ReportFilters): string {

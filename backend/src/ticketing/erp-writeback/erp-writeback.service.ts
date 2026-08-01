@@ -203,6 +203,38 @@ export class ErpWritebackService {
   }
 
   /**
+   * Warranty Cost Tracker mechanism (client-confirmed 2026-08-01): the
+   * direct Sales Order carries the REAL item price (see salesOrderDirect
+   * below — no longer rate=0), but the customer is never actually billed —
+   * the Sales Invoice built from it is zeroed out instead. Reuses the same
+   * make_sales_invoice mapper as draftSalesInvoiceFromSalesOrder() (so it
+   * inherits the customer/items/hypothecation handling identically), then
+   * explicitly zeroes every line's rate/amount plus the doc-level totals
+   * before inserting — the mapper itself has no "zero-rate" option, it
+   * copies the source SO's rates verbatim by design.
+   */
+  async draftZeroRateSalesInvoiceFromSalesOrder(erpnextSalesOrderName: string): Promise<string> {
+    const si = await this.frappe.post<Record<string, any>>('erpnext.selling.doctype.sales_order.sales_order.make_sales_invoice', {
+      source_name: erpnextSalesOrderName,
+    });
+    si.hypothecation = process.env.ACE_INVOICE_HYPOTHECATION ?? 'N/A';
+    for (const item of si.items ?? []) {
+      item.rate = 0;
+      item.amount = 0;
+      item.price_list_rate = 0;
+    }
+    si.total = 0;
+    si.net_total = 0;
+    si.grand_total = 0;
+    si.rounded_total = 0;
+    si.taxes = [];
+    si.total_taxes_and_charges = 0;
+    this.logger.log(`Creating draft zero-rate Sales Invoice from Sales Order ${erpnextSalesOrderName} (warranty)`);
+    const result = await this.frappe.post<{ name: string }>('frappe.client.insert', { doc: JSON.stringify(si) });
+    return result.name;
+  }
+
+  /**
    * Not part of Shivam's chargeable-pipeline doc (which only covers the
    * Quotation-sourced SO) — this is the non-chargeable warranty/AMC direct
    * path (ACE_Ticket_Master_Flow.png's "Chargeable? No" branch), which has

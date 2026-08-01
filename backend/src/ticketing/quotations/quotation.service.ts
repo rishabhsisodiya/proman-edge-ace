@@ -484,10 +484,14 @@ export class QuotationService {
     const deliveryDate = new Date();
     deliveryDate.setDate(deliveryDate.getDate() + 7);
     try {
+      // Client-confirmed 2026-08-01 (Warranty Cost Tracker mechanism): the
+      // Sales Order carries the REAL item price (previously hardcoded to 0)
+      // — the customer is never actually billed, but the invoice built from
+      // this SO (createDirectInvoice, below) is what gets zeroed out instead.
       const erpnextSalesOrderId = await this.erpWriteback.salesOrderDirect(
         ticketId,
         ticket.customer.erpnextCustomerId,
-        parts.map((p) => ({ itemCode: p.itemCode, qty: Number(p.qty), rate: 0, uom: p.uom })),
+        parts.map((p) => ({ itemCode: p.itemCode, qty: Number(p.qty), rate: Number(p.sellingRate), uom: p.uom })),
         `WARRANTY-AMC-${ticket.ticketNo}`,
         today,
         deliveryDate.toISOString().slice(0, 10),
@@ -526,6 +530,40 @@ export class QuotationService {
       where: { id: deliveryId },
       data: { erpnextSalesOrderId, erpnextSyncNote: erpnextSalesOrderId ? null : erpnextSyncNote },
     });
+  }
+
+  /**
+   * Warranty Cost Tracker mechanism (client-confirmed 2026-08-01) — the
+   * direct-path equivalent of createInvoice() above. No Quotation exists on
+   * this branch, so this is keyed on the Delivery record instead, and
+   * writes a ZERO-RATE Sales Invoice (draftZeroRateSalesInvoiceFromSalesOrder)
+   * rather than the real-rate one createInvoice() uses — the Sales Order
+   * itself still carries the real item price (see attemptDirectSalesOrderWriteback),
+   * only the invoice built from it is zeroed out, since the customer is
+   * never actually billed for warranty-covered work.
+   */
+  async createDirectInvoice(ticketId: string) {
+    const delivery = await this.prisma.delivery.findFirst({ where: { ticketId }, include: { ticket: true } });
+    if (!delivery || !delivery.erpnextSalesOrderId) {
+      throw new BadRequestException('This ticket has no Sales Order yet');
+    }
+    if (!delivery.ticket) {
+      throw new BadRequestException('This Delivery has no direct ticket');
+    }
+    if (delivery.ticket.erpnextInvoiceId) {
+      throw new BadRequestException('A Sales Invoice already exists for this ticket');
+    }
+    // Same client decision as createInvoice() (2026-07-27): only valid once
+    // the ticket is fully Closed.
+    if (delivery.ticket.status !== 'CLOSED') {
+      throw new BadRequestException('Ticket must be Closed before creating a Sales Invoice');
+    }
+    const status = await this.erpWriteback.getDocStatus('Sales Order', delivery.erpnextSalesOrderId);
+    if (status.docstatus !== 1 || (status.per_billed ?? 0) !== 0) {
+      throw new BadRequestException('Sales Order is not yet ready to bill in ERPNext');
+    }
+    const erpnextInvoiceId = await this.erpWriteback.draftZeroRateSalesInvoiceFromSalesOrder(delivery.erpnextSalesOrderId);
+    return this.prisma.ticket.update({ where: { id: ticketId }, data: { erpnextInvoiceId } });
   }
 
   listDeliveriesForTicket(ticketId: string) {

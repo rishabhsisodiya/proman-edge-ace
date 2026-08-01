@@ -49,13 +49,12 @@ function idFilter(value?: string): { in: string[] } | undefined {
 }
 
 /**
- * FSD §6.3 — 12 standard reports. 11 of 12 buildable (Warranty Cost Tracker
- * still blocked — see ACE-Ticket-Engine-Build-Plan.md T5 section). Built as
- * plain, standalone functions (not tied to the controller) per the FSD's own
- * "all reports support scheduled auto-email" requirement — Phase 2 (not yet
- * built, client decision 2026-07-31: view + export now, scheduling later)
- * just needs to call these same functions from a cron instead of a
- * controller, no rewrite. On-demand view + Excel/PDF export only, this pass.
+ * FSD §6.3 — all 12 standard reports (Warranty Cost Tracker added
+ * 2026-08-01, once its mechanism was client-confirmed — see method #12
+ * below). Built as plain, standalone functions (not tied to the controller)
+ * per the FSD's own "all reports support scheduled auto-email" requirement —
+ * ScheduledReportCron calls these same functions instead of a controller,
+ * no rewrite needed.
  */
 @Injectable()
 export class ReportsService {
@@ -533,6 +532,59 @@ export class ReportsService {
         { key: 'days_remaining', label: 'Days Remaining' },
         { key: 'renewal_status', label: 'Renewal Status' },
         { key: 'owning_asm', label: 'Owning ASM' },
+      ],
+      rows,
+    };
+  }
+
+  // ------------------------------------------------------------- 12. Warranty Cost Tracker
+  /**
+   * Client-confirmed mechanism (2026-08-01) — warranty tickets go through
+   * the direct (non-Quotation) Sales Order path, with the SO carrying the
+   * real item price and the Sales Invoice built from it zeroed out (see
+   * QuotationService.createDirectInvoice). So this report is just "query
+   * warranty-flagged Sales Invoices" as anticipated, not a new cost-capture
+   * mechanism — filtered on a Delivery with no quotationId (the direct-path
+   * marker) that has both a Sales Order and the zero-rate Invoice.
+   */
+  async warrantyCostTracker(f: ReportFilters): Promise<ReportResult> {
+    const where: Prisma.TicketWhereInput = {
+      ...(f.dateFrom || f.dateTo ? { closedAt: dateRange(f) } : {}),
+      ...(f.region ? { customer: { region: f.region as any } } : {}),
+      erpnextInvoiceId: { not: null },
+      directDeliveries: { some: { quotationId: null, erpnextSalesOrderId: { not: null } } },
+    };
+    const tickets = await this.prisma.ticket.findMany({
+      where,
+      include: { customer: true, equipment: true, directDeliveries: true, visits: { include: { parts: true } } },
+      orderBy: { closedAt: 'desc' },
+    });
+    const rows = tickets.map((t) => {
+      const delivery = t.directDeliveries.find((d) => !d.quotationId && d.erpnextSalesOrderId);
+      const partsCost = t.visits.flatMap((v) => v.parts).reduce((s, p) => s + Number(p.qty) * Number(p.sellingRate), 0);
+      return {
+        ticket_id: t.ticketNo,
+        subject: t.subject,
+        customer: t.customer.customerName,
+        equipment_model: t.equipment?.itemName ?? 'N/A',
+        classification: t.customerCategory ?? 'N/A',
+        closed_at: t.closedAt?.toISOString().slice(0, 10) ?? 'N/A',
+        parts_cost: partsCost.toFixed(2),
+        erpnext_sales_order_id: delivery?.erpnextSalesOrderId ?? 'N/A',
+        erpnext_invoice_id: t.erpnextInvoiceId ?? 'N/A',
+      };
+    });
+    return {
+      columns: [
+        { key: 'ticket_id', label: 'Ticket ID' },
+        { key: 'subject', label: 'Subject' },
+        { key: 'customer', label: 'Customer' },
+        { key: 'equipment_model', label: 'Equipment' },
+        { key: 'classification', label: 'Classification' },
+        { key: 'closed_at', label: 'Closed Date' },
+        { key: 'parts_cost', label: 'Parts Cost (Internal, ₹)' },
+        { key: 'erpnext_sales_order_id', label: 'ERPNext Sales Order' },
+        { key: 'erpnext_invoice_id', label: 'ERPNext Invoice (₹0)' },
       ],
       rows,
     };

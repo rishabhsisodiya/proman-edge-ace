@@ -1,10 +1,11 @@
 import { ReportFilters, ReportResult, ReportsService } from './reports.service';
 
-// FSD §6.3 — 11 of 12 reports (Warranty Cost Tracker still blocked). One
-// report (Ticket Status Timeline) has its own route since it's keyed by
-// ticket id, not the generic filter set. Shared by ReportsController (on-demand
-// view/export) and ScheduledReportCron (auto-email) — single source of truth
-// for report metadata + dispatch, so both call the exact same report logic.
+// FSD §6.3 — all 12 reports (Warranty Cost Tracker added 2026-08-01, once
+// its mechanism was client-confirmed). One report (Ticket Status Timeline)
+// has its own route since it's keyed by ticket id, not the generic filter
+// set. Shared by ReportsController (on-demand view/export) and
+// ScheduledReportCron (auto-email) — single source of truth for report
+// metadata + dispatch, so both call the exact same report logic.
 export type ReportKey =
   | 'open-tickets-by-status'
   | 'sla-compliance'
@@ -15,7 +16,8 @@ export type ReportKey =
   | 'amc-portfolio-report'
   | 'predictive-maintenance-alerts-log'
   | 'engineer-performance-report'
-  | 'amc-renewal-alert-summary';
+  | 'amc-renewal-alert-summary'
+  | 'warranty-cost-tracker';
 
 export const REPORT_TITLES: Record<ReportKey, string> = {
   'open-tickets-by-status': 'Open Tickets by Status',
@@ -28,6 +30,7 @@ export const REPORT_TITLES: Record<ReportKey, string> = {
   'predictive-maintenance-alerts-log': 'Predictive Maintenance Alerts Log',
   'engineer-performance-report': 'Engineer Performance Report',
   'amc-renewal-alert-summary': 'AMC Renewal Alert Summary',
+  'warranty-cost-tracker': 'Warranty Cost Tracker',
 };
 
 // One-line explanation of what each report shows — surfaced under its name
@@ -43,6 +46,7 @@ export const REPORT_DESCRIPTIONS: Record<ReportKey, string> = {
   'predictive-maintenance-alerts-log': 'Every ticket the system auto-created from a predictive rule (time-since-service, operating hours, or breakdown frequency), and which rule fired it.',
   'engineer-performance-report': 'Per-engineer ticket load, average resolution time, first-accept rate, average CSAT score, and utilization.',
   'amc-renewal-alert-summary': 'AMC contracts currently in Renewal Due or Final Notice, with days remaining and the owning ASM.',
+  'warranty-cost-tracker': 'Warranty-covered tickets billed through the zero-rate direct Sales Order/Invoice path, with the real internal parts cost.',
 };
 
 // PDF export per the FSD's own per-report Export column — some reports are
@@ -73,6 +77,8 @@ export function runReport(reports: ReportsService, key: ReportKey, filters: Repo
       return reports.engineerPerformanceReport(filters);
     case 'amc-renewal-alert-summary':
       return reports.amcRenewalAlertSummary(filters);
+    case 'warranty-cost-tracker':
+      return reports.warrantyCostTracker(filters);
     default:
       throw new Error(`Unknown report key: ${key}`);
   }
