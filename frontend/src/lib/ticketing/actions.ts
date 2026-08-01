@@ -48,6 +48,8 @@ export const updateCustomerCategory = (id: string, customerCategory: CustomerCat
   post<Ticket>(`/tickets/${id}/customer-category`, { customerCategory });
 export const updateTicketTags = (id: string, tags: string[]) =>
   post<Ticket>(`/tickets/${id}/tags`, { tags });
+export const overrideWarranty = (id: string, warrantyEligible: boolean, overrideReason: string) =>
+  post<Ticket>(`/tickets/${id}/override-warranty`, { warrantyEligible, overrideReason });
 export const resolveDuplicate = (id: string, action: "MERGE" | "DISMISS", reason?: string) =>
   post<Ticket>(`/tickets/${id}/duplicate/resolve`, { action, reason });
 

@@ -63,6 +63,7 @@ import {
   ticketTimeline,
   updateCustomerCategory,
   updateTicketTags,
+  overrideWarranty,
   updateServiceType,
 } from "@/lib/ticketing/actions";
 
@@ -501,6 +502,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         visits={visits}
         ticket={ticket}
         showCommercial={role === "CALL_CENTER" || role === "ASM" || role === "MANAGER" || role === "ADMIN" || role === "ENGINEER"}
+        role={role}
       />
         </div>
 
@@ -1033,11 +1035,13 @@ function TicketHistoryTabs({
   visits,
   ticket,
   showCommercial,
+  role,
 }: {
   timeline: TicketAuditEntry[];
   visits: FieldServiceVisit[];
   ticket: Ticket;
   showCommercial: boolean;
+  role: AuthUser["role"];
 }) {
   const [tab, setTab] = useState<"timeline" | "fsv" | "commercial">("timeline");
 
@@ -1082,7 +1086,7 @@ function TicketHistoryTabs({
         )}
       </div>
 
-      {tab === "commercial" && showCommercial && <CommercialTab ticket={ticket} />}
+      {tab === "commercial" && showCommercial && <CommercialTab ticket={ticket} role={role} />}
 
       {tab === "timeline" && (
         <div className="rounded-lg border border-line bg-white">
@@ -1580,7 +1584,7 @@ function TicketActions({
 // satisfy by opening an FSV without ever leaving Accepted.
 const COMMERCIAL_ALLOWED_STATUSES: TicketStatus[] = ["ACCEPTED", "REACHED_SITE", "WORKING", "PENDING"];
 
-function CommercialTab({ ticket }: { ticket: Ticket }) {
+function CommercialTab({ ticket, role }: { ticket: Ticket; role: AuthUser["role"] }) {
   const [chargeability, setChargeability] = useState<Chargeability | null>(null);
   const [quotations, setQuotations] = useState<QuotationRecord[]>([]);
   const [deliveries, setDeliveries] = useState<DeliveryRecord[]>([]);
@@ -1590,6 +1594,9 @@ function CommercialTab({ ticket }: { ticket: Ticket }) {
   // seeded from the prop, then updated directly from createDirectInvoice's
   // own response so the UI reflects it immediately without a full reload.
   const [directInvoiceId, setDirectInvoiceId] = useState(ticket.erpnextInvoiceId ?? null);
+  const [showOverrideModal, setShowOverrideModal] = useState(false);
+  const [overrideReason, setOverrideReason] = useState("");
+  const [overrideBusy, setOverrideBusy] = useState(false);
   const router = useRouter();
   const canCreateCommercial = COMMERCIAL_ALLOWED_STATUSES.includes(ticket.status);
 
@@ -1609,6 +1616,53 @@ function CommercialTab({ ticket }: { ticket: Ticket }) {
 
   return (
     <div className="rounded-lg border border-line bg-white p-3">
+      {showOverrideModal && (
+        <Modal title="Reclassify as Under Warranty" onClose={() => setShowOverrideModal(false)}>
+          <p className="mb-2 text-xs text-muted">
+            Overrides this ticket&apos;s chargeability to Under Warranty. The equipment&apos;s own auto-computed warranty
+            status is not changed — only this ticket. Always audit-logged with the reason below.
+          </p>
+          <textarea
+            value={overrideReason}
+            onChange={(e) => setOverrideReason(e.target.value)}
+            placeholder="Reason (required, audit-logged)"
+            className="mb-3 h-20 w-full rounded-md border border-line p-2 text-sm"
+          />
+          <div className="flex gap-2">
+            <ActionButton
+              label="Confirm Override"
+              variant="danger"
+              busy={overrideBusy || !overrideReason.trim()}
+              onClick={async () => {
+                setOverrideBusy(true);
+                try {
+                  await overrideWarranty(ticket.id, true, overrideReason.trim());
+                  setChargeability(await isTicketChargeable(ticket.id));
+                  setShowOverrideModal(false);
+                  setOverrideReason("");
+                } catch (err) {
+                  setResultModal({ title: "Could not override", message: extractErrorMessage(err), success: false });
+                } finally {
+                  setOverrideBusy(false);
+                }
+              }}
+            />
+            <ActionButton label="Cancel" variant="secondary" busy={false} onClick={() => setShowOverrideModal(false)} />
+          </div>
+        </Modal>
+      )}
+      {chargeability?.chargeable && (role === "MANAGER" || role === "ADMIN") && (
+        <div className="mb-2 flex items-center justify-between rounded-md bg-navy-tint px-2.5 py-1.5">
+          <span className="text-xs text-muted">Manager/Admin: this ticket can be reclassified as Under Warranty.</span>
+          <button
+            type="button"
+            className="text-xs font-bold text-navy underline"
+            onClick={() => setShowOverrideModal(true)}
+          >
+            Reclassify as Under Warranty
+          </button>
+        </div>
+      )}
       {chargeability === null ? (
         <p className="text-xs text-muted">Checking chargeable status…</p>
       ) : quotations.length === 0 && deliveries.length === 0 ? (
