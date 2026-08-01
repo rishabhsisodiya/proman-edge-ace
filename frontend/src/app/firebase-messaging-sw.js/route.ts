@@ -28,6 +28,16 @@ messaging.onBackgroundMessage((payload) => {
   const body = payload.notification?.body || "";
   self.registration.showNotification(title, { body, icon: "/next.svg" });
 });
+
+// Passthrough fetch handler (2026-08-02) — Chrome's PWA installability
+// criteria require an active service worker with a fetch listener, not just
+// any registered SW; this one previously only had onBackgroundMessage, which
+// doesn't count. No caching/offline behavior here — that's the separate,
+// not-yet-built Offline FSV queueing work — this just satisfies the
+// installability check so "Add to Home Screen" actually appears.
+self.addEventListener("fetch", (event) => {
+  event.respondWith(fetch(event.request));
+});
 `;
 
   return new Response(body, {
