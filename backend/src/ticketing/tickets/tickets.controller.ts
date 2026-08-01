@@ -29,6 +29,11 @@ export class TicketsController {
     return this.tickets.create(dto, { userId: req.user.userId, role: req.user.role });
   }
 
+  // Restricted 2026-08-01: this endpoint previously had no @Roles at all, so
+  // any authenticated role passed — including CS_SUPPORT, whose dashboard
+  // (§16) is documented as read/link-through only on its own two work
+  // queues, not full unscoped ticket visibility like Manager/ASM/Call Center.
+  @Roles('CALL_CENTER', 'ASM', 'MANAGER', 'ADMIN', 'ENGINEER')
   @Get()
   list(@Query() filters: Record<string, string>, @Req() req: any) {
     return this.tickets.list({ userId: req.user.userId, role: req.user.role }, filters);
