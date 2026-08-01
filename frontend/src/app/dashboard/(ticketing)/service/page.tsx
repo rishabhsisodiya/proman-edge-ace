@@ -54,6 +54,7 @@ export default function ManagerDashboardPage() {
   const [serviceType, setServiceType] = useState("");
   const [assigned, setAssigned] = useState("");
   const [slaBreached, setSlaBreached] = useState(false);
+  const [tags, setTags] = useState("");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const pageSize = 25;
@@ -79,7 +80,7 @@ export default function ManagerDashboardPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [region, priority, status, serviceType, assigned, slaBreached]);
+  }, [region, priority, status, serviceType, assigned, slaBreached, tags]);
 
   useEffect(() => {
     setLoading(true);
@@ -91,6 +92,7 @@ export default function ManagerDashboardPage() {
     if (serviceType) params.set("serviceType", serviceType);
     if (assigned) params.set("assigned", assigned);
     if (slaBreached) params.set("slaBreached", "true");
+    if (tags.trim()) params.set("tags", tags.trim());
     params.set("page", String(page));
     params.set("pageSize", String(pageSize));
     params.set("sortBy", sortBy);
@@ -103,7 +105,7 @@ export default function ManagerDashboardPage() {
       })
       .catch(() => setError("Could not load tickets. Is the backend running and seeded?"))
       .finally(() => setLoading(false));
-  }, [region, priority, status, serviceType, assigned, slaBreached, page, sortBy, sortDir]);
+  }, [region, priority, status, serviceType, assigned, slaBreached, tags, page, sortBy, sortDir]);
 
   const stats = useMemo(() => {
     const open = allTickets.filter((t) => t.status !== "CLOSED").length;
@@ -201,6 +203,13 @@ export default function ManagerDashboardPage() {
         >
           SLA Breached
         </button>
+        <input
+          type="text"
+          value={tags}
+          onChange={(e) => setTags(e.target.value)}
+          placeholder="Search tags (comma-separated)"
+          className="rounded-lg border border-line px-3 py-1.5 text-sm"
+        />
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-line bg-white shadow-[0_1px_4px_rgba(42,47,105,.06)]">

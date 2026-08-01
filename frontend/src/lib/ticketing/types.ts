@@ -180,6 +180,7 @@ export interface Ticket {
   assignedAsm: EngineerRef | null;
   possibleDuplicateOf?: { id: string; ticketNo: string; status: TicketStatus } | null;
   duplicateFlagResolved?: boolean;
+  tags?: string[];
 }
 
 // Client-requested display renames (internal enum values unchanged, so

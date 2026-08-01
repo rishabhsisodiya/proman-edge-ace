@@ -62,6 +62,7 @@ import {
   TicketAuditEntry,
   ticketTimeline,
   updateCustomerCategory,
+  updateTicketTags,
   updateServiceType,
 } from "@/lib/ticketing/actions";
 
@@ -401,6 +402,62 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             </a>
           </div>
         )}
+        <div className="min-w-0 sm:col-span-2">
+          <p className="text-xs font-bold uppercase text-muted">Tags</p>
+          {role === "CALL_CENTER" || role === "ASM" || role === "MANAGER" || role === "ADMIN" ? (
+            <div>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {(ticket.tags ?? []).map((tag) => (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-navy"
+                  >
+                    {tag}
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        runAction(
+                          () => updateTicketTags(ticket.id, (ticket.tags ?? []).filter((t) => t !== tag)),
+                          "Tag removed.",
+                        )
+                      }
+                      className="text-muted hover:text-red-600 disabled:opacity-50"
+                      aria-label={`Remove tag ${tag}`}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <input
+                type="text"
+                placeholder="Type a tag and press Enter"
+                disabled={busy}
+                className="mt-2 h-8 w-full max-w-[240px] rounded-md border border-line px-2 text-sm text-navy disabled:opacity-50"
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  e.preventDefault();
+                  const value = e.currentTarget.value.trim();
+                  if (!value) return;
+                  if ((ticket.tags ?? []).includes(value)) {
+                    e.currentTarget.value = "";
+                    return;
+                  }
+                  runAction(
+                    () => updateTicketTags(ticket.id, [...(ticket.tags ?? []), value]),
+                    "Tag added.",
+                  );
+                  e.currentTarget.value = "";
+                }}
+              />
+            </div>
+          ) : (
+            <p className="break-words text-navy">
+              {ticket.tags && ticket.tags.length ? ticket.tags.join(", ") : "—"}
+            </p>
+          )}
+        </div>
         {ticket.status === "PENDING" && (
           <div className="min-w-0 sm:col-span-2">
             <p className="text-xs font-bold uppercase text-muted">Pending reason</p>

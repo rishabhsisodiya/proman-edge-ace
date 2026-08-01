@@ -46,6 +46,8 @@ export const updateServiceType = (id: string, serviceType: ServiceType, slaTarge
   post<Ticket>(`/tickets/${id}/service-type`, { serviceType, slaTargetDate });
 export const updateCustomerCategory = (id: string, customerCategory: CustomerCategory) =>
   post<Ticket>(`/tickets/${id}/customer-category`, { customerCategory });
+export const updateTicketTags = (id: string, tags: string[]) =>
+  post<Ticket>(`/tickets/${id}/tags`, { tags });
 export const resolveDuplicate = (id: string, action: "MERGE" | "DISMISS", reason?: string) =>
   post<Ticket>(`/tickets/${id}/duplicate/resolve`, { action, reason });
 

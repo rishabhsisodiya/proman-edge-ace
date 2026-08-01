@@ -16,6 +16,7 @@ import { ReachedSiteDto } from './dto/reached-site.dto';
 import { OverrideWarrantyDto } from './dto/override-warranty.dto';
 import { UpdateServiceTypeDto } from './dto/update-service-type.dto';
 import { UpdateCustomerCategoryDto } from './dto/update-customer-category.dto';
+import { UpdateTicketTagsDto } from './dto/update-ticket-tags.dto';
 import { ResolveDuplicateDto } from './dto/resolve-duplicate.dto';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -84,6 +85,14 @@ export class TicketsController {
   @Post(':id/customer-category')
   updateCustomerCategory(@Param('id') id: string, @Body() dto: UpdateCustomerCategoryDto, @Req() req: any) {
     return this.tickets.updateCustomerCategory(id, dto.customerCategory, { userId: req.user.userId, role: req.user.role });
+  }
+
+  // Free-text tags (client decision, 2026-08-01) — same entry roles as
+  // customer-category; search happens via the `tags` filter on GET /tickets.
+  @Roles('CALL_CENTER', 'ASM', 'MANAGER', 'ADMIN')
+  @Post(':id/tags')
+  updateTags(@Param('id') id: string, @Body() dto: UpdateTicketTagsDto, @Req() req: any) {
+    return this.tickets.updateTags(id, dto.tags, { userId: req.user.userId, role: req.user.role });
   }
 
   @Roles('ENGINEER')

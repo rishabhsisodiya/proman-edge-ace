@@ -54,6 +54,7 @@ export default function AsmDashboardPage() {
   const [assigned, setAssigned] = useState("");
   const [slaBreached, setSlaBreached] = useState(false);
   const [rejected, setRejected] = useState(false);
+  const [tags, setTags] = useState("");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const pageSize = 25;
@@ -76,7 +77,7 @@ export default function AsmDashboardPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [status, priority, serviceType, assigned, slaBreached, rejected]);
+  }, [status, priority, serviceType, assigned, slaBreached, rejected, tags]);
 
   useEffect(() => {
     setLoading(true);
@@ -89,6 +90,7 @@ export default function AsmDashboardPage() {
     if (assigned) params.set("assigned", assigned);
     if (slaBreached) params.set("slaBreached", "true");
     if (rejected) params.set("rejected", "true");
+    if (tags.trim()) params.set("tags", tags.trim());
     params.set("page", String(page));
     params.set("pageSize", String(pageSize));
     params.set("sortBy", sortBy);
@@ -101,7 +103,7 @@ export default function AsmDashboardPage() {
       })
       .catch(() => setError("Could not load tickets. Is the backend running and seeded?"))
       .finally(() => setLoading(false));
-  }, [status, priority, serviceType, assigned, slaBreached, rejected, page, sortBy, sortDir]);
+  }, [status, priority, serviceType, assigned, slaBreached, rejected, tags, page, sortBy, sortDir]);
 
   const stats = useMemo(() => {
     const open = allTickets.filter((t) => t.status !== "CLOSED").length;
@@ -171,10 +173,18 @@ export default function AsmDashboardPage() {
           >
             Rejected
           </button>
+          <input
+            type="text"
+            value={tags}
+            onChange={(e) => setTags(e.target.value)}
+            placeholder="Search tags (comma-separated)"
+            className="h-9 shrink-0 rounded-md border border-line px-3 text-xs"
+          />
           <button
             onClick={() => {
               quickFilter("all");
               setSlaBreached(false);
+              setTags("");
             }}
             className="h-9 shrink-0 whitespace-nowrap rounded-md bg-navy-tint px-3 text-xs font-bold text-navy hover:bg-navy hover:text-white"
           >

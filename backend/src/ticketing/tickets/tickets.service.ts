@@ -495,6 +495,12 @@ export class TicketsService {
     // Client feedback (2026-07-31) — rejected tickets weren't distinguishable
     // from any other unassigned ASSIGNED ticket anywhere in the UI.
     if (filters.rejected === 'true') where.rejectionCount = { gt: 0 };
+    // Free-text tags (client decision, 2026-08-01) — comma-separated exact
+    // tag matches, searchable by ASM/Manager/Admin from the ticket list.
+    if (filters.tags) {
+      const tagList = filters.tags.split(',').map((t) => t.trim()).filter(Boolean);
+      if (tagList.length) where.tags = { hasSome: tagList };
+    }
 
     // Capped well above 100 — a few dashboards (Call Center, ASM, Manager/
     // Service) still need one unbounded-ish fetch for their own client-side
@@ -930,6 +936,28 @@ export class TicketsService {
         fieldName: 'customerCategory',
         oldValue: ticket.customerCategory,
         newValue: customerCategory,
+        changedByUserId: actor.userId,
+        changeSource: 'WEB_UI',
+      },
+    });
+
+    return updated;
+  }
+
+  // Client decision (2026-08-01): free-text tags, entered by Call
+  // Center/ASM/Manager/Admin, searchable by ASM/Manager/Admin via the
+  // `tags` list filter (exact match on any tag, see `list()` below).
+  async updateTags(id: string, tags: string[], actor: RequestUser) {
+    const ticket = await this.prisma.ticket.findUniqueOrThrow({ where: { id } });
+    const cleaned = [...new Set(tags.map((t) => t.trim()).filter(Boolean))];
+    const updated = await this.prisma.ticket.update({ where: { id }, data: { tags: cleaned } });
+
+    await this.prisma.ticketAuditLog.create({
+      data: {
+        ticketId: id,
+        fieldName: 'tags',
+        oldValue: ticket.tags.join(', '),
+        newValue: cleaned.join(', '),
         changedByUserId: actor.userId,
         changeSource: 'WEB_UI',
       },
