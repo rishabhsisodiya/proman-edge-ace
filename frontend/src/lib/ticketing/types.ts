@@ -223,6 +223,19 @@ export function worstSlaStatus(t: Pick<Ticket, "slaResponseStatus" | "slaResolut
   return rank[a] >= rank[b] ? a : b;
 }
 
+// Admin-editable display label per priority (2026-08-01, FSD §5.2 "Ticket
+// Priorities" — the 4 values themselves stay fixed, only this label is
+// configurable, see admin/priority-labels). Mutated in place by
+// loadPriorityLabelOverrides() the same way STATUS_LABEL is — every call
+// site here reads this same object, no other file needs to change to pick
+// up an Admin's edit.
+export const PRIORITY_LABEL: Record<Priority, string> = {
+  CRITICAL: "Critical",
+  HIGH: "High",
+  MEDIUM: "Medium",
+  LOW: "Low",
+};
+
 export const PRIORITY_STYLE: Record<Priority, string> = {
   CRITICAL: "bg-brand-red-bg text-brand-red",
   HIGH: "bg-brand-amber-bg text-brand-amber",

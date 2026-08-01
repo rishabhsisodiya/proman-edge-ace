@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { ApiError } from "@/lib/api";
 import { acceptTicket, rejectTicket } from "@/lib/ticketing/actions";
-import { Paginated, PRIORITY_STYLE, STATUS_LABEL, STATUS_STYLE, Ticket } from "@/lib/ticketing/types";
+import { Paginated, PRIORITY_LABEL, PRIORITY_STYLE, STATUS_LABEL, STATUS_STYLE, Ticket } from "@/lib/ticketing/types";
 
 // Engineer's ticket inbox — not one of §6.1's 5 KPI dashboards (Engineer
 // isn't a dashboard role in the FSD), this is the §10.2/Q15 engineer web flow
@@ -92,7 +92,7 @@ export default function MyTicketsPage() {
               <div className="min-w-0 flex-1">
                 <div className="mb-1 flex flex-wrap items-center gap-2">
                   <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${PRIORITY_STYLE[t.priority]}`}>
-                    {t.priority}
+                    {PRIORITY_LABEL[t.priority]}
                   </span>
                   <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${STATUS_STYLE[t.status]}`}>
                     {STATUS_LABEL[t.status]}

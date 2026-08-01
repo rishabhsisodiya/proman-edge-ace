@@ -6,6 +6,7 @@ import { apiFetch } from "@/lib/api";
 import { AuthUser, getCurrentUser } from "@/lib/auth";
 import {
   Paginated,
+  PRIORITY_LABEL,
   PRIORITY_STYLE,
   STATUS_LABEL,
   STATUS_STYLE,
@@ -157,7 +158,7 @@ export default function ManagerDashboardPage() {
           <option value="">All priorities</option>
           {PRIORITIES.map((p) => (
             <option key={p} value={p}>
-              {p}
+              {PRIORITY_LABEL[p]}
             </option>
           ))}
         </select>
@@ -250,7 +251,7 @@ export default function ManagerDashboardPage() {
                   <td className="px-4">{t.equipment?.itemName ?? "—"}</td>
                   <td className="px-4">
                     <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${PRIORITY_STYLE[t.priority]}`}>
-                      {t.priority}
+                      {PRIORITY_LABEL[t.priority]}
                     </span>
                   </td>
                   <td className="px-4">

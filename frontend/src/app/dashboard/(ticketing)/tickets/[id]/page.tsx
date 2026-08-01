@@ -22,6 +22,7 @@ import {
   SOURCE_LABEL,
   CustomerCategory,
   PENDING_REASON_LABEL,
+  PRIORITY_LABEL,
   PRIORITY_STYLE,
   SLA_STATUS_LABEL,
   SLA_STATUS_STYLE,
@@ -186,7 +187,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
           <div className="flex items-start gap-2">
             <div className="flex flex-wrap items-center justify-end gap-2">
               <span className={`rounded-full px-3 py-1.5 text-xs font-bold ${PRIORITY_STYLE[ticket.priority]}`}>
-                {ticket.priority}
+                {PRIORITY_LABEL[ticket.priority]}
               </span>
               {worstSlaStatus(ticket) !== "ON_TRACK" && (
                 <span className={`rounded-full px-3 py-1.5 text-xs font-bold ${SLA_STATUS_STYLE[worstSlaStatus(ticket)]}`}>

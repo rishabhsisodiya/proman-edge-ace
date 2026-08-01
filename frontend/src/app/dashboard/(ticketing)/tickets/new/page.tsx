@@ -10,6 +10,7 @@ import {
   CustomerCategory,
   MANUAL_SOURCES,
   Priority,
+  PRIORITY_LABEL,
   SELECTABLE_SERVICE_TYPES,
   SERVICE_TYPE_LABEL,
   SLA_TARGET_DATE_LABEL,
@@ -213,7 +214,7 @@ export default function NewTicketPage() {
             >
               {PRIORITIES.map((p) => (
                 <option key={p} value={p}>
-                  {p}
+                  {PRIORITY_LABEL[p]}
                 </option>
               ))}
             </select>

@@ -181,6 +181,16 @@ model TicketStatusLabel {
   updatedAt DateTime     @updatedAt
 }
 
+/// Admin-editable label + definition per priority level (2026-08-01, FSD §5.2
+/// "Ticket Priorities" — the 4 priority values themselves stay fixed; this is
+/// display text only, same scope decision as TicketStatusLabel above).
+model PriorityLabel {
+  priority   Priority @id
+  label      String
+  definition String?
+  updatedAt  DateTime @updatedAt
+}
+
 enum PendingReason {
   AWAITING_PARTS
   AWAITING_CUSTOMER

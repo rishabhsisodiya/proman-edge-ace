@@ -60,10 +60,7 @@ export default function WorkflowLabelsPage() {
         ← Admin Console
       </a>
       <h1 className="mb-1 text-xl font-bold text-navy">Workflow States & Transitions</h1>
-      <p className="mb-6 text-sm text-muted">
-        Edit what each ticket status is called across the app. This does not change the transitions themselves — which
-        status can move to which, and which roles can do it, stays fixed.
-      </p>
+      <p className="mb-6 text-sm text-muted">Edit what each ticket status is called across the app.</p>
 
       {error && <p className="mb-4 rounded-md bg-brand-red-bg px-3 py-2 text-xs text-brand-red">{error}</p>}
 

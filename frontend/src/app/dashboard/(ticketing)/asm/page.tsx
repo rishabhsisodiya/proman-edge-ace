@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import {
   Paginated,
+  PRIORITY_LABEL,
   PRIORITY_STYLE,
   STATUS_LABEL,
   STATUS_STYLE,
@@ -211,7 +212,7 @@ export default function AsmDashboardPage() {
             <option value="">All priorities</option>
             {PRIORITIES.map((p) => (
               <option key={p} value={p}>
-                {p}
+                {PRIORITY_LABEL[p]}
               </option>
             ))}
           </select>
@@ -308,7 +309,7 @@ function TicketTable({
               <td className="px-4 font-mono text-xs text-muted">{t.ticketNo}</td>
               <td className="px-4">{t.customer.customerName}</td>
               <td className="px-4">
-                <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${PRIORITY_STYLE[t.priority]}`}>{t.priority}</span>
+                <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${PRIORITY_STYLE[t.priority]}`}>{PRIORITY_LABEL[t.priority]}</span>
               </td>
               <td className="px-4">
                 <div className="flex flex-wrap gap-1">

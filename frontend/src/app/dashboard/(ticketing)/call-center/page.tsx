@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
-import { Paginated, PRIORITY_STYLE, SOURCE_LABEL, STATUS_LABEL, STATUS_STYLE, Source, Ticket } from "@/lib/ticketing/types";
+import { Paginated, PRIORITY_LABEL, PRIORITY_STYLE, SOURCE_LABEL, STATUS_LABEL, STATUS_STYLE, Source, Ticket } from "@/lib/ticketing/types";
 import { SortableTh } from "@/components/SortableTh";
 
 function Tile({ label, value, accent }: { label: string; value: string | number; accent?: string }) {
@@ -173,7 +173,7 @@ export default function CallCenterDashboardPage() {
                   <td className="px-4 font-mono text-xs text-muted">{t.ticketNo}</td>
                   <td className="px-4">{t.customer.customerName}</td>
                   <td className="px-4">
-                    <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${PRIORITY_STYLE[t.priority]}`}>{t.priority}</span>
+                    <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${PRIORITY_STYLE[t.priority]}`}>{PRIORITY_LABEL[t.priority]}</span>
                   </td>
                   <td className="px-4">
                     <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${STATUS_STYLE[t.status]}`}>
@@ -227,7 +227,7 @@ export default function CallCenterDashboardPage() {
                   <td className="px-4">{t.customer.customerName}</td>
                   <td className="px-4 text-muted">{SOURCE_LABEL[t.source] ?? t.source}</td>
                   <td className="px-4">
-                    <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${PRIORITY_STYLE[t.priority]}`}>{t.priority}</span>
+                    <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${PRIORITY_STYLE[t.priority]}`}>{PRIORITY_LABEL[t.priority]}</span>
                   </td>
                   <td className="px-4">
                     <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${STATUS_STYLE[t.status]}`}>

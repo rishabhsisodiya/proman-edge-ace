@@ -30,10 +30,14 @@ const SECTIONS = [
     description: "Response/resolution policies, clock-pausing statuses, and the business-hours holiday list",
     href: "/dashboard/admin/sla",
   },
-  { label: "Ticket Priorities", description: "Priority levels + Priority Matrix", href: null },
+  {
+    label: "Ticket Priorities",
+    description: "Edit label + definition per priority level",
+    href: "/dashboard/admin/priority-labels",
+  },
   {
     label: "Workflow States & Transitions",
-    description: "Edit each status's display label (transitions/roles are not editable — labels only)",
+    description: "Edit each status's display label",
     href: "/dashboard/admin/workflow-labels",
   },
   {
