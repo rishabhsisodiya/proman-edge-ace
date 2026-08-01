@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, Role, ServiceType, Priority, Source, PendingReason, TicketStatus, CustomerCategory, NotifChannel } from '@prisma/client';
+import { Prisma, Role, ServiceType, Priority, Source, PendingReason, TicketStatus, CustomerCategory, NotifChannel, Region } from '@prisma/client';
 import { parse } from 'csv-parse/sync';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
@@ -148,7 +148,7 @@ export class TicketsService {
       };
       const recipients: { email: string; userId: string }[] = [];
       if (ticket.assignedAsm) recipients.push({ email: ticket.assignedAsm.email, userId: ticket.assignedAsm.id });
-      recipients.push(...(await this.prisma.user.findMany({ where: { role: 'MANAGER', isActive: true } })).map((u) => ({ email: u.email, userId: u.id })));
+      recipients.push(...(await this.managersForRegion(ticket.customer.region)).map((u) => ({ email: u.email, userId: u.id })));
       for (const r of recipients) {
         await this.fireNotification('N-22', 'EMAIL', r.email, predictiveVars, ticket.id);
         await this.fireNotification('N-22', 'PUSH', r.email, predictiveVars, ticket.id, r.userId);
@@ -229,6 +229,22 @@ export class TicketsService {
   }
 
   /**
+   * Region-scoped Manager lookup (client decision, 2026-08-02) — replaces
+   * every `findMany({ where: { role: 'MANAGER' } })` notification lookup
+   * that used to notify ALL Managers regardless of the ticket's region, now
+   * that the Manager role itself is region-scoped (same UserRegion table
+   * ASM already used). Null `region` (customer has none set) matches no one
+   * — same fail-safe as an unassigned Manager seeing nothing, rather than
+   * silently falling back to notifying everyone.
+   */
+  private async managersForRegion(region: Region | null) {
+    if (!region) return [];
+    const regions = await this.prisma.userRegion.findMany({ where: { region, user: { role: 'MANAGER', isActive: true } } });
+    if (regions.length === 0) return [];
+    return this.prisma.user.findMany({ where: { id: { in: regions.map((r) => r.userId) } } });
+  }
+
+  /**
    * §7.1 rule 5 — round-robin ASM assignment (client confirmed 2026-07-31,
    * reversing the earlier Q12 load-based default). No separate "last
    * assigned index" counter table needed: rotation is derived from each
@@ -280,7 +296,7 @@ export class TicketsService {
     // notifies every Manager so one of them can create it directly.
     if ((customer.accountStatus === 'INACTIVE' || customer.accountStatus === 'BLACKLISTED') && actor.role !== 'MANAGER') {
       const attemptedBy = await this.prisma.user.findUnique({ where: { id: actor.userId }, select: { fullName: true } });
-      const managers = await this.prisma.user.findMany({ where: { role: 'MANAGER', isActive: true } });
+      const managers = await this.managersForRegion(customer.region);
       const vars = {
         customer_name: customer.customerName,
         account_status: customer.accountStatus === 'BLACKLISTED' ? 'Blacklisted' : 'Inactive',
@@ -473,14 +489,17 @@ export class TicketsService {
 
     if (actor.role === 'ENGINEER') {
       where.assignedEngineerId = actor.userId;
-    } else if (actor.role === 'ASM') {
+    } else if (actor.role === 'ASM' || actor.role === 'MANAGER') {
       // Looked up here (not passed in by the caller) so no controller can
-      // forget to scope an ASM's regions and silently return everything —
-      // or, as previously happened, nothing at all (empty regions -> empty result).
-      const asmRegions = await this.prisma.userRegion.findMany({ where: { userId: actor.userId } });
-      where.customer = { region: { in: asmRegions.map((r) => r.region) } };
+      // forget to scope a user's regions and silently return everything —
+      // or, as previously happened for ASM, nothing at all (empty regions ->
+      // empty result — the same fail-safe now applies to MANAGER too, client
+      // decision 2026-08-02: an unassigned Manager sees nothing rather than
+      // silently falling back to full visibility).
+      const regions = await this.prisma.userRegion.findMany({ where: { userId: actor.userId } });
+      where.customer = { region: { in: regions.map((r) => r.region) } };
     }
-    // CALL_CENTER, MANAGER, ADMIN: unscoped (full visibility)
+    // CALL_CENTER, ADMIN: unscoped (full visibility)
 
     if (filters.status) where.status = filters.status as any;
     else if (filters.excludeClosed === 'true') where.status = { not: 'CLOSED' };
@@ -772,7 +791,7 @@ export class TicketsService {
   async reject(id: string, reason: string, actor: RequestUser) {
     const ticket = await this.prisma.ticket.findUniqueOrThrow({
       where: { id },
-      include: { assignedAsm: true, assignedEngineer: true },
+      include: { assignedAsm: true, assignedEngineer: true, customer: true },
     });
     const existingReasons = Array.isArray(ticket.rejectionReasons) ? ticket.rejectionReasons : [];
     const rejectionCount = ticket.rejectionCount + 1;
@@ -817,7 +836,7 @@ export class TicketsService {
       await this.fireNotification(triggerCode, 'EMAIL', ticket.assignedAsm.email, vars, id);
     }
     if (rejectionCount >= 2) {
-      const managers = await this.prisma.user.findMany({ where: { role: 'MANAGER', isActive: true } });
+      const managers = await this.managersForRegion(ticket.customer.region);
       for (const manager of managers) {
         await this.fireNotification(triggerCode, 'EMAIL', manager.email, vars, id);
         await this.fireNotification(triggerCode, 'PUSH', manager.email, vars, id, manager.id);

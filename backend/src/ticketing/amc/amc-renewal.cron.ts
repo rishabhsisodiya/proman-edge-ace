@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { Region } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationService } from '../../notifications/notification.service';
 import { NotificationTemplateService } from '../../notifications/notification-template.service';
@@ -50,7 +51,7 @@ export class AmcRenewalCron {
 
       try {
         if (daysUntilExpiry <= 0) {
-          await this.fireLapsed(vars);
+          await this.fireLapsed(vars, contract.customer.region);
           await this.prisma.amcContract.update({ where: { id: contract.id }, data: { renewalStatus: 'LAPSED' } });
           lapsed++;
           continue;
@@ -86,13 +87,13 @@ export class AmcRenewalCron {
   /** N-18 (30d) + N-19 (15d): ASM (owning) + Manager. N-20 (7d, passed via includeAdmin) also includes Admin. */
   private async fireRenewalAlert(
     triggerCode: 'N-18' | 'N-19' | 'N-20',
-    contract: { owningAsm: { id: string; email: string } | null },
+    contract: { owningAsm: { id: string; email: string } | null; customer: { region: Region | null } },
     vars: Record<string, string>,
     flags: ('PUSH_ADMIN')[] = [],
   ) {
     const recipients: { email: string; userId: string }[] = [];
     if (contract.owningAsm) recipients.push({ email: contract.owningAsm.email, userId: contract.owningAsm.id });
-    recipients.push(...(await this.usersByRole('MANAGER')).map((u) => ({ email: u.email, userId: u.id })));
+    recipients.push(...(await this.managersForRegion(contract.customer.region)).map((u) => ({ email: u.email, userId: u.id })));
     if (flags.includes('PUSH_ADMIN')) {
       recipients.push(...(await this.usersByRole('ADMIN')).map((u) => ({ email: u.email, userId: u.id })));
     }
@@ -107,13 +108,22 @@ export class AmcRenewalCron {
   }
 
   /** N-21: Manager + Admin, Email only (per FSD — no WhatsApp/Push row exists for this trigger). */
-  private async fireLapsed(vars: Record<string, string>) {
-    const recipients = [...(await this.usersByRole('MANAGER')), ...(await this.usersByRole('ADMIN'))];
+  private async fireLapsed(vars: Record<string, string>, region: Region | null) {
+    const recipients = [...(await this.managersForRegion(region)), ...(await this.usersByRole('ADMIN'))];
     for (const r of recipients) {
       const template = await this.notificationTemplates.render('N-21', 'EMAIL', vars);
       if (!template) continue;
       await this.notifications.send({ channel: 'EMAIL', recipient: r.email, templateName: 'N-21', subject: template.subject, body: template.body });
     }
+  }
+
+  // Region-scoped Manager lookup (client decision, 2026-08-02) — same
+  // pattern/fail-safe as TicketsService.managersForRegion().
+  private async managersForRegion(region: Region | null) {
+    if (!region) return [];
+    const regions = await this.prisma.userRegion.findMany({ where: { region, user: { role: 'MANAGER', isActive: true } } });
+    if (regions.length === 0) return [];
+    return this.prisma.user.findMany({ where: { id: { in: regions.map((r) => r.userId) } } });
   }
 
   private usersByRole(role: 'MANAGER' | 'ADMIN') {

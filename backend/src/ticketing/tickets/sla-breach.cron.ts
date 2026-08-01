@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { SlaClockStatus } from '@prisma/client';
+import { Region, SlaClockStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationService } from '../../notifications/notification.service';
 import { NotificationTemplateService } from '../../notifications/notification-template.service';
@@ -98,8 +98,14 @@ export class SlaBreachCron {
     this.logger.log(`SLA breach cron complete — ${checked} ticket(s) checked, ${changed} status change(s)`);
   }
 
-  private async managers() {
-    return this.prisma.user.findMany({ where: { role: 'MANAGER', isActive: true } });
+  // Region-scoped Manager lookup (client decision, 2026-08-02) — same
+  // pattern/fail-safe as TicketsService.managersForRegion(): a null region
+  // matches no one, rather than falling back to notifying every Manager.
+  private async managersForRegion(region: Region | null) {
+    if (!region) return [];
+    const regions = await this.prisma.userRegion.findMany({ where: { region, user: { role: 'MANAGER', isActive: true } } });
+    if (regions.length === 0) return [];
+    return this.prisma.user.findMany({ where: { id: { in: regions.map((r) => r.userId) } } });
   }
 
   private async callCenterUsers() {
@@ -107,12 +113,12 @@ export class SlaBreachCron {
   }
 
   /** N-15 — SLA response breach: ASM + Call Center + Manager, Email + Push. */
-  private async fireResponseBreach(t: { id: string; ticketNo: string; priority: string; slaResponseDue: Date | null; assignedAsm: { id: string; email: string } | null }) {
+  private async fireResponseBreach(t: { id: string; ticketNo: string; priority: string; slaResponseDue: Date | null; assignedAsm: { id: string; email: string } | null; customer: { region: Region | null } }) {
     const vars = { ticket_no: t.ticketNo, priority: t.priority, sla_response_due: t.slaResponseDue?.toISOString() ?? 'N/A' };
     const recipients: { email: string; userId: string }[] = [];
     if (t.assignedAsm) recipients.push({ email: t.assignedAsm.email, userId: t.assignedAsm.id });
     recipients.push(...(await this.callCenterUsers()).map((u) => ({ email: u.email, userId: u.id })));
-    recipients.push(...(await this.managers()).map((u) => ({ email: u.email, userId: u.id })));
+    recipients.push(...(await this.managersForRegion(t.customer.region)).map((u) => ({ email: u.email, userId: u.id })));
     await this.sendToAll('N-15', recipients, vars, t.id);
   }
 
@@ -138,6 +144,7 @@ export class SlaBreachCron {
     status: string;
     slaResolutionDue: Date | null;
     assignedAsm: { id: string; email: string } | null;
+    customer: { region: Region | null };
   }) {
     const vars = {
       ticket_no: t.ticketNo,
@@ -146,7 +153,7 @@ export class SlaBreachCron {
     };
     const recipients: { email: string; userId: string }[] = [];
     if (t.assignedAsm) recipients.push({ email: t.assignedAsm.email, userId: t.assignedAsm.id });
-    recipients.push(...(await this.managers()).map((u) => ({ email: u.email, userId: u.id })));
+    recipients.push(...(await this.managersForRegion(t.customer.region)).map((u) => ({ email: u.email, userId: u.id })));
     // WhatsApp needs a phone number, not an email — internal users (ASM/Manager)
     // only have email on file, so N-17 goes out via Email + Push for them
     // despite the FSD listing WhatsApp; the customer-facing WhatsApp triggers
