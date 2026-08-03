@@ -69,7 +69,7 @@ export class AmcRenewalCron {
         }
 
         if (daysUntilExpiry <= 7 && !contract.renewalAlert7SentAt) {
-          await this.fireRenewalAlert('N-20', contract, vars, ['PUSH_ADMIN']);
+          await this.fireRenewalAlert('N-20', contract, vars);
           await this.prisma.amcContract.update({ where: { id: contract.id }, data: { renewalAlert7SentAt: now } });
           alerted++;
         } else if (daysUntilExpiry <= 15 && !contract.renewalAlert15SentAt) {
@@ -95,19 +95,26 @@ export class AmcRenewalCron {
     this.logger.log(`AMC renewal cron complete — ${contracts.length} contract(s) checked, ${alerted} alert(s) sent, ${lapsed} lapsed`);
   }
 
-  /** N-18 (30d) + N-19 (15d): ASM (owning) + Manager. N-20 (7d, passed via includeAdmin) also includes Admin. */
+  /**
+   * N-18 (30d)/N-19 (15d)/N-20 (7d): owning ASM + region-scoped Managers,
+   * consistently across all 3 thresholds — 2026-08-03 fix, client-confirmed:
+   * N-20 previously also included every Admin in the system (a 'PUSH_ADMIN'
+   * flag only passed on that one call), which wasn't in the spec and made
+   * the 7-day alert behave differently from the 30/15-day ones for no
+   * documented reason. Recipients stay region-based, not a hardcoded named
+   * Manager, matching how every other Manager notification in this app
+   * works (client confirmed — not the literal "owning_asm + Ashwath"
+   * spec wording). Channel stays Email + Push, not Email + SMS (client
+   * confirmed — no SMS sender exists anywhere in this project).
+   */
   private async fireRenewalAlert(
     triggerCode: 'N-18' | 'N-19' | 'N-20',
     contract: { owningAsm: { id: string; email: string } | null; customer: { region: Region | null } },
     vars: Record<string, string>,
-    flags: ('PUSH_ADMIN')[] = [],
   ) {
     const recipients: { email: string; userId: string }[] = [];
     if (contract.owningAsm) recipients.push({ email: contract.owningAsm.email, userId: contract.owningAsm.id });
     recipients.push(...(await this.managersForRegion(contract.customer.region)).map((u) => ({ email: u.email, userId: u.id })));
-    if (flags.includes('PUSH_ADMIN')) {
-      recipients.push(...(await this.usersByRole('ADMIN')).map((u) => ({ email: u.email, userId: u.id })));
-    }
     for (const r of recipients) {
       await this.notificationTemplates
         .render(triggerCode, 'EMAIL', vars)
