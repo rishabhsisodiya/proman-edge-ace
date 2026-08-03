@@ -221,6 +221,7 @@ export default function ManagerDashboardPage() {
               <th className="px-4 font-bold">Equipment / Issue</th>
               <SortableTh label="Priority" sortKey="priority" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
               <SortableTh label="Status" sortKey="status" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
+              <SortableTh label="Warranty" sortKey="warrantyEligible" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
               <SortableTh label="Region" sortKey="region" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
               <SortableTh label="Engineer" sortKey="engineerName" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
             </tr>
@@ -228,21 +229,21 @@ export default function ManagerDashboardPage() {
           <tbody>
             {loading && (
               <tr className="h-11">
-                <td colSpan={7} className="px-4 text-center text-muted">
+                <td colSpan={8} className="px-4 text-center text-muted">
                   Loading tickets…
                 </td>
               </tr>
             )}
             {!loading && error && (
               <tr className="h-11">
-                <td colSpan={7} className="px-4 text-center text-brand-red">
+                <td colSpan={8} className="px-4 text-center text-brand-red">
                   {error}
                 </td>
               </tr>
             )}
             {!loading && !error && tickets.length === 0 && (
               <tr className="h-11">
-                <td colSpan={7} className="px-4 text-center text-muted">
+                <td colSpan={8} className="px-4 text-center text-muted">
                   No tickets match these filters.
                 </td>
               </tr>
@@ -274,6 +275,15 @@ export default function ManagerDashboardPage() {
                         </span>
                       )}
                     </div>
+                  </td>
+                  <td className="px-4">
+                    <span
+                      className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
+                        t.warrantyEligible ? "bg-brand-green-bg text-brand-green" : "bg-navy-soft text-muted"
+                      }`}
+                    >
+                      {t.warrantyEligible ? "Under Warranty" : "Chargeable"}
+                    </span>
                   </td>
                   <td className="px-4">{t.customer.region}</td>
                   <td className="px-4">{t.assignedEngineer?.fullName ?? "Unassigned"}</td>

@@ -580,6 +580,8 @@ export class TicketsService {
       engineerName: { assignedEngineer: { fullName: sortDir } },
       region: { customer: { region: sortDir } },
       createdAt: { createdAt: sortDir },
+      // Warranty column (2026-08-03) — sorts Chargeable/Under Warranty together.
+      warrantyEligible: { warrantyEligible: sortDir },
     };
     const orderBy = (filters.sortBy && sortableColumns[filters.sortBy]) || { createdAt: 'desc' as const };
 

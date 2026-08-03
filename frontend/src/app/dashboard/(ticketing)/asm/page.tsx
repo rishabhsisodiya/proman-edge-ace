@@ -285,27 +285,28 @@ function TicketTable({
             <SortableTh label="Customer" sortKey="customerName" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
             <SortableTh label="Priority" sortKey="priority" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
             <SortableTh label="Status" sortKey="status" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
+            <SortableTh label="Warranty" sortKey="warrantyEligible" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
             <SortableTh label="Engineer" sortKey="engineerName" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
           </tr>
         </thead>
         <tbody>
           {loading && (
             <tr>
-              <td colSpan={5} className="px-4 py-3 text-center text-muted">
+              <td colSpan={6} className="px-4 py-3 text-center text-muted">
                 Loading…
               </td>
             </tr>
           )}
           {!loading && error && (
             <tr>
-              <td colSpan={5} className="px-4 py-3 text-center text-brand-red">
+              <td colSpan={6} className="px-4 py-3 text-center text-brand-red">
                 {error}
               </td>
             </tr>
           )}
           {!loading && !error && tickets.length === 0 && (
             <tr>
-              <td colSpan={5} className="px-4 py-3 text-center text-muted">
+              <td colSpan={6} className="px-4 py-3 text-center text-muted">
                 {emptyText}
               </td>
             </tr>
@@ -332,6 +333,15 @@ function TicketTable({
                     </span>
                   )}
                 </div>
+              </td>
+              <td className="px-4">
+                <span
+                  className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
+                    t.warrantyEligible ? "bg-brand-green-bg text-brand-green" : "bg-navy-soft text-muted"
+                  }`}
+                >
+                  {t.warrantyEligible ? "Under Warranty" : "Chargeable"}
+                </span>
               </td>
               <td className="px-4">{t.assignedEngineer?.fullName ?? "Unassigned"}</td>
             </tr>
