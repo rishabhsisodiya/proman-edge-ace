@@ -47,6 +47,29 @@ export class AmcContractService {
   }
 
   /**
+   * Contract renewal (2026-08-03, client-agreed scope) — no dedicated
+   * action existed before this; only a passive `previousContractId` field
+   * with no automatic status handling on either side. Eligible from any
+   * non-`RENEWED` status (client decision — not "Lapsed only," so a
+   * Manager can renew proactively during Renewal Due/Final Notice too, not
+   * just after it actually lapses). Reuses `create()` verbatim (already
+   * handles `previousContractId` + scheduled-visit generation) — the new
+   * contract defaults to `renewalStatus: ACTIVE` via the schema default,
+   * nothing extra needed there. The old contract's terms/coverage are left
+   * completely untouched — only its `renewalStatus` flips to `RENEWED`.
+   */
+  async renew(oldContractId: string, dto: CreateAmcContractDto) {
+    const old = await this.prisma.amcContract.findUniqueOrThrow({ where: { id: oldContractId } });
+    if (old.renewalStatus === 'RENEWED') {
+      throw new BadRequestException('This contract has already been renewed — renew its replacement instead once that one needs it.');
+    }
+
+    const result = await this.create({ ...dto, previousContractId: oldContractId });
+    await this.prisma.amcContract.update({ where: { id: oldContractId }, data: { renewalStatus: 'RENEWED' } });
+    return result;
+  }
+
+  /**
    * Build plan's "scheduled_visits → auto-generate from visits_included"
    * decision, refined per client feedback (2026-07-27): the frontend now
    * sends explicit `visitDates` (one per visit, from the Visit Schedule

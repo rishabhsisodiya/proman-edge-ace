@@ -1,11 +1,13 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import AmcContractForm from "@/components/amc/AmcContractForm";
 import { AmcContractRecord, getAmcContract } from "@/lib/ticketing/amc";
 
 export default function EditAmcContractPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const router = useRouter();
   const [contract, setContract] = useState<AmcContractRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -29,7 +31,17 @@ export default function EditAmcContractPage({ params }: { params: Promise<{ id: 
       >
         ← AMC Contracts
       </a>
-      <h1 className="mb-1 text-xl font-bold text-navy">{contract.contractReferenceNo}</h1>
+      <div className="mb-1 flex items-center justify-between">
+        <h1 className="text-xl font-bold text-navy">{contract.contractReferenceNo}</h1>
+        {contract.renewalStatus !== "RENEWED" && (
+          <button
+            onClick={() => router.push(`/dashboard/admin/amc-contracts/new?renewFrom=${contract.id}`)}
+            className="rounded-md bg-orange px-3 py-1.5 text-xs font-bold text-navy transition"
+          >
+            Renew Contract
+          </button>
+        )}
+      </div>
       <p className="mb-6 text-sm text-muted">{contract.customer?.customerName}</p>
 
       <div className="rounded-lg border border-line bg-white p-5">

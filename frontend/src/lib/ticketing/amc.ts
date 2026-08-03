@@ -98,6 +98,10 @@ export const createAmcContract = (input: AmcContractFormInput) =>
 export const updateAmcContract = (id: string, input: AmcContractFormInput) =>
   apiFetch<AmcContractSaveResult>(`/amc-contracts/${id}`, { method: "PATCH", body: JSON.stringify(input) });
 
+/** Contract renewal (2026-08-03) — creates a new contract referencing this one and flips this one to RENEWED. */
+export const renewAmcContract = (id: string, input: AmcContractFormInput) =>
+  apiFetch<AmcContractSaveResult>(`/amc-contracts/${id}/renew`, { method: "POST", body: JSON.stringify(input) });
+
 export const rescheduleAmcVisit = (visitId: string, plannedDate: string, notes?: string) =>
   apiFetch<AmcScheduledVisit>(`/amc-contracts/scheduled-visits/${visitId}`, {
     method: "PATCH",

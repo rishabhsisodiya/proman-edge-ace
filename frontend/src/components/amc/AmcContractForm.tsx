@@ -5,6 +5,7 @@ import { ApiError } from "@/lib/api";
 import {
   createAmcContract,
   updateAmcContract,
+  renewAmcContract,
   uploadAmcContractDocument,
   generateAmcSchedule,
   addAmcVisit,
@@ -25,6 +26,17 @@ const PARTS_COVERAGE_OPTIONS: PartsCoverage[] = ["NONE", "CONSUMABLES_ONLY", "AL
 
 interface Props {
   existing?: AmcContractRecord;
+  /**
+   * Contract renewal (2026-08-03) — prefills the form's field VALUES from
+   * an old contract without treating this as an edit of that record: kept
+   * deliberately separate from `existing`, since `existing` also drives the
+   * scheduled-visit management UI (reschedule/remove existing rows) —
+   * a renewal is a brand-new contract with zero visits of its own yet, so
+   * that machinery must not activate. Pass alongside `renewFromId`.
+   */
+  prefillFrom?: AmcContractRecord;
+  /** The old contract's id to renew — submit calls renewAmcContract() instead of createAmcContract(). */
+  renewFromId?: string;
   /** Pre-select a customer (e.g. opened from the Equipment form for a specific customer) and lock the field. */
   fixedCustomer?: { id: string; customerName: string };
   onSaved: (contract: AmcContractRecord) => void;
@@ -34,30 +46,35 @@ interface Props {
 // Shared between the standalone AMC Contract create/edit pages and the
 // inline "+ New AMC Contract" modal opened from the Equipment form — same
 // component, same validation, so the modal isn't a stripped-down duplicate.
-export default function AmcContractForm({ existing, fixedCustomer, onSaved, onCancel }: Props) {
+export default function AmcContractForm({ existing, prefillFrom, renewFromId, fixedCustomer, onSaved, onCancel }: Props) {
+  // Renewal (2026-08-03): prefillFrom seeds the same initial values as
+  // `existing` would, without `existing` itself being set — so the
+  // scheduled-visit management UI below (which is keyed off `existing`)
+  // correctly treats this as a brand-new contract with no visits yet.
+  const seed = existing ?? prefillFrom;
   const [contractReferenceNo, setContractReferenceNo] = useState(existing?.contractReferenceNo ?? "");
   const [selectedCustomer, setSelectedCustomer] = useState<{ id: string; customerName: string } | null>(
-    fixedCustomer ?? (existing?.customer ? { id: existing.customer.id, customerName: existing.customer.customerName } : null),
+    fixedCustomer ?? (seed?.customer ? { id: seed.customer.id, customerName: seed.customer.customerName } : null),
   );
   const [customerQuery, setCustomerQuery] = useState("");
   const [customerResults, setCustomerResults] = useState<CustomerListItem[]>([]);
   const [customerOpen, setCustomerOpen] = useState(false);
 
-  const [startDate, setStartDate] = useState(existing?.startDate.slice(0, 10) ?? "");
-  const [endDate, setEndDate] = useState(existing?.endDate.slice(0, 10) ?? "");
-  const [contractValue, setContractValue] = useState(existing ? String(existing.contractValue) : "");
-  const [visitsIncluded, setVisitsIncluded] = useState(existing ? String(existing.visitsIncluded) : "4");
-  const [partsCoverage, setPartsCoverage] = useState<PartsCoverage>(existing?.partsCoverage ?? "CONSUMABLES_ONLY");
-  const [scopeOfServices, setScopeOfServices] = useState(existing?.scopeOfServices ?? "");
-  const [exclusions, setExclusions] = useState(existing?.exclusions ?? "");
-  const [termsAndConditions, setTermsAndConditions] = useState(existing?.termsAndConditions ?? "");
+  const [startDate, setStartDate] = useState(seed?.startDate.slice(0, 10) ?? "");
+  const [endDate, setEndDate] = useState(seed?.endDate.slice(0, 10) ?? "");
+  const [contractValue, setContractValue] = useState(seed ? String(seed.contractValue) : "");
+  const [visitsIncluded, setVisitsIncluded] = useState(seed ? String(seed.visitsIncluded) : "4");
+  const [partsCoverage, setPartsCoverage] = useState<PartsCoverage>(seed?.partsCoverage ?? "CONSUMABLES_ONLY");
+  const [scopeOfServices, setScopeOfServices] = useState(seed?.scopeOfServices ?? "");
+  const [exclusions, setExclusions] = useState(seed?.exclusions ?? "");
+  const [termsAndConditions, setTermsAndConditions] = useState(seed?.termsAndConditions ?? "");
   const [signedAgreementUrl, setSignedAgreementUrl] = useState(existing?.signedAgreementUrl ?? null);
   const [uploadingDocument, setUploadingDocument] = useState(false);
 
   // Owning ASM (client feedback 2026-07-31: field existed on the schema and
   // backend DTO already, but the form never sent it and nothing displayed
   // it — genuinely dropped on the floor, not just a display gap).
-  const [owningAsmId, setOwningAsmId] = useState(existing?.owningAsmId ?? "");
+  const [owningAsmId, setOwningAsmId] = useState(seed?.owningAsmId ?? "");
   const [asmOptions, setAsmOptions] = useState<{ id: string; fullName: string }[]>([]);
   useEffect(() => {
     listUsers({ role: "ASM" })
@@ -67,7 +84,7 @@ export default function AmcContractForm({ existing, fixedCustomer, onSaved, onCa
 
   const [customerEquipment, setCustomerEquipment] = useState<EquipmentListItem[]>([]);
   const [coveredEquipmentIds, setCoveredEquipmentIds] = useState<string[]>(
-    existing?.coveredEquipment?.map((e) => e.id) ?? [],
+    seed?.coveredEquipment?.map((e) => e.id) ?? [],
   );
 
   // Visit Schedule editor (2026-07-27) — unified modal handling three cases
@@ -75,7 +92,7 @@ export default function AmcContractForm({ existing, fixedCustomer, onSaved, onCa
   // contract with some visits already (Visits Included changed since, so
   // more/fewer are needed), and rescheduling/removing individual visits.
   const [dayOfMonth, setDayOfMonth] = useState(
-    String(existing ? new Date(existing.startDate).getDate() : new Date().getDate()),
+    String(seed ? new Date(seed.startDate).getDate() : new Date().getDate()),
   );
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [savingSchedule, setSavingSchedule] = useState(false);
@@ -268,7 +285,11 @@ export default function AmcContractForm({ existing, fixedCustomer, onSaved, onCa
 
     setSaving(true);
     try {
-      const result = existing ? await updateAmcContract(existing.id, input) : await createAmcContract(input);
+      const result = renewFromId
+        ? await renewAmcContract(renewFromId, input)
+        : existing
+          ? await updateAmcContract(existing.id, input)
+          : await createAmcContract(input);
       if (result.overlapWarnings.length > 0) {
         setWarnings(
           result.overlapWarnings.map(

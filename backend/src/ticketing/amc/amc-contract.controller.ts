@@ -52,6 +52,16 @@ export class AmcContractController {
     return this.amc.create(dto);
   }
 
+  // Contract renewal (2026-08-03, client-agreed scope) — creates a new
+  // contract referencing this one and flips this one to RENEWED. Eligible
+  // from any non-RENEWED status, not "Lapsed only."
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'MANAGER')
+  @Post(':id/renew')
+  renew(@Param('id') id: string, @Body() dto: CreateAmcContractDto) {
+    return this.amc.renew(id, dto);
+  }
+
   @UseGuards(RolesGuard)
   @Roles('ADMIN', 'MANAGER')
   @Patch(':id')
