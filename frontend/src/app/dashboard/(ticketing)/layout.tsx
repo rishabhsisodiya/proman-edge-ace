@@ -22,6 +22,8 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/dashboard/cs-support", title: "CS Support Dashboard" },
   { prefix: "/dashboard/executive", title: "Executive Dashboard" },
   { prefix: "/dashboard/my-tickets", title: "My Tickets" },
+  { prefix: "/dashboard/customers/", title: "Customer Detail" },
+  { prefix: "/dashboard/customers", title: "Customers" },
   { prefix: "/dashboard/admin/users", title: "User Management" },
   { prefix: "/dashboard/admin/region-mapping", title: "Regions & Territories" },
   { prefix: "/dashboard/admin/sync-monitor", title: "Sync Monitor" },

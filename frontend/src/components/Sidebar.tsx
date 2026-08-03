@@ -60,6 +60,15 @@ const ADMIN_ONLY_ITEMS: NavItem[] = [
 // isn't listed here either.
 const REPORTS_NAV_ITEM: NavItem = { label: "Reports", href: "/dashboard/reports", roles: ["MANAGER", "ADMIN"] };
 
+// §10.1 W-17 Customer List — Call Center, ASM, Manager per the FSD; Admin
+// included too for consistency with everything else in this app (Admin sees
+// every screen a Manager sees).
+const CUSTOMERS_NAV_ITEM: NavItem = {
+  label: "Customers",
+  href: "/dashboard/customers",
+  roles: ["CALL_CENTER", "ASM", "MANAGER", "ADMIN"],
+};
+
 export default function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const pathname = usePathname();
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -79,7 +88,8 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
   const erpItems = ERP_NAV_ITEMS.filter((item) => user && item.roles.includes(user.role)); // strict — no Admin bypass here
   const adminItems = user?.role === "ADMIN" ? ADMIN_ONLY_ITEMS : [];
   const reportsItems = user && REPORTS_NAV_ITEM.roles.includes(user.role) ? [REPORTS_NAV_ITEM] : [];
-  const items = [...(ticketItem ? [ticketItem] : []), ...erpItems, ...reportsItems, ...adminItems];
+  const customersItems = user && CUSTOMERS_NAV_ITEM.roles.includes(user.role) ? [CUSTOMERS_NAV_ITEM] : [];
+  const items = [...(ticketItem ? [ticketItem] : []), ...customersItems, ...erpItems, ...reportsItems, ...adminItems];
 
   return (
     <>

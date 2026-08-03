@@ -12,6 +12,18 @@ export class CustomersController {
     return this.customers.list(filters);
   }
 
+  /** Static route — must stay above `:id` or Nest would try to resolve "browse" as a customer id. */
+  @Get('browse')
+  browse(@Query() filters: { region?: string; accountStatus?: string; search?: string; page?: string; pageSize?: string }) {
+    return this.customers.browse({
+      region: filters.region,
+      accountStatus: filters.accountStatus,
+      search: filters.search,
+      page: filters.page ? Number(filters.page) : undefined,
+      pageSize: filters.pageSize ? Number(filters.pageSize) : undefined,
+    });
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.customers.findOne(id);
