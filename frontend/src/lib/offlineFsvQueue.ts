@@ -1,10 +1,13 @@
-// Offline FSV queueing (2026-08-02) — IndexedDB-backed local queue for the
-// specific FSV write operations most likely to happen on-site with no
-// signal: photo upload, signature upload, adding a part, and the final
-// submit. Field-level autosaves (times, notes, etc.) are NOT queued —
-// they're safely re-enterable if lost, unlike a captured photo/signature or
-// a submission, so scope was deliberately kept to the highest-value pieces
-// rather than every FSV write call.
+// Offline FSV queueing (2026-08-02) — IndexedDB-backed local queue for FSV
+// write operations. Originally scoped to only photo/signature/part/submit
+// (the "field autosaves are safely re-enterable" reasoning), but client
+// testing (2026-08-02) showed that reasoning doesn't hold for the "No
+// parts used" / customer sign-off checkboxes (they're controlled by
+// server state, so a failed save just silently reverts them, not "stays
+// filled in for you to resubmit") or the Service Report upload (the file
+// was gone with no recovery path). Extended same day to also cover
+// `update` (any `updateFsv` field patch) and `report` (Service Report
+// upload).
 //
 // Design note: this queues from the main thread (IndexedDB + window
 // online/offline events), not via a service worker intercepting fetch().
@@ -55,6 +58,21 @@ export type QueuedFsvAction =
       fsvId: string;
       kind: "submit";
       queuedAt: string;
+    }
+  | {
+      id: string;
+      fsvId: string;
+      kind: "update";
+      queuedAt: string;
+      body: Record<string, unknown>;
+    }
+  | {
+      id: string;
+      fsvId: string;
+      kind: "report";
+      queuedAt: string;
+      file: Blob;
+      fileName: string;
     };
 
 function openDb(): Promise<IDBDatabase> {

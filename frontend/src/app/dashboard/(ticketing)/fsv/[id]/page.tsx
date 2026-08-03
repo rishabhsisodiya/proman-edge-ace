@@ -112,8 +112,20 @@ export default function FsvDetailPage({ params }: { params: Promise<{ id: string
     if (!fsv || fsv.status === "SUBMITTED") return;
     setSaving(true);
     try {
-      const updated = await updateFsv(fsv.id, patch);
-      setFsv(updated);
+      const result = await updateFsv(fsv.id, patch);
+      if (isQueued(result)) {
+        // Optimistic local merge (2026-08-02) — without this, a queued
+        // checkbox change still visually reverts (it's controlled by fsv
+        // state, which never updates), reproducing the exact "checkbox
+        // won't stay checked offline" complaint even though the change IS
+        // now correctly queued. Safe: patch is already the same shape as
+        // what the server would echo back for these fields.
+        setFsv((prev) => (prev ? ({ ...prev, ...patch } as FieldServiceVisit) : prev));
+        setNotice("You're offline — change queued, will sync automatically once you're back online.");
+        refreshQueue();
+      } else {
+        setFsv(result);
+      }
     } catch {
       setError("Could not save.");
     } finally {
@@ -167,6 +179,8 @@ export default function FsvDetailPage({ params }: { params: Promise<{ id: string
                   {a.kind === "signature" && "Signature"}
                   {a.kind === "part" && `Part — ${a.body.itemName}`}
                   {a.kind === "submit" && "Submit"}
+                  {a.kind === "update" && `Field update — ${Object.keys(a.body).join(", ")}`}
+                  {a.kind === "report" && "Service Report"}
                   {" "}
                   <span className="text-muted">({new Date(a.queuedAt).toLocaleTimeString()})</span>
                 </span>
@@ -274,11 +288,11 @@ export default function FsvDetailPage({ params }: { params: Promise<{ id: string
         />
       </div>
 
-      <PartsSection fsv={fsv} readOnly={readOnly} onSave={saveField} reload={load} onError={setError} onQueued={refreshQueue} />
+      <PartsSection fsv={fsv} readOnly={readOnly} onSave={saveField} reload={load} onError={setError} onQueued={refreshQueue} online={online} />
 
       <PhotosSection fsv={fsv} readOnly={readOnly} reload={load} onError={setError} onQueued={refreshQueue} />
 
-      <ReportSection fsv={fsv} readOnly={readOnly} reload={load} onError={setError} />
+      <ReportSection fsv={fsv} readOnly={readOnly} reload={load} onError={setError} onQueued={refreshQueue} />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
@@ -434,12 +448,14 @@ function PartsSection({
   reload,
   onError,
   onQueued,
+  online,
 }: {
   fsv: FieldServiceVisit;
   readOnly: boolean;
   onSave: (patch: Record<string, unknown>) => void;
   reload: () => void;
   onError: (message: string | null) => void;
+  online: boolean;
   onQueued: () => void;
 }) {
   const [showAdd, setShowAdd] = useState(false);
@@ -679,6 +695,11 @@ function PartsSection({
               </select>
             </div>
           )}
+          {!online && (
+            <p className="rounded-md bg-brand-amber-bg px-2 py-1.5 text-xs text-brand-amber">
+              Item search needs a connection — the item catalog isn&apos;t stored on this device. Search once you&apos;re back online, or if you already know the part, add it as soon as you reconnect.
+            </p>
+          )}
           {!selectedItem ? (
             <div className="relative">
               <input
@@ -686,7 +707,8 @@ function PartsSection({
                 value={itemQuery}
                 onChange={(e) => setItemQuery(e.target.value)}
                 placeholder="Search item…"
-                className="h-9 w-full rounded-md border border-line px-2 text-sm text-navy"
+                disabled={!online}
+                className="h-9 w-full rounded-md border border-line px-2 text-sm text-navy disabled:bg-navy-soft disabled:text-muted"
               />
               {itemResults.length > 0 && (
                 <div className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-md border border-line bg-white shadow-lg">
@@ -890,11 +912,13 @@ function ReportSection({
   readOnly,
   reload,
   onError,
+  onQueued,
 }: {
   fsv: FieldServiceVisit;
   readOnly: boolean;
   reload: () => void;
   onError: (message: string | null) => void;
+  onQueued: () => void;
 }) {
   const [uploading, setUploading] = useState(false);
 
@@ -905,8 +929,12 @@ function ReportSection({
     setUploading(true);
     onError(null);
     try {
-      await uploadFsvReport(fsv.id, file);
-      reload();
+      const result = await uploadFsvReport(fsv.id, file);
+      if (isQueued(result)) {
+        onQueued();
+      } else {
+        reload();
+      }
     } catch (err) {
       onError(err instanceof ApiError ? (err.body as { message?: string })?.message ?? "Upload failed" : "Upload failed");
     } finally {

@@ -126,8 +126,31 @@ export const createFsv = (
 
 export const getFsv = (id: string) => apiFetch<FieldServiceVisit>(`/fsv/${id}`);
 
-export const updateFsv = (id: string, input: FsvUpdateInput) =>
+const updateFsvNow = (id: string, input: FsvUpdateInput) =>
   apiFetch<FieldServiceVisit>(`/fsv/${id}`, { method: "PATCH", body: JSON.stringify(input) });
+
+/**
+ * Offline-queueable (2026-08-02, extended after client testing surfaced
+ * this gap) — timestamps, "No parts used", and customer sign-off all go
+ * through this one call. Unlike a text field, a *controlled* checkbox
+ * silently reverts to server state when its save fails — it doesn't stay
+ * checked "for you to retry," it just looks broken. Queued the same way as
+ * the other 4 actions; returns `{ queued: true }` instead of the real
+ * record when queued, callers must check for this.
+ */
+export async function updateFsv(id: string, input: FsvUpdateInput): Promise<FieldServiceVisit | { queued: true }> {
+  if (await hasPendingQueue(id)) {
+    await enqueueFsvAction({ id: crypto.randomUUID(), fsvId: id, kind: "update", queuedAt: new Date().toISOString(), body: { ...input } });
+    return { queued: true };
+  }
+  try {
+    return await updateFsvNow(id, input);
+  } catch (err) {
+    if (!isNetworkError(err)) throw err;
+    await enqueueFsvAction({ id: crypto.randomUUID(), fsvId: id, kind: "update", queuedAt: new Date().toISOString(), body: { ...input } });
+    return { queued: true };
+  }
+}
 
 const addFsvPartNow = (id: string, input: FsvPartInput) => post<FsvPartConsumed>(`/fsv/${id}/parts`, input);
 
@@ -138,14 +161,14 @@ const addFsvPartNow = (id: string, input: FsvPartInput) => post<FsvPartConsumed>
  */
 export async function addFsvPart(id: string, input: FsvPartInput): Promise<FsvPartConsumed | { queued: true }> {
   if (await hasPendingQueue(id)) {
-    await enqueueFsvAction({ id: crypto.randomUUID(), fsvId: id, kind: "part", queuedAt: new Date().toISOString(), body: input });
+    await enqueueFsvAction({ id: crypto.randomUUID(), fsvId: id, kind: "part", queuedAt: new Date().toISOString(), body: { ...input } });
     return { queued: true };
   }
   try {
     return await addFsvPartNow(id, input);
   } catch (err) {
     if (!isNetworkError(err)) throw err;
-    await enqueueFsvAction({ id: crypto.randomUUID(), fsvId: id, kind: "part", queuedAt: new Date().toISOString(), body: input });
+    await enqueueFsvAction({ id: crypto.randomUUID(), fsvId: id, kind: "part", queuedAt: new Date().toISOString(), body: { ...input } });
     return { queued: true };
   }
 }
@@ -252,9 +275,9 @@ export async function submitFsv(id: string): Promise<FieldServiceVisit | { queue
 }
 
 /** Uploads the scanned Service Report file (Ashwath feedback 2026-07-25), mirroring uploadFsvPhoto/uploadFsvSignature. */
-export async function uploadFsvReport(id: string, file: File): Promise<FieldServiceVisit> {
+async function uploadFsvReportNow(id: string, file: Blob, fileName: string): Promise<FieldServiceVisit> {
   const formData = new FormData();
-  formData.append("file", file);
+  formData.append("file", file, fileName);
 
   const send = () =>
     fetch(`${API_URL}/fsv/${id}/report/upload`, {
@@ -273,6 +296,27 @@ export async function uploadFsvReport(id: string, file: File): Promise<FieldServ
     throw new ApiError(res.status, body);
   }
   return res.json() as Promise<FieldServiceVisit>;
+}
+
+/**
+ * Offline-queueable (2026-08-02, added after client testing found the file
+ * was being silently lost) — previously not queued at all; a failed
+ * upload offline just showed "Upload failed" with no recovery, and the
+ * selected file was gone. Returns `{ queued: true }` instead of the real
+ * record when queued; callers must check for this.
+ */
+export async function uploadFsvReport(id: string, file: File): Promise<FieldServiceVisit | { queued: true }> {
+  if (await hasPendingQueue(id)) {
+    await enqueueFsvAction({ id: crypto.randomUUID(), fsvId: id, kind: "report", queuedAt: new Date().toISOString(), file, fileName: file.name });
+    return { queued: true };
+  }
+  try {
+    return await uploadFsvReportNow(id, file, file.name);
+  } catch (err) {
+    if (!isNetworkError(err)) throw err;
+    await enqueueFsvAction({ id: crypto.randomUUID(), fsvId: id, kind: "report", queuedAt: new Date().toISOString(), file, fileName: file.name });
+    return { queued: true };
+  }
 }
 
 /** Uploads the captured signature PNG (see SignaturePad) to server-side storage, mirroring uploadFsvPhoto. */
@@ -372,6 +416,10 @@ function replayOne(action: QueuedFsvAction): Promise<unknown> {
       return addFsvPartNow(action.fsvId, action.body);
     case "submit":
       return submitFsvNow(action.fsvId);
+    case "update":
+      return updateFsvNow(action.fsvId, action.body);
+    case "report":
+      return uploadFsvReportNow(action.fsvId, action.file, action.fileName);
   }
 }
 
