@@ -16,6 +16,7 @@ import { WorkflowLabelModule } from './ticketing/workflow-labels/workflow-label.
 import { PriorityLabelModule } from './ticketing/priority-labels/priority-label.module';
 import { ServiceTypeConfigModule } from './ticketing/service-types/service-type.module';
 import { SkillTagModule } from './ticketing/skill-tags/skill-tag.module';
+import { AuditLogModule } from './audit-log/audit-log.module';
 import { ReportsModule } from './reports/reports.module';
 import { DashboardsAceModule } from './dashboards-ace/dashboards-ace.module';
 import { SyncModule } from './ticketing/sync/sync.module';
@@ -59,6 +60,7 @@ import { DispatchModule } from './dashboards/dispatch/dispatch.module';
     PriorityLabelModule,
     ServiceTypeConfigModule,
     SkillTagModule,
+    AuditLogModule,
     ReportsModule,
     DashboardsAceModule,
     SyncModule,

@@ -55,6 +55,11 @@ const SECTIONS = [
     href: "/dashboard/admin/sync-monitor",
   },
   {
+    label: "Audit Log",
+    description: "Every recorded field change across Tickets, FSVs, AMC Contracts, Quotations, and Users",
+    href: "/dashboard/admin/audit-log",
+  },
+  {
     label: "Bulk Ticket Import",
     description: "Upload a CSV of ticket rows — valid rows create tickets, invalid rows report per-row errors",
     href: "/dashboard/admin/bulk-import",

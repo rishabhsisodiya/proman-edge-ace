@@ -80,9 +80,10 @@ export class SlaBreachCron {
         if (!systemActorId) systemActorId = await this.resolveSystemActorId();
         await this.prisma.ticket.update({ where: { id: t.id }, data });
         for (const entry of auditEntries) {
-          await this.prisma.ticketAuditLog.create({
+          await this.prisma.auditLog.create({
             data: {
-              ticketId: t.id,
+              entityType: 'TICKET',
+              entityId: t.id,
               fieldName: entry.fieldName,
               oldValue: entry.oldValue,
               newValue: entry.newValue,

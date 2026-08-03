@@ -93,9 +93,10 @@ export class NotificationService {
 
       if (failureReason && params.ticketId) {
         const actorUserId = await this.resolveSystemActor(params.systemActorUserId);
-        await this.prisma.ticketAuditLog.create({
+        await this.prisma.auditLog.create({
           data: {
-            ticketId: params.ticketId,
+            entityType: 'TICKET',
+            entityId: params.ticketId,
             fieldName: 'notification_failed',
             oldValue: null,
             newValue: `${params.channel} notification "${params.templateName}" to ${params.recipient} failed: ${failureReason}`,

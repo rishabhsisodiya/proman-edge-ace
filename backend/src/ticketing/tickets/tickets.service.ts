@@ -372,9 +372,10 @@ export class TicketsService {
     if (duplicateCandidate && AUTO_MERGE_SOURCES.includes(dto.source)) {
       // Auto-source duplicate: don't create a second ticket — merge as a note
       // on the existing one instead.
-      await this.prisma.ticketAuditLog.create({
+      await this.prisma.auditLog.create({
         data: {
-          ticketId: duplicateCandidate.id,
+          entityType: 'TICKET',
+          entityId: duplicateCandidate.id,
           fieldName: 'duplicate_merge',
           oldValue: null,
           newValue: `Merged duplicate ${dto.source} report: ${dto.description}`,
@@ -456,9 +457,10 @@ export class TicketsService {
       // make that actionable (see resolveDuplicate() below).
       if (duplicateCandidate && !AUTO_MERGE_SOURCES.includes(dto.source)) {
         await tx.ticket.update({ where: { id: ticket.id }, data: { possibleDuplicateOfId: duplicateCandidate.id } });
-        await tx.ticketAuditLog.create({
+        await tx.auditLog.create({
           data: {
-            ticketId: ticket.id,
+            entityType: 'TICKET',
+            entityId: ticket.id,
             fieldName: 'duplicate_reference',
             oldValue: null,
             newValue: `Possible duplicate of ${duplicateCandidate.ticketNo} (created ${duplicateCandidate.createdAt.toISOString()})`,
@@ -653,9 +655,10 @@ export class TicketsService {
       // controller) rather than inheriting Regularize's stricter one.
       await this.prisma.$transaction([
         this.prisma.ticket.update({ where: { id }, data: { status: 'CLOSED', closedAt: new Date() } }),
-        this.prisma.ticketAuditLog.create({
+        this.prisma.auditLog.create({
           data: {
-            ticketId: id,
+            entityType: 'TICKET',
+            entityId: id,
             fieldName: 'status',
             oldValue: ticket.status,
             newValue: `CLOSED (Merged as duplicate of ${ticket.possibleDuplicateOf!.ticketNo}: ${reason.trim()})`,
@@ -665,9 +668,10 @@ export class TicketsService {
         }),
       ]);
     } else {
-      await this.prisma.ticketAuditLog.create({
+      await this.prisma.auditLog.create({
         data: {
-          ticketId: id,
+          entityType: 'TICKET',
+          entityId: id,
           fieldName: 'duplicate_reference',
           oldValue: null,
           newValue: `Dismissed — confirmed not a duplicate of ${ticket.possibleDuplicateOf!.ticketNo}${reason?.trim() ? `: ${reason.trim()}` : ''}`,
@@ -681,8 +685,8 @@ export class TicketsService {
   }
 
   async timeline(id: string) {
-    const entries = await this.prisma.ticketAuditLog.findMany({
-      where: { ticketId: id },
+    const entries = await this.prisma.auditLog.findMany({
+      where: { entityType: 'TICKET', entityId: id },
       orderBy: { changedAt: 'asc' },
     });
     const userIds = [...new Set(entries.map((e) => e.changedByUserId))];
@@ -970,9 +974,10 @@ export class TicketsService {
       },
     });
 
-    await this.prisma.ticketAuditLog.create({
+    await this.prisma.auditLog.create({
       data: {
-        ticketId: id,
+        entityType: 'TICKET',
+        entityId: id,
         fieldName: 'serviceType',
         oldValue: serviceTypeLabel(ticket.serviceType),
         newValue: serviceTypeLabel(serviceType),
@@ -989,9 +994,10 @@ export class TicketsService {
     const ticket = await this.prisma.ticket.findUniqueOrThrow({ where: { id } });
     const updated = await this.prisma.ticket.update({ where: { id }, data: { customerCategory } });
 
-    await this.prisma.ticketAuditLog.create({
+    await this.prisma.auditLog.create({
       data: {
-        ticketId: id,
+        entityType: 'TICKET',
+        entityId: id,
         fieldName: 'customerCategory',
         oldValue: ticket.customerCategory,
         newValue: customerCategory,
@@ -1011,9 +1017,10 @@ export class TicketsService {
     const cleaned = [...new Set(tags.map((t) => t.trim()).filter(Boolean))];
     const updated = await this.prisma.ticket.update({ where: { id }, data: { tags: cleaned } });
 
-    await this.prisma.ticketAuditLog.create({
+    await this.prisma.auditLog.create({
       data: {
-        ticketId: id,
+        entityType: 'TICKET',
+        entityId: id,
         fieldName: 'tags',
         oldValue: ticket.tags.join(', '),
         newValue: cleaned.join(', '),
@@ -1039,9 +1046,10 @@ export class TicketsService {
     const ticket = await this.prisma.ticket.findUniqueOrThrow({ where: { id } });
     const updated = await this.prisma.ticket.update({ where: { id }, data: { warrantyEligible, overrideReason } });
 
-    await this.prisma.ticketAuditLog.create({
+    await this.prisma.auditLog.create({
       data: {
-        ticketId: id,
+        entityType: 'TICKET',
+        entityId: id,
         fieldName: 'warrantyEligible',
         oldValue: String(ticket.warrantyEligible),
         newValue: `${warrantyEligible} (${overrideReason})`,

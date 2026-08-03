@@ -172,7 +172,8 @@ export class WorkflowService {
     Object.assign(data, pauseData);
 
     const auditData = {
-      ticketId,
+      entityType: 'TICKET',
+      entityId: ticketId,
       fieldName: 'status',
       oldValue: fromStatus,
       newValue: auditNote ? `${targetStatus} (${auditNote})` : targetStatus,
@@ -182,13 +183,13 @@ export class WorkflowService {
 
     if (tx) {
       const updated = await tx.ticket.update({ where: { id: ticketId }, data: data as any });
-      await tx.ticketAuditLog.create({ data: auditData });
+      await tx.auditLog.create({ data: auditData });
       return updated;
     }
 
     const [updated] = await this.prisma.$transaction([
       this.prisma.ticket.update({ where: { id: ticketId }, data: data as any }),
-      this.prisma.ticketAuditLog.create({ data: auditData }),
+      this.prisma.auditLog.create({ data: auditData }),
     ]);
 
     return updated;

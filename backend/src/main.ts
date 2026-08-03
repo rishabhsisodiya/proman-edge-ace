@@ -5,6 +5,7 @@ import * as cookieParser from 'cookie-parser';
 import * as fs from 'fs';
 import * as path from 'path';
 import { AppModule } from './app.module';
+import { AuditContextInterceptor } from './common/audit-context.interceptor';
 
 async function bootstrap() {
   // Local disk storage for FSV photo uploads (backend/uploads/fsv-photos) —
@@ -34,6 +35,11 @@ async function bootstrap() {
   app.enableCors({ origin: process.env.FRONTEND_URL ?? 'http://localhost:3000', credentials: true });
   app.use(cookieParser());
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  // Generic field-level audit trail (2026-08-03) — sets the request's actor
+  // in AsyncLocalStorage so PrismaService's automatic diffing hook can
+  // attribute FSV/AMC/Quotation/User field changes without every call site
+  // needing to pass one explicitly.
+  app.useGlobalInterceptors(new AuditContextInterceptor());
   app.setGlobalPrefix('api/v1');
   await app.listen(process.env.PORT ?? 4100);
 }

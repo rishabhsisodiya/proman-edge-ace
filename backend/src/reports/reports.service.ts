@@ -117,11 +117,11 @@ export class ReportsService {
   async ticketStatusTimeline(ticketId: string): Promise<ReportResult> {
     const ticket = await this.prisma.ticket.findUnique({ where: { id: ticketId } });
     if (!ticket) throw new NotFoundException('Ticket not found');
-    const entries = await this.prisma.ticketAuditLog.findMany({
-      where: { ticketId, fieldName: 'status' },
+    const entries = await this.prisma.auditLog.findMany({
+      where: { entityType: 'TICKET', entityId: ticketId, fieldName: 'status' },
       orderBy: { changedAt: 'asc' },
     });
-    // No FK relation from TicketAuditLog to User exists (raw changedByUserId
+    // No FK relation from AuditLog to User exists (raw changedByUserId
     // scalar only) — batch-fetch names separately rather than adding a
     // schema relation just for this report.
     const userIds = [...new Set(entries.map((e) => e.changedByUserId))];

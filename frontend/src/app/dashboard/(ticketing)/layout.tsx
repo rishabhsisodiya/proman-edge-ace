@@ -32,6 +32,7 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/dashboard/admin/priority-labels", title: "Ticket Priorities" },
   { prefix: "/dashboard/admin/service-types", title: "Service Types" },
   { prefix: "/dashboard/admin/skill-tags", title: "Skill Tags" },
+  { prefix: "/dashboard/admin/audit-log", title: "Audit Log" },
   { prefix: "/dashboard/admin", title: "Admin Console" },
   { prefix: "/dashboard/dashboards", title: "Dashboards" },
 ];

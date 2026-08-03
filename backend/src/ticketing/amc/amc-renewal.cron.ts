@@ -4,6 +4,7 @@ import { Region } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationService } from '../../notifications/notification.service';
 import { NotificationTemplateService } from '../../notifications/notification-template.service';
+import { runWithAuditContext } from '../../common/audit-context';
 
 /**
  * AMC renewal alert ladder + lapse handling (FSD §7.2 rules 7-11, N-18/19/20/21
@@ -31,6 +32,16 @@ export class AmcRenewalCron {
 
   @Cron('30 1 * * *', { timeZone: 'Asia/Kolkata' }) // 1:30 AM IST daily, after the AMC visit cron
   async run() {
+    // Generic field-level audit trail (2026-08-03) — this cron's
+    // AmcContract.update() calls (renewalStatus, alert-sent timestamps) go
+    // through PrismaService's automatic diffing hook, which needs an actor
+    // in AsyncLocalStorage to attribute the change to; a cron has no HTTP
+    // request to supply one, so it's set explicitly here with a system actor.
+    const systemActorId = await this.resolveSystemActorId();
+    return runWithAuditContext({ userId: systemActorId, changeSource: 'SYSTEM_JOB' }, () => this.runInner());
+  }
+
+  private async runInner() {
     const now = new Date();
     const contracts = await this.prisma.amcContract.findMany({
       where: { renewalStatus: { notIn: ['LAPSED', 'RENEWED'] } },
@@ -128,5 +139,14 @@ export class AmcRenewalCron {
 
   private usersByRole(role: 'MANAGER' | 'ADMIN') {
     return this.prisma.user.findMany({ where: { role, isActive: true } });
+  }
+
+  /** Same pattern as SlaBreachCron's own resolveSystemActorId(). */
+  private async resolveSystemActorId(): Promise<string> {
+    const envActor = process.env.PARTNER_ACTOR_USER_ID;
+    if (envActor) return envActor;
+    const admin = await this.prisma.user.findFirst({ where: { role: 'ADMIN' } });
+    if (!admin) throw new Error('No PARTNER_ACTOR_USER_ID configured and no ADMIN user exists to attribute AMC renewal audit log entries to');
+    return admin.id;
   }
 }

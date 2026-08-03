@@ -728,7 +728,6 @@ model Ticket {
   duplicateFlagResolved    Boolean             @default(false)
   tags                     String[]
   visits                   FieldServiceVisit[]
-  auditLog                 TicketAuditLog[]
   notifications            NotificationLog[]
   quotations               Quotation[]
   // Direct Deliveries only (the non-chargeable path with no Quotation) —
@@ -841,10 +840,20 @@ model ScheduledReport {
   updatedAt          DateTime                 @updatedAt
 }
 
-model TicketAuditLog {
+/// Generic field-level audit trail (2026-08-03, client-agreed scope) —
+/// replaces `TicketAuditLog` (ticket-only) with one polymorphic table shared
+/// across Ticket/FSV/AMC/Quotation/User. `entityType` + `entityId` replace
+/// the old table's dedicated `ticketId` column. Ticket keeps writing here
+/// via its existing 12 hand-crafted call sites (their narrative context —
+/// e.g. "Rejected by John: reason X" — isn't a plain field diff and is
+/// worth keeping); FieldServiceVisit/AmcContract/Quotation/User are
+/// audited automatically instead, via a diffing hook installed on
+/// PrismaService (see prisma.service.ts) — every `.update()` call on those
+/// 4 models is diffed field-by-field with no per-call-site code needed.
+model AuditLog {
   id              String       @id @default(uuid())
-  ticketId        String
-  ticket          Ticket       @relation(fields: [ticketId], references: [id])
+  entityType      String
+  entityId        String
   fieldName       String
   oldValue        String?
   newValue        String?
@@ -853,7 +862,7 @@ model TicketAuditLog {
   changeSource    ChangeSource
   ipAddress       String?
 
-  @@index([ticketId])
+  @@index([entityType, entityId])
 }
 
 model FieldServiceVisit {
