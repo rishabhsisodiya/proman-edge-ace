@@ -6,6 +6,7 @@ export interface CustomerListItem {
   customerName: string;
   region: Region | null;
   accountStatus: string;
+  needsReview?: boolean;
 }
 
 export interface EquipmentListItem {
@@ -64,6 +65,8 @@ export interface CustomerDetail extends CustomerListItem {
   creditTerms: string | null;
   erpnextCustomerId: string | null;
   lastSyncedAt: string | null;
+  needsReview: boolean;
+  reviewReason: string | null;
   sites: CustomerSiteListItem[];
   equipment: EquipmentListItem[];
   tickets: {
@@ -79,6 +82,18 @@ export interface CustomerDetail extends CustomerListItem {
 }
 
 export const getCustomer = (id: string) => apiFetch<CustomerDetail>(`/customers/${id}`);
+
+/** "Sync from ERP" button on Customer Detail — resyncs this customer, its sites, and its equipment. */
+export const syncCustomerFromErp = (id: string) => apiFetch<CustomerDetail>(`/customers/${id}/sync`, { method: "POST" });
+
+export const CUSTOMER_TYPES = ["DIRECT", "DEALER", "OEM_PARTNER", "GOVERNMENT", "PSU"] as const;
+export type CustomerTypeValue = (typeof CUSTOMER_TYPES)[number];
+
+export const setCustomerType = (id: string, customerType: CustomerTypeValue) =>
+  apiFetch<CustomerDetail>(`/customers/${id}/customer-type`, {
+    method: "PATCH",
+    body: JSON.stringify({ customerType }),
+  });
 
 export const equipmentForCustomer = (customerId: string) =>
   apiFetch<EquipmentListItem[]>(`/customers/${customerId}/equipment`);
@@ -98,6 +113,56 @@ export const listItems = (search?: string, priceListName?: string) => {
   const qs = params.toString();
   return apiFetch<ItemListItem[]>(`/items${qs ? `?${qs}` : ""}`);
 };
+
+/** Item catalog List page (paginated) — separate from listItems() above, which backs the FSV/Quotation item-picker combobox. */
+export interface ItemRecord {
+  itemCode: string;
+  itemName: string;
+  itemGroup: string;
+  itemDescription: string | null;
+  uom: string;
+  standardRate: string | number;
+  valuationRate: string | number | null;
+  currentStock: number | null;
+  minimumStockLevel: number | null;
+  lastSyncedAt: string | null;
+}
+
+export interface ItemBrowseResult {
+  items: ItemRecord[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export const browseItems = (params: { search?: string; itemGroup?: string; page?: number; pageSize?: number }) => {
+  const qs = new URLSearchParams();
+  if (params.search) qs.set("search", params.search);
+  if (params.itemGroup) qs.set("itemGroup", params.itemGroup);
+  if (params.page) qs.set("page", String(params.page));
+  if (params.pageSize) qs.set("pageSize", String(params.pageSize));
+  const query = qs.toString();
+  return apiFetch<ItemBrowseResult>(`/items/browse${query ? `?${query}` : ""}`);
+};
+
+export interface ItemWarehouseStockRow {
+  id: string;
+  warehouse: string;
+  actualQty: number;
+  valuationRate: string | number | null;
+}
+
+export interface ItemDetail extends ItemRecord {
+  compatibleEquipmentCategories: string[];
+  warehouseStock: ItemWarehouseStockRow[];
+  sellingRate: number | null;
+}
+
+export const getItem = (itemCode: string) => apiFetch<ItemDetail>(`/items/${encodeURIComponent(itemCode)}`);
+
+/** "Sync from ERP" button on Item Detail — resyncs this item, its warehouse stock, and its price-list rates. */
+export const syncItemFromErp = (itemCode: string) =>
+  apiFetch<ItemDetail>(`/items/${encodeURIComponent(itemCode)}/sync`, { method: "POST" });
 
 export interface CustomerSiteListItem {
   id: string;

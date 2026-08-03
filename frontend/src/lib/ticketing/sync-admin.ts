@@ -77,10 +77,22 @@ export const getEquipmentSkipped = () => apiFetch<EquipmentSyncSkipped[]>(`/admi
 export const retrySyncFailure = (id: string) =>
   apiFetch<{ ok: boolean }>(`/admin/sync/failures/${id}/retry`, { method: "POST" });
 
+/** "View Details" on a Sync Failure — raw ERPNext row as it stands right now (null if deleted/renamed in ERPNext since), alongside the stored failure. */
+export interface SyncFailureDetail {
+  failure: SyncFailure;
+  erpRow: Record<string, unknown> | null;
+}
+
+export const getSyncFailureDetail = (id: string) => apiFetch<SyncFailureDetail>(`/admin/sync/failures/${id}`);
+
+export type SyncEntity = "customer" | "item" | "employee" | "equipmentTracking";
+
 /**
- * Triggers the full night job — Customer (+ CustomerSite) then Item — in one go.
+ * Triggers the night job. Omit `entity` to run all 4 (Customer, Item,
+ * Employee, Equipment Tracking) in sequence, same as the nightly cron.
  * @param force Ignores each sync's watermark and reprocesses every record from
  * scratch — for one-off full resyncs (e.g. after adding new sync logic), not routine use.
+ * @param entity Run just this one sync instead of all 4.
  */
-export const triggerNightlySync = (force = false) =>
-  apiFetch<{ ok: boolean }>(`/admin/sync/run`, { method: "POST", body: JSON.stringify({ force }) });
+export const triggerNightlySync = (force = false, entity?: SyncEntity) =>
+  apiFetch<{ ok: boolean }>(`/admin/sync/run`, { method: "POST", body: JSON.stringify({ force, entity }) });

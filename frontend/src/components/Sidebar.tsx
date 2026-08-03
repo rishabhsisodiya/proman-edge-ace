@@ -69,6 +69,14 @@ const CUSTOMERS_NAV_ITEM: NavItem = {
   roles: ["CALL_CENTER", "ASM", "MANAGER", "ADMIN"],
 };
 
+// Item catalog (2026-08-04) — same visibility as Customers; no dedicated
+// item-master page existed before this, only the FSV/Quotation item picker.
+const ITEMS_NAV_ITEM: NavItem = {
+  label: "Items",
+  href: "/dashboard/items",
+  roles: ["CALL_CENTER", "ASM", "MANAGER", "ADMIN"],
+};
+
 export default function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const pathname = usePathname();
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -89,7 +97,15 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
   const adminItems = user?.role === "ADMIN" ? ADMIN_ONLY_ITEMS : [];
   const reportsItems = user && REPORTS_NAV_ITEM.roles.includes(user.role) ? [REPORTS_NAV_ITEM] : [];
   const customersItems = user && CUSTOMERS_NAV_ITEM.roles.includes(user.role) ? [CUSTOMERS_NAV_ITEM] : [];
-  const items = [...(ticketItem ? [ticketItem] : []), ...customersItems, ...erpItems, ...reportsItems, ...adminItems];
+  const itemsNavItems = user && ITEMS_NAV_ITEM.roles.includes(user.role) ? [ITEMS_NAV_ITEM] : [];
+  const items = [
+    ...(ticketItem ? [ticketItem] : []),
+    ...customersItems,
+    ...itemsNavItems,
+    ...erpItems,
+    ...reportsItems,
+    ...adminItems,
+  ];
 
   return (
     <>

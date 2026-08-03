@@ -45,13 +45,22 @@ export class SyncAdminController {
     return this.syncAdmin.retryFailure(id);
   }
 
+  /** "View Details" on a Sync Failure — raw ERPNext row + stored failure reason, before retrying. */
+  @Get('failures/:id')
+  failureDetail(@Param('id') id: string) {
+    return this.syncAdmin.failureDetail(id);
+  }
+
   /**
-   * Runs the full night job — Customer (+ CustomerSite) then Item — in one
-   * go. Pass { force: true } to ignore each sync's watermark and reprocess
-   * every record from scratch (one-off full resync, not routine use).
+   * Runs the night job — Customer (+ CustomerSite), Item, Employee, and
+   * Equipment Tracking. Pass { force: true } to ignore each sync's watermark
+   * and reprocess every record from scratch (one-off full resync, not
+   * routine use). Pass { entity: 'customer' | 'item' | 'employee' |
+   * 'equipmentTracking' } to run just that one instead of all 4
+   * (2026-08-04) — omitted runs everything, same as before.
    */
   @Post('run')
-  triggerRun(@Body('force') force?: boolean) {
-    return this.syncAdmin.triggerRun(force ?? false);
+  triggerRun(@Body('force') force?: boolean, @Body('entity') entity?: string) {
+    return this.syncAdmin.triggerRun(force ?? false, entity);
   }
 }

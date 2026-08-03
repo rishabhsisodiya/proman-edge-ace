@@ -4,8 +4,24 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ApiError } from "@/lib/api";
-import { CustomerDetail, getCustomer } from "@/lib/ticketing/masters";
+import { AuthUser, getCurrentUser } from "@/lib/auth";
+import {
+  CUSTOMER_TYPES,
+  CustomerDetail,
+  CustomerTypeValue,
+  getCustomer,
+  setCustomerType,
+  syncCustomerFromErp,
+} from "@/lib/ticketing/masters";
 import { PRIORITY_LABEL, STATUS_LABEL, STATUS_STYLE, TicketStatus, Priority } from "@/lib/ticketing/types";
+
+const CUSTOMER_TYPE_LABEL: Record<CustomerTypeValue, string> = {
+  DIRECT: "Direct",
+  DEALER: "Dealer",
+  OEM_PARTNER: "OEM Partner",
+  GOVERNMENT: "Government",
+  PSU: "PSU",
+};
 
 const ACCOUNT_STATUS_STYLE: Record<string, string> = {
   ACTIVE: "bg-brand-green-bg text-brand-green",
@@ -28,13 +44,62 @@ export default function CustomerDetailPage() {
   const [customer, setCustomer] = useState<CustomerDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
+
+  const [editingType, setEditingType] = useState(false);
+  const [typeChoice, setTypeChoice] = useState<CustomerTypeValue>("DIRECT");
+  const [savingType, setSavingType] = useState(false);
+  const [typeSaveError, setTypeSaveError] = useState<string | null>(null);
+
+  const [syncing, setSyncing] = useState(false);
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setUser(getCurrentUser());
+  }, []);
 
   useEffect(() => {
     getCustomer(params.id)
-      .then(setCustomer)
+      .then((c) => {
+        setCustomer(c);
+        setTypeChoice(c.customerType as CustomerTypeValue);
+      })
       .catch((err) => setError(err instanceof ApiError ? "Customer not found." : "Could not reach the server."))
       .finally(() => setLoading(false));
   }, [params.id]);
+
+  async function onSaveCustomerType() {
+    if (!customer) return;
+    setSavingType(true);
+    setTypeSaveError(null);
+    try {
+      const updated = await setCustomerType(customer.id, typeChoice);
+      setCustomer(updated);
+      setEditingType(false);
+    } catch {
+      setTypeSaveError("Could not save. Try again.");
+    } finally {
+      setSavingType(false);
+    }
+  }
+
+  async function onSync() {
+    if (!customer) return;
+    setSyncing(true);
+    setSyncNotice(null);
+    setSyncError(null);
+    try {
+      const updated = await syncCustomerFromErp(customer.id);
+      setCustomer(updated);
+      setTypeChoice(updated.customerType as CustomerTypeValue);
+      setSyncNotice("Synced from ERP — customer, site addresses, and equipment refreshed.");
+    } catch {
+      setSyncError("Could not sync from ERP. Try again.");
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   if (loading) return <div className="w-full px-6 py-8 text-sm text-muted">Loading…</div>;
   if (error || !customer) return <div className="w-full px-6 py-8 text-sm text-brand-red">{error ?? "Not found."}</div>;
@@ -45,17 +110,91 @@ export default function CustomerDetailPage() {
         ← Customers
       </Link>
 
-      <div className="mb-6 flex flex-wrap items-center gap-3">
-        <h1 className="text-xl font-bold text-navy">{customer.customerName}</h1>
-        <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${ACCOUNT_STATUS_STYLE[customer.accountStatus] ?? ""}`}>
-          {customer.accountStatus}
-        </span>
-        <span className="text-sm text-muted">{customer.region ?? "Region pending"}</span>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-xl font-bold text-navy">{customer.customerName}</h1>
+          <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${ACCOUNT_STATUS_STYLE[customer.accountStatus] ?? ""}`}>
+            {customer.accountStatus}
+          </span>
+          <span className="text-sm text-muted">{customer.region ?? "Region pending"}</span>
+        </div>
+        {(user?.role === "MANAGER" || user?.role === "ADMIN") && customer.erpnextCustomerId && (
+          <button
+            onClick={onSync}
+            disabled={syncing}
+            className="rounded-md bg-navy-tint px-3 py-1.5 text-xs font-bold text-navy transition disabled:opacity-50"
+          >
+            {syncing ? "Syncing…" : "Sync from ERP"}
+          </button>
+        )}
       </div>
+
+      {syncNotice && <p className="mb-4 rounded-md bg-brand-green-bg px-3 py-2 text-xs text-brand-green">{syncNotice}</p>}
+      {syncError && <p className="mb-4 rounded-md bg-brand-red-bg px-3 py-2 text-xs text-brand-red">{syncError}</p>}
+
+      {customer.needsReview && (
+        <div className="mb-6 rounded-lg border border-brand-amber-bg bg-brand-amber-bg/40 p-4 text-sm">
+          <p className="font-bold text-brand-amber">Needs Review — flagged during ERPNext sync</p>
+          <p className="mt-1 text-navy">{customer.reviewReason}</p>
+          {customer.reviewReason?.includes("not mapped to a Region") && (
+            <p className="mt-2 text-xs text-muted">
+              Fix this on{" "}
+              <Link href="/dashboard/admin/region-mapping" className="underline">
+                Region Mapping
+              </Link>{" "}
+              — once the ERPNext territory is mapped, the next sync will set this customer's region automatically.
+            </p>
+          )}
+          {customer.reviewReason?.includes("customerType defaulted") &&
+            (user?.role === "MANAGER" || user?.role === "ADMIN" ? (
+              <div className="mt-2">
+                {!editingType ? (
+                  <button
+                    onClick={() => setEditingType(true)}
+                    className="rounded-md bg-orange px-3 py-1.5 text-xs font-bold text-navy"
+                  >
+                    Confirm actual Customer Type
+                  </button>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={typeChoice}
+                      onChange={(e) => setTypeChoice(e.target.value as CustomerTypeValue)}
+                      className="h-9 rounded-md border border-line px-2 text-xs text-navy"
+                    >
+                      {CUSTOMER_TYPES.map((t) => (
+                        <option key={t} value={t}>
+                          {CUSTOMER_TYPE_LABEL[t]}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={onSaveCustomerType}
+                      disabled={savingType}
+                      className="rounded-md bg-orange px-3 py-1.5 text-xs font-bold text-navy disabled:opacity-50"
+                    >
+                      {savingType ? "Saving…" : "Save"}
+                    </button>
+                    <button
+                      onClick={() => setEditingType(false)}
+                      disabled={savingType}
+                      className="text-xs font-bold text-muted"
+                    >
+                      Cancel
+                    </button>
+                    {typeSaveError && <span className="text-xs text-brand-red">{typeSaveError}</span>}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="mt-2 text-xs text-muted">A Manager or Admin needs to confirm this customer's actual type.</p>
+            ))}
+        </div>
+      )}
 
       {/* Customer fields */}
       <section className="mb-6 grid grid-cols-1 gap-4 rounded-lg border border-line bg-white p-5 sm:grid-cols-3">
-        <Field label="Customer Type" value={customer.customerType} />
+        <Field label="Customer Type" value={CUSTOMER_TYPE_LABEL[customer.customerType as CustomerTypeValue] ?? customer.customerType} />
         <Field label="Primary Contact" value={`${customer.primaryContactName} · ${customer.primaryContactMobile}`} />
         <Field label="Primary Email" value={customer.primaryContactEmail} />
         <Field label="Secondary Contact" value={customer.secondaryContactName ?? "—"} />

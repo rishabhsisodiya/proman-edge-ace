@@ -58,6 +58,19 @@ export class SyncAdminService {
   }
 
   /**
+   * "View Details" on a Sync Failure (2026-08-04) — the raw ERPNext row
+   * right now, alongside the stored failure reason, so an Admin can see
+   * exactly what needs fixing in ERPNext before retrying. `erpRow` is null
+   * if the record has since been deleted/renamed in ERPNext.
+   */
+  async failureDetail(id: string) {
+    const failure = await this.prisma.customerSyncFailure.findUnique({ where: { id } });
+    if (!failure) throw new NotFoundException('Failure record not found');
+    const erpRow = await this.customerSync.getRawErpRow(failure.erpnextCustomerId);
+    return { failure, erpRow };
+  }
+
+  /**
    * Manual on-demand run of the full night job — Customer (+ CustomerSite),
    * Item, Employee, then Equipment Tracking — same sequence NightlySyncCron
    * fires automatically at 1:30 AM.
@@ -66,12 +79,24 @@ export class SyncAdminService {
    * Employee sync has no watermark (small dataset, always a full re-pull),
    * so `force` doesn't change its behavior; Equipment Tracking does use a
    * watermark (large dataset) but doesn't currently expose a force option.
+   * @param entity Run just one sync instead of all 4 (2026-08-04) — Customer/
+   * Item/Employee/EquipmentTracking, case-insensitive; omitted/invalid runs
+   * everything, same as before this option existed.
    */
-  async triggerRun(force = false) {
-    await this.customerSync.run(force);
-    await this.itemSync.run(force);
-    await this.employeeSync.run();
-    await this.equipmentTrackingSync.run();
+  async triggerRun(force = false, entity?: string) {
+    const target = entity?.toLowerCase();
+    if (!target) {
+      await this.customerSync.run(force);
+      await this.itemSync.run(force);
+      await this.employeeSync.run();
+      await this.equipmentTrackingSync.run();
+      return { ok: true };
+    }
+    if (target === 'customer') await this.customerSync.run(force);
+    else if (target === 'item') await this.itemSync.run(force);
+    else if (target === 'employee') await this.employeeSync.run();
+    else if (target === 'equipmenttracking') await this.equipmentTrackingSync.run();
+    else throw new NotFoundException(`Unknown sync entity "${entity}"`);
     return { ok: true };
   }
 }

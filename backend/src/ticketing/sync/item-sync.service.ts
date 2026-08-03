@@ -170,6 +170,37 @@ export class ItemSyncService {
     }
   }
 
+  /** "Sync from ERP" button on Item Detail (2026-08-04) — resyncs one item + its warehouse stock + price-list rates, bypassing the delta watermark for just this record. */
+  async manualRetry(itemCode: string): Promise<boolean> {
+    const rows = await this.erpDb.query<ErpItemRow>(`${ITEM_SELECT} WHERE i.name = ?`, [itemCode]);
+    if (!rows[0]) return false;
+    const bins = await this.erpDb.query<ErpBinRow>(
+      `SELECT item_code, warehouse, actual_qty, valuation_rate FROM \`tabBin\` WHERE item_code = ?`,
+      [itemCode],
+    );
+    const ok = await this.syncOne(rows[0], bins);
+    await this.syncPriceListRatesForItem(itemCode);
+    return ok;
+  }
+
+  /** Same rate-pull as syncPriceListRates() above, scoped to one item_code — used by manualRetry(). */
+  private async syncPriceListRatesForItem(itemCode: string): Promise<void> {
+    const priceLists = await this.priceLists.list();
+    for (const pl of priceLists) {
+      const rows = await this.erpDb.query<{ item_code: string; price_list_rate: string | number }>(
+        `SELECT item_code, price_list_rate FROM \`tabItem Price\` WHERE price_list = ? AND selling = 1 AND item_code = ?`,
+        [pl.name, itemCode],
+      );
+      for (const row of rows) {
+        await this.prisma.itemPriceListRate.upsert({
+          where: { itemCode_priceListName: { itemCode: row.item_code, priceListName: pl.name } },
+          create: { itemCode: row.item_code, priceListName: pl.name, rate: row.price_list_rate },
+          update: { rate: row.price_list_rate, lastSyncedAt: new Date() },
+        });
+      }
+    }
+  }
+
   private async syncOne(row: ErpItemRow, bins: ErpBinRow[]): Promise<boolean> {
     try {
       const totalStock = bins.reduce((sum, b) => sum + Number(b.actual_qty), 0);

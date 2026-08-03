@@ -1,9 +1,14 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ItemSyncService } from '../sync/item-sync.service';
 
 @Injectable()
 export class ItemsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly itemSync: ItemSyncService,
+  ) {}
 
   async list(search?: string, priceListName?: string) {
     const items = await this.prisma.item.findMany({
@@ -26,6 +31,27 @@ export class ItemsService {
     return items.map((i) => ({ ...i, rate: rateByItem.get(i.itemCode) ?? null }));
   }
 
+  /** Item catalog List page (paginated) — separate from list() above, which backs the FSV/Quotation item-picker combobox and stays capped/unpaginated for that use case. */
+  async browse(filters: { search?: string; itemGroup?: string; page?: number; pageSize?: number }) {
+    const where: Prisma.ItemWhereInput = {};
+    if (filters.itemGroup) where.itemGroup = filters.itemGroup;
+    if (filters.search) {
+      where.OR = [
+        { itemName: { contains: filters.search, mode: 'insensitive' } },
+        { itemCode: { contains: filters.search, mode: 'insensitive' } },
+      ];
+    }
+
+    const page = Math.max(1, filters.page ?? 1);
+    const pageSize = Math.min(50, Math.max(1, filters.pageSize ?? 20));
+
+    const [items, total] = await Promise.all([
+      this.prisma.item.findMany({ where, orderBy: { itemName: 'asc' }, skip: (page - 1) * pageSize, take: pageSize }),
+      this.prisma.item.count({ where }),
+    ]);
+    return { items, total, page, pageSize };
+  }
+
   /**
    * Used by FSV's "Add Part" item picker. FSV now has its own per-line
    * price-list selector (2026-07-31, matching Quotation's) — pass
@@ -42,5 +68,11 @@ export class ItemsService {
         })
       : null;
     return { ...item, sellingRate: priceRate ? Number(priceRate.rate) : null };
+  }
+
+  /** "Sync from ERP" button on Item Detail — resyncs this item, its warehouse stock, and its price-list rates. */
+  async syncFromErp(itemCode: string, priceListName?: string) {
+    await this.itemSync.manualRetry(itemCode);
+    return this.findOne(itemCode, priceListName);
   }
 }

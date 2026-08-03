@@ -373,6 +373,15 @@ model Customer {
   // distinct from CustomerSyncFailure (genuine technical error, capped retry).
   needsReview            Boolean        @default(false)
   reviewReason           String?
+  // Set once an Admin has explicitly confirmed the real Customer Type via
+  // the Customer Detail page (2026-08-04) — ERPNext's own customer_type
+  // field (Company/Individual/Partnership) is a legal-entity classification,
+  // not the same thing as ours (Direct/Dealer/OEM Partner/Government/PSU),
+  // so sync can never derive it and always defaults new customers to
+  // DIRECT + flags for review. Without this flag, every nightly sync would
+  // re-add that same review reason forever, even after an Admin already
+  // answered it — see CustomerSyncService.syncOne().
+  customerTypeConfirmed  Boolean        @default(false)
   lastSyncedAt           DateTime?
   sites                  CustomerSite[]
   equipment              Equipment[]

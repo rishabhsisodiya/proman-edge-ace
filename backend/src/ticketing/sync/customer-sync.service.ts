@@ -47,7 +47,7 @@ const CUSTOMER_SELECT = `
       ORDER BY c2.creation LIMIT 1)
 `;
 
-interface ErpCustomerRow {
+export interface ErpCustomerRow {
   erpnext_customer_id: string;
   customer_name: string;
   customer_type: string | null;
@@ -229,15 +229,27 @@ export class CustomerSyncService {
         return true;
       }
 
+      const existing = await this.prisma.customer.findUnique({
+        where: { erpnextCustomerId: row.erpnext_customer_id },
+        select: { customerTypeConfirmed: true },
+      });
+
       const region = row.territory ? await this.regionMappings.resolve(row.territory) : null;
       const needsReviewReasons: string[] = [];
       if (!region) needsReviewReasons.push(`Territory "${row.territory ?? '(none)'}" not mapped to a Region`);
 
       // ERPNext has no field corresponding to our CustomerType classification
-      // (DIRECT/DEALER/OEM_PARTNER/GOVERNMENT/PSU) — defaults to DIRECT,
-      // flagged for Admin to correct manually.
+      // (DIRECT/DEALER/OEM_PARTNER/GOVERNMENT/PSU — its own customer_type
+      // field is Company/Individual/Partnership, a different concept
+      // entirely) — defaults to DIRECT, flagged for Admin to correct
+      // manually. Once an Admin has confirmed the real value via the
+      // Customer Detail page, stop re-flagging this reason on every future
+      // sync — customerTypeConfirmed is never touched here (see `shared`
+      // below), only set by CustomersService.setCustomerType().
       const customerType: CustomerType = 'DIRECT';
-      needsReviewReasons.push('customerType defaulted to DIRECT — not derivable from ERPNext');
+      if (!existing?.customerTypeConfirmed) {
+        needsReviewReasons.push('customerType defaulted to DIRECT — not derivable from ERPNext');
+      }
 
       const primaryContactName = fullName(row.primary_contact_first, row.primary_contact_last) ?? row.customer_name;
       const secondaryContactName = fullName(row.secondary_contact_first, row.secondary_contact_last);
@@ -371,5 +383,11 @@ export class CustomerSyncService {
     const rows = await this.erpDb.query<ErpCustomerRow>(`${CUSTOMER_SELECT} WHERE c.name = ?`, [erpnextCustomerId]);
     if (!rows[0]) return false;
     return this.syncOne(rows[0]);
+  }
+
+  /** "View Details" on a Sync Failure (2026-08-04) — the raw ERPNext row as it stands right now, so the Admin can see what actually needs fixing there before retrying. Null if the record no longer exists in ERPNext at all. */
+  async getRawErpRow(erpnextCustomerId: string): Promise<ErpCustomerRow | null> {
+    const rows = await this.erpDb.query<ErpCustomerRow>(`${CUSTOMER_SELECT} WHERE c.name = ?`, [erpnextCustomerId]);
+    return rows[0] ?? null;
   }
 }

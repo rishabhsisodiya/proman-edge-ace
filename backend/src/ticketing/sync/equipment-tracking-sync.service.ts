@@ -204,6 +204,14 @@ export class EquipmentTrackingSyncService {
     return true;
   }
 
+  /** Admin-triggered manual resync of one customer's equipment (Customer Detail page, 2026-08-04) — bypasses the delta watermark for this one customer name. */
+  async manualRetryForCustomer(customerName: string): Promise<void> {
+    const rows = await this.erpDb.query<ErpEquipmentTrackingRow>(`${EQUIPMENT_TRACKING_SELECT} WHERE customer = ?`, [customerName]);
+    for (const row of rows) {
+      await this.syncOne(row);
+    }
+  }
+
   private warrantyStatus(warrantyEnd: Date): 'UNDER_WARRANTY' | 'EXPIRING_SOON' | 'OUT_OF_WARRANTY' {
     const now = Date.now();
     const daysLeft = (warrantyEnd.getTime() - now) / (1000 * 60 * 60 * 24);

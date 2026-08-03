@@ -7,13 +7,16 @@ import {
   getEquipmentSkipped,
   getNeedsReview,
   getSyncEmployees,
+  getSyncFailureDetail,
   getSyncFailures,
   getSyncRuns,
   getSyncSkipped,
   NeedsReviewCustomer,
   retrySyncFailure,
   SyncedEmployee,
+  SyncEntity,
   SyncFailure,
+  SyncFailureDetail,
   SyncRun,
   SyncSkipped,
   triggerNightlySync,
@@ -26,6 +29,19 @@ const STATUS_STYLE: Record<SyncRun["status"], string> = {
   PARTIAL: "bg-brand-amber-bg text-brand-amber",
   FAILED: "bg-brand-red-bg text-brand-red",
 };
+
+// Per-entity sync target (2026-08-04) — client asked to run just one sync
+// instead of always all 4. Originally 6 separate buttons in a row; client
+// flagged that as cluttered, so this is a single dropdown + one Run button
+// instead — same capability, one control instead of six.
+const ENTITY_OPTIONS: { value: "" | SyncEntity; label: string }[] = [
+  { value: "", label: "All entities" },
+  { value: "customer", label: "Customer" },
+  { value: "item", label: "Item" },
+  { value: "employee", label: "Employee" },
+  { value: "equipmentTracking", label: "Equipment Tracking" },
+];
+const ENTITY_LABEL: Record<string, string> = Object.fromEntries(ENTITY_OPTIONS.map((o) => [o.value, o.label]));
 
 // W-26 Sync Monitor (§10.1/§12.5) — "ERPNext sync log: last run time,
 // success/failure count, failed records, manual retry."
@@ -40,8 +56,13 @@ export default function SyncMonitorPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [selectedEntity, setSelectedEntity] = useState<"" | SyncEntity>("");
   const [triggering, setTriggering] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+
+  const [viewingFailureId, setViewingFailureId] = useState<string | null>(null);
+  const [failureDetail, setFailureDetail] = useState<SyncFailureDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   function load() {
     setLoading(true);
@@ -83,17 +104,28 @@ export default function SyncMonitorPage() {
     setTriggering(true);
     setNotice(null);
     try {
-      await triggerNightlySync(force);
-      setNotice(
-        force
-          ? "Full resync triggered and completed (Customer + Item + Employee + Equipment Tracking, Customer/Item records fully reprocessed)."
-          : "Night job triggered and completed (Customer + Item + Employee + Equipment Tracking).",
-      );
+      await triggerNightlySync(force, selectedEntity || undefined);
+      const label = ENTITY_LABEL[selectedEntity] ?? "All entities";
+      setNotice(force ? `Full resync triggered and completed (${label}).` : `Sync triggered and completed (${label}).`);
       load();
     } catch {
-      setError("Could not trigger the night job.");
+      setError("Could not trigger the sync.");
     } finally {
       setTriggering(false);
+    }
+  }
+
+  async function onViewFailure(id: string) {
+    setViewingFailureId(id);
+    setDetailLoading(true);
+    setFailureDetail(null);
+    try {
+      setFailureDetail(await getSyncFailureDetail(id));
+    } catch {
+      setError("Could not load failure details.");
+      setViewingFailureId(null);
+    } finally {
+      setDetailLoading(false);
     }
   }
 
@@ -107,25 +139,41 @@ export default function SyncMonitorPage() {
       <a href="/dashboard/admin" className="mb-4 inline-block text-xs font-medium text-muted hover:text-navy">
         ← Admin Console
       </a>
-      <div className="mb-1 flex items-center justify-between">
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-bold text-navy">Sync Monitor</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={selectedEntity}
+            onChange={(e) => setSelectedEntity(e.target.value as "" | SyncEntity)}
+            disabled={triggering}
+            className="h-9 rounded-md border border-line px-2 text-xs font-bold text-navy disabled:opacity-50"
+          >
+            {ENTITY_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
           <button
             onClick={() => onTriggerRun(false)}
             disabled={triggering}
             className="rounded-md bg-orange px-3 py-1.5 text-xs font-bold text-navy transition disabled:opacity-50"
           >
-            {triggering ? "Running…" : "Run Night Job Now"}
+            {triggering ? "Running…" : "Run Now"}
           </button>
           <button
             onClick={() => {
-              if (window.confirm("Force a full resync? This reprocesses every customer and item from scratch, ignoring the incremental watermark. May take a while.")) {
+              if (
+                window.confirm(
+                  `Force a full resync of ${ENTITY_LABEL[selectedEntity]}? This reprocesses every record from scratch, ignoring the incremental watermark. May take a while.`,
+                )
+              ) {
                 onTriggerRun(true);
               }
             }}
             disabled={triggering}
             title="Reprocesses every record from scratch, ignoring the incremental watermark"
-            className="rounded-md bg-navy-tint px-3 py-1.5 text-xs font-bold text-navy transition disabled:opacity-50"
+            className="rounded-md border border-line px-3 py-1.5 text-xs font-bold text-navy transition disabled:opacity-50"
           >
             {triggering ? "Running…" : "Force Full Resync"}
           </button>
@@ -228,7 +276,7 @@ export default function SyncMonitorPage() {
       ) : tab === "runs" ? (
         <RunsTable runs={runs} />
       ) : tab === "failures" ? (
-        <FailuresTable failures={failures} busyId={busyId} onRetry={onRetry} />
+        <FailuresTable failures={failures} busyId={busyId} onRetry={onRetry} onViewDetails={onViewFailure} />
       ) : tab === "skipped" ? (
         <SkippedTable skipped={skipped} />
       ) : tab === "needsReview" ? (
@@ -238,6 +286,90 @@ export default function SyncMonitorPage() {
       ) : (
         <EquipmentSkippedTable rows={equipmentSkipped} />
       )}
+
+      {viewingFailureId && (
+        <FailureDetailModal
+          loading={detailLoading}
+          detail={failureDetail}
+          busy={busyId === viewingFailureId}
+          onRetry={() => onRetry(viewingFailureId)}
+          onClose={() => setViewingFailureId(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function FailureDetailModal({
+  loading,
+  detail,
+  busy,
+  onRetry,
+  onClose,
+}: {
+  loading: boolean;
+  detail: SyncFailureDetail | null;
+  busy: boolean;
+  onRetry: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div
+        className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-5 shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-bold text-navy">Sync Failure Details</h3>
+          <button onClick={onClose} className="text-xs font-bold text-muted">
+            Close
+          </button>
+        </div>
+
+        {loading ? (
+          <p className="text-sm text-muted">Loading…</p>
+        ) : !detail ? (
+          <p className="text-sm text-brand-red">Could not load details.</p>
+        ) : (
+          <>
+            <div className="mb-4 rounded-md bg-brand-red-bg px-3 py-2 text-xs text-brand-red">
+              <p className="font-bold">Last Error ({detail.failure.attemptCount} / 5 attempts)</p>
+              <p className="mt-1">{detail.failure.lastError}</p>
+              <p className="mt-1 text-[10px]">Last attempted: {new Date(detail.failure.lastAttemptAt).toLocaleString()}</p>
+            </div>
+
+            <p className="mb-2 text-xs font-bold uppercase tracking-wide text-navy">
+              Current ERPNext values (live — what needs fixing there)
+            </p>
+            {!detail.erpRow ? (
+              <p className="rounded-md bg-brand-amber-bg px-3 py-2 text-xs text-brand-amber">
+                This record no longer exists in ERPNext (renamed or deleted since the failure was recorded).
+              </p>
+            ) : (
+              <table className="mb-4 w-full rounded-md border border-line text-xs">
+                <tbody>
+                  {Object.entries(detail.erpRow).map(([key, value]) => (
+                    <tr key={key} className="border-b border-line last:border-0">
+                      <td className="w-1/3 px-3 py-2 font-bold text-navy">{key}</td>
+                      <td className="px-3 py-2 text-muted">
+                        {value === null || value === undefined || value === "" ? "—" : String(value)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            <button
+              onClick={onRetry}
+              disabled={busy}
+              className="rounded-md bg-orange px-3 py-1.5 text-xs font-bold text-navy transition disabled:opacity-50"
+            >
+              {busy ? "Retrying…" : "Retry Now"}
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -282,10 +414,12 @@ function FailuresTable({
   failures,
   busyId,
   onRetry,
+  onViewDetails,
 }: {
   failures: SyncFailure[];
   busyId: string | null;
   onRetry: (id: string) => void;
+  onViewDetails: (id: string) => void;
 }) {
   if (failures.length === 0) return <p className="text-sm text-muted">No sync failures — nothing needs a retry.</p>;
   return (
@@ -307,13 +441,21 @@ function FailuresTable({
             <td className="px-4 py-3 text-muted">{f.lastError}</td>
             <td className="px-4 py-3 text-muted">{new Date(f.lastAttemptAt).toLocaleString()}</td>
             <td className="px-4 py-3 text-right">
-              <button
-                onClick={() => onRetry(f.id)}
-                disabled={busyId === f.id}
-                className="rounded-md bg-orange px-3 py-1.5 text-xs font-bold text-navy transition disabled:opacity-50"
-              >
-                {busyId === f.id ? "Retrying…" : "Retry"}
-              </button>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => onViewDetails(f.id)}
+                  className="rounded-md border border-line px-3 py-1.5 text-xs font-bold text-navy transition"
+                >
+                  View Details
+                </button>
+                <button
+                  onClick={() => onRetry(f.id)}
+                  disabled={busyId === f.id}
+                  className="rounded-md bg-orange px-3 py-1.5 text-xs font-bold text-navy transition disabled:opacity-50"
+                >
+                  {busyId === f.id ? "Retrying…" : "Retry"}
+                </button>
+              </div>
             </td>
           </tr>
         ))}

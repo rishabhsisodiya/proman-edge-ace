@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ApiError } from "@/lib/api";
 import { browseCustomers, CustomerListItem } from "@/lib/ticketing/masters";
 import { Region } from "@/lib/ticketing/types";
@@ -20,6 +21,7 @@ const ACCOUNT_STATUS_STYLE: Record<string, string> = {
 // customers. Link to Customer Detail." Shows every customer alphabetically,
 // paginated, by default; search/region just narrow the same result set.
 export default function CustomersPage() {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [region, setRegion] = useState<Region | "">("");
   const [accountStatus, setAccountStatus] = useState("");
@@ -113,13 +115,22 @@ export default function CustomersPage() {
                 <th className="px-4 py-3">Customer</th>
                 <th className="px-4 py-3">Region</th>
                 <th className="px-4 py-3">Account Status</th>
+                <th className="px-4 py-3">Review</th>
               </tr>
             </thead>
             <tbody>
               {items.map((c) => (
-                <tr key={c.id} className="border-b border-line last:border-0 hover:bg-navy-tint">
+                <tr
+                  key={c.id}
+                  onClick={() => router.push(`/dashboard/customers/${c.id}`)}
+                  className="cursor-pointer border-b border-line last:border-0 hover:bg-navy-tint"
+                >
                   <td className="px-4 py-3">
-                    <Link href={`/dashboard/customers/${c.id}`} className="font-medium text-navy hover:underline">
+                    <Link
+                      href={`/dashboard/customers/${c.id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="font-medium text-navy hover:underline"
+                    >
                       {c.customerName}
                     </Link>
                   </td>
@@ -130,6 +141,13 @@ export default function CustomersPage() {
                     >
                       {c.accountStatus}
                     </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    {c.needsReview && (
+                      <span className="rounded-full bg-brand-amber-bg px-2.5 py-0.5 text-[10px] font-bold text-brand-amber">
+                        Needs Review
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))}
