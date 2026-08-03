@@ -538,9 +538,22 @@ export class TicketsService {
     if (filters.rejected === 'true') where.rejectionCount = { gt: 0 };
     // Free-text tags (client decision, 2026-08-01) — comma-separated exact
     // tag matches, searchable by ASM/Manager/Admin from the ticket list.
+    // Case-insensitive (2026-08-03 fix) — Prisma's `hasSome` on a String[]
+    // column is a case-sensitive exact match in Postgres (no `mode:
+    // 'insensitive'` option exists for array filters, only for scalar
+    // string `contains`/`equals`), so a search for "urgent" would silently
+    // miss a ticket tagged "Urgent" — resolved by looking up every distinct
+    // tag actually in use, matching the search terms against those
+    // case-insensitively, and passing the real (correctly-cased) matches
+    // into `hasSome`. Still exact-tag matching, not substring search — that
+    // wasn't asked for, only case-insensitivity was.
     if (filters.tags) {
-      const tagList = filters.tags.split(',').map((t) => t.trim()).filter(Boolean);
-      if (tagList.length) where.tags = { hasSome: tagList };
+      const searchTerms = filters.tags.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean);
+      if (searchTerms.length) {
+        const distinctTags = await this.prisma.$queryRaw<{ tag: string }[]>`SELECT DISTINCT unnest("tags") AS tag FROM "Ticket"`;
+        const matchingTags = distinctTags.map((r) => r.tag).filter((tag) => searchTerms.includes(tag.toLowerCase()));
+        where.tags = { hasSome: matchingTags };
+      }
     }
 
     // Capped well above 100 — a few dashboards (Call Center, ASM, Manager/
