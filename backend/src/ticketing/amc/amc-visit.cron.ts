@@ -36,7 +36,7 @@ export class AmcVisitCron {
     private readonly settings: AmcEngineSettingsService,
   ) {}
 
-  @Cron('55 22 * * *', { timeZone: 'Asia/Kolkata' }) // 1:00 AM IST daily
+  @Cron('0 1 * * *', { timeZone: 'Asia/Kolkata' }) // 1:00 AM IST daily
   async run() {
     const lookAheadDays = await this.settings.getLookAheadDays();
     const windowEnd = new Date();
