@@ -1482,6 +1482,7 @@ export class TicketsService {
     equipmentId: string;
     visitSeqNo: number;
     contractReferenceNo: string;
+    plannedDate: Date;
   }) {
     let actorUserId = process.env.PARTNER_ACTOR_USER_ID;
     if (!actorUserId) {
@@ -1490,13 +1491,17 @@ export class TicketsService {
       actorUserId = admin.id;
     }
 
+    // Fixed 2026-08-03 — serviceType was 'AMC', not 'SCHEDULED_PM' as the
+    // spec requires; slaTargetDate ("Planned Date" for this service type)
+    // was never propagated from the scheduled visit at all.
     const dto: CreateTicketDto = {
       source: 'AMC_SCHEDULED',
-      serviceType: 'AMC',
+      serviceType: 'SCHEDULED_PM',
       customerCategory: 'AMC',
       description: `Scheduled AMC visit #${params.visitSeqNo} for contract ${params.contractReferenceNo}`,
       customerId: params.customerId,
       equipmentId: params.equipmentId,
+      slaTargetDate: params.plannedDate.toISOString(),
     };
 
     return this.create(dto, { userId: actorUserId, role: 'ADMIN' });

@@ -1092,6 +1092,16 @@ model AmcContract {
   updatedAt           DateTime            @updatedAt
 }
 
+/// Single-row settings table (id fixed at 1, same pattern as FinanceSettings)
+/// — 2026-08-03, client-requested Admin-configurable look-ahead window for
+/// AmcVisitCron's auto-ticket-creation job (was hardcoded to "already due or
+/// overdue only", no forward-looking range at all — this table both fixes
+/// that gap and makes the window itself editable).
+model AmcEngineSettings {
+  id            Int @id @default(1)
+  lookAheadDays Int @default(7)
+}
+
 model AmcScheduledVisit {
   id             String      @id @default(uuid())
   contractId     String

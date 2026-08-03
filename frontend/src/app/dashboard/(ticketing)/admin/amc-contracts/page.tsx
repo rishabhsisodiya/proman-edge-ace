@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ApiError } from "@/lib/api";
 import { AmcContractRecord, listAmcContracts } from "@/lib/ticketing/amc";
+import { getAmcEngineSettings, updateAmcEngineSettings } from "@/lib/ticketing/amc-engine-settings";
 
 const RENEWAL_STYLE: Record<string, string> = {
   ACTIVE: "bg-brand-green-bg text-brand-green",
@@ -18,6 +19,15 @@ export default function AmcContractsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // AMC Engine Settings (2026-08-03) — folded in here per client request,
+  // rather than its own standalone screen. Admin-only on the backend
+  // (`GET /admin/amc-engine-settings`) — silently hidden for Manager rather
+  // than shown with a permission error, since this page itself is shared
+  // by both roles.
+  const [lookAheadDays, setLookAheadDays] = useState<string | null>(null);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [settingsSaved, setSettingsSaved] = useState(false);
+
   useEffect(() => {
     listAmcContracts()
       .then(setContracts)
@@ -26,7 +36,29 @@ export default function AmcContractsPage() {
         else setError("Could not load AMC contracts.");
       })
       .finally(() => setLoading(false));
+    getAmcEngineSettings()
+      .then((s) => setLookAheadDays(String(s.lookAheadDays)))
+      .catch(() => setLookAheadDays(null)); // 403 for Manager, or any other failure — panel just doesn't render
   }, []);
+
+  async function onSaveSettings() {
+    const days = parseInt(lookAheadDays ?? "", 10);
+    if (!Number.isInteger(days) || days < 1) {
+      setError("Look-ahead window must be a whole number of 1 or more days.");
+      return;
+    }
+    setSavingSettings(true);
+    setError(null);
+    try {
+      await updateAmcEngineSettings(days);
+      setSettingsSaved(true);
+      setTimeout(() => setSettingsSaved(false), 4000);
+    } catch {
+      setError("Could not save the look-ahead setting.");
+    } finally {
+      setSavingSettings(false);
+    }
+  }
 
   return (
     <div className="w-full px-6 py-10">
@@ -46,6 +78,35 @@ export default function AmcContractsPage() {
         Annual Maintenance Contracts — app-only, no ERPNext equivalent. Coverage decides AMC vs. warranty vs.
         out-of-cover on tickets.
       </p>
+
+      {lookAheadDays !== null && (
+        <div className="mb-6 flex flex-wrap items-end gap-2 rounded-lg border border-line bg-white p-3">
+          <div>
+            <label className="mb-1 block text-xs font-bold text-navy">Scheduled visit look-ahead window (days)</label>
+            <p className="mb-1.5 text-xs text-muted">
+              A scheduled visit gets its ticket raised once its planned date falls within this many days from today.
+            </p>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={1}
+                value={lookAheadDays}
+                onChange={(e) => setLookAheadDays(e.target.value)}
+                disabled={savingSettings}
+                className="h-9 w-24 rounded-md border border-line px-3 text-sm text-navy disabled:opacity-50"
+              />
+              <button
+                onClick={onSaveSettings}
+                disabled={savingSettings}
+                className="h-9 rounded-md bg-navy-tint px-3 text-xs font-bold text-navy disabled:opacity-50"
+              >
+                {savingSettings ? "Saving…" : "Save"}
+              </button>
+              {settingsSaved && <span className="text-xs font-bold text-brand-green">✓ Saved</span>}
+            </div>
+          </div>
+        </div>
+      )}
 
       {error && <p className="mb-4 rounded-md bg-brand-red-bg px-3 py-2 text-xs text-brand-red">{error}</p>}
 

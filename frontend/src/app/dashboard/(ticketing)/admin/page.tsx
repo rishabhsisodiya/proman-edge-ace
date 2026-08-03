@@ -21,7 +21,7 @@ const SECTIONS = [
   },
   {
     label: "AMC Contracts",
-    description: "Annual Maintenance Contracts, coverage, and renewal status",
+    description: "Annual Maintenance Contracts, coverage, renewal status, and the scheduled-visit look-ahead setting",
     href: "/dashboard/admin/amc-contracts",
   },
   {
