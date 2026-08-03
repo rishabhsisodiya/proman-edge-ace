@@ -1,4 +1,4 @@
-import { IsEnum, IsISO8601, IsOptional, IsString, IsUUID, MaxLength, ValidateIf } from 'class-validator';
+import { IsBoolean, IsEnum, IsISO8601, IsOptional, IsString, IsUUID, MaxLength, MinLength, ValidateIf } from 'class-validator';
 import { Source, Priority, CustomerCategory } from '@prisma/client';
 import { SLA_TARGET_DATE_SERVICE_TYPES } from '../sla-policy.constants';
 
@@ -48,4 +48,19 @@ export class CreateTicketDto {
   @ValidateIf((o) => SLA_TARGET_DATE_SERVICE_TYPES.includes(o.serviceType))
   @IsISO8601()
   slaTargetDate?: string;
+
+  // FSD §14.1 rule 17 (2026-08-03 fix) — "A ticket cannot be created for a
+  // customer with account_status = 'Blacklisted' without explicit
+  // Manager-level approval (override flag in the create request)." Was
+  // previously an unconditional role-based bypass for Manager, no flag at
+  // all — replaced with this explicit opt-in, required every time,
+  // Manager or not.
+  @IsOptional()
+  @IsBoolean()
+  overrideBlacklistApproval?: boolean;
+
+  @ValidateIf((o) => o.overrideBlacklistApproval === true)
+  @IsString()
+  @MinLength(1)
+  overrideReason?: string;
 }

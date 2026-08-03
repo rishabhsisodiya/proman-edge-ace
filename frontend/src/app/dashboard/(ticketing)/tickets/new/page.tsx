@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ApiError } from "@/lib/api";
+import { AuthUser, getCurrentUser } from "@/lib/auth";
 import { createTicket } from "@/lib/ticketing/actions";
 import { CustomerListItem, EquipmentListItem, equipmentForCustomer, listCustomers } from "@/lib/ticketing/masters";
 import {
@@ -44,6 +45,11 @@ const WARRANTY_STATUS_STYLE: Record<string, string> = {
 export default function NewTicketPage() {
   const router = useRouter();
 
+  const [user, setUser] = useState<AuthUser | null>(null);
+  useEffect(() => {
+    setUser(getCurrentUser());
+  }, []);
+
   const [source, setSource] = useState<string>("CUSTOMER_CALL");
   const [customerCategory, setCustomerCategory] = useState<CustomerCategory | "">("");
   const [serviceType, setServiceType] = useState<ServiceType | "">("");
@@ -67,6 +73,17 @@ export default function NewTicketPage() {
 
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // FSD §14.1 rule 17 — Blacklisted/Inactive customer requires explicit
+  // Manager-level override (checkbox + reason), not just the Manager role.
+  const isBlockedCustomer = selectedCustomer?.accountStatus === "BLACKLISTED" || selectedCustomer?.accountStatus === "INACTIVE";
+  const [overrideBlacklistApproval, setOverrideBlacklistApproval] = useState(false);
+  const [overrideReason, setOverrideReason] = useState("");
+
+  useEffect(() => {
+    setOverrideBlacklistApproval(false);
+    setOverrideReason("");
+  }, [selectedCustomer]);
 
   // Debounced customer search — only queries once 2+ characters are typed,
   // matching the backend's "blank search returns nothing" behavior.
@@ -118,6 +135,10 @@ export default function NewTicketPage() {
       setError(`${targetDateLabel} is required for ${SERVICE_TYPE_LABEL[serviceType as ServiceType]} tickets.`);
       return;
     }
+    if (isBlockedCustomer && user?.role === "MANAGER" && overrideBlacklistApproval && overrideReason.trim().length === 0) {
+      setError("Override reason is required.");
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -131,6 +152,10 @@ export default function NewTicketPage() {
         subject: subject.trim() || undefined,
         description: description.trim(),
         slaTargetDate: targetDateLabel && slaTargetDate ? new Date(slaTargetDate).toISOString() : undefined,
+        overrideBlacklistApproval:
+          isBlockedCustomer && user?.role === "MANAGER" && overrideBlacklistApproval ? true : undefined,
+        overrideReason:
+          isBlockedCustomer && user?.role === "MANAGER" && overrideBlacklistApproval ? overrideReason.trim() : undefined,
       });
       router.push(`/dashboard/tickets/${ticket.id}`);
     } catch (err) {
@@ -282,10 +307,36 @@ export default function NewTicketPage() {
                 ))}
               </div>
             )}
-            {selectedCustomer?.accountStatus === "BLACKLISTED" && (
+            {isBlockedCustomer && user?.role !== "MANAGER" && (
               <p className="mt-1 text-xs text-brand-red">
-                This customer is blacklisted — only a Manager can create this ticket.
+                This customer is {selectedCustomer?.accountStatus === "BLACKLISTED" ? "blacklisted" : "inactive"} —
+                creating this ticket will be blocked and a Manager will be notified to approve an override.
               </p>
+            )}
+            {isBlockedCustomer && user?.role === "MANAGER" && (
+              <div className="mt-2 rounded-md border border-brand-red-bg bg-brand-red-bg/40 p-3">
+                <p className="text-xs text-brand-red">
+                  This customer is {selectedCustomer?.accountStatus === "BLACKLISTED" ? "blacklisted" : "inactive"}.
+                  Creating this ticket requires an explicit override.
+                </p>
+                <label className="mt-2 flex items-center gap-2 text-xs font-bold text-navy">
+                  <input
+                    type="checkbox"
+                    checked={overrideBlacklistApproval}
+                    onChange={(e) => setOverrideBlacklistApproval(e.target.checked)}
+                  />
+                  I approve creating this ticket for this{" "}
+                  {selectedCustomer?.accountStatus === "BLACKLISTED" ? "blacklisted" : "inactive"} customer
+                </label>
+                {overrideBlacklistApproval && (
+                  <textarea
+                    value={overrideReason}
+                    onChange={(e) => setOverrideReason(e.target.value)}
+                    placeholder="Reason for override (required)…"
+                    className="mt-2 h-16 w-full rounded-md border border-line p-2 text-xs text-navy"
+                  />
+                )}
+              </div>
             )}
           </div>
 

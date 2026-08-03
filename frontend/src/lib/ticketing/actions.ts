@@ -17,6 +17,11 @@ export interface CreateTicketInput {
   equipmentId?: string;
   subject?: string;
   slaTargetDate?: string;
+  // FSD §14.1 rule 17 (2026-08-03) — required for a Manager to force-create
+  // a ticket for a Blacklisted/Inactive customer; without it, even a
+  // Manager gets blocked, same as Call Center/ASM.
+  overrideBlacklistApproval?: boolean;
+  overrideReason?: string;
 }
 export const createTicket = (input: CreateTicketInput) => post<Ticket>(`/tickets`, input);
 

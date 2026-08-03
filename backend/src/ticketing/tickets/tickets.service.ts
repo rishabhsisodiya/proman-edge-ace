@@ -302,15 +302,20 @@ export class TicketsService {
   async create(dto: CreateTicketDto, actor: RequestUser) {
     const customer = await this.prisma.customer.findUniqueOrThrow({ where: { id: dto.customerId } });
 
-    // FSD Customer entity spec — "Inactive/Blacklisted block new ticket
-    // creation by default" (both statuses, not just Blacklisted — the
-    // original check here only tested BLACKLISTED, an FSD gap fixed
-    // 2026-07-31). FSD-Analysis Q2's resolved override flow: Manager already
-    // has unconditional "Create ticket" rights (§15.1 Permission Matrix), so
-    // Manager bypasses this block entirely rather than a separate
-    // approval-request object — Call Center/ASM's blocked attempt instead
-    // notifies every Manager so one of them can create it directly.
-    if ((customer.accountStatus === 'INACTIVE' || customer.accountStatus === 'BLACKLISTED') && actor.role !== 'MANAGER') {
+    // FSD §14.1 rule 17 (fixed 2026-08-03, per the FSD's own literal
+    // wording): "A ticket cannot be created for a customer with
+    // account_status = 'Blacklisted' without explicit Manager-level
+    // approval (override flag in the create request)." Also covers
+    // INACTIVE, not just BLACKLISTED — a prior FSD gap fixed 2026-07-31,
+    // kept as-is. Previously Manager bypassed this block unconditionally
+    // by role alone, no flag involved at all — replaced with an explicit
+    // opt-in (`overrideBlacklistApproval` + `overrideReason`) that only a
+    // Manager can supply, and which a Manager must supply every time, not
+    // just be exempt from the check. Anyone without a valid override —
+    // Call Center, ASM, or a Manager who forgot the flag — gets the same
+    // block + Manager-notification flow.
+    const isValidBlacklistOverride = actor.role === 'MANAGER' && dto.overrideBlacklistApproval === true;
+    if ((customer.accountStatus === 'INACTIVE' || customer.accountStatus === 'BLACKLISTED') && !isValidBlacklistOverride) {
       const attemptedBy = await this.prisma.user.findUnique({ where: { id: actor.userId }, select: { fullName: true } });
       const managers = await this.managersForRegion(customer.region);
       const vars = {
@@ -323,7 +328,8 @@ export class TicketsService {
         await this.fireNotification('CUST-BLOCKED', 'PUSH', manager.email, vars, undefined, manager.id);
       }
       throw new ForbiddenException(
-        `Customer account is ${customer.accountStatus === 'BLACKLISTED' ? 'blacklisted' : 'inactive'}. A Manager has been notified and can create this ticket directly.`,
+        `Customer account is ${customer.accountStatus === 'BLACKLISTED' ? 'blacklisted' : 'inactive'}. ` +
+          `A Manager has been notified and can create this ticket directly by explicitly approving the override.`,
       );
     }
 
@@ -503,6 +509,24 @@ export class TicketsService {
     });
 
     await this.fireTicketCreatedNotifications(ticketId);
+
+    // Traceability for the blacklist/inactive override (2026-08-03) — same
+    // spirit as Rule 14's warranty-override logging (userId, timestamp,
+    // reason), so there's a real record of who pushed a ticket through for
+    // a blocked customer and why, not just a silent create.
+    if (isValidBlacklistOverride) {
+      await this.prisma.auditLog.create({
+        data: {
+          entityType: 'TICKET',
+          entityId: ticketId,
+          fieldName: 'blacklistOverride',
+          oldValue: null,
+          newValue: `${customer.accountStatus} (${dto.overrideReason ?? 'no reason given'})`,
+          changedByUserId: actor.userId,
+          changeSource: 'WEB_UI',
+        },
+      });
+    }
 
     return this.prisma.ticket.findUniqueOrThrow({ where: { id: ticketId } });
   }
