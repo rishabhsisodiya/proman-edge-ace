@@ -8,7 +8,11 @@ import {
   addFsvPart,
   FieldServiceVisit,
   getFsv,
+  listQueuedFsvActions,
+  QueuedFsvAction,
   removeFsvPart,
+  removeQueuedFsvAction,
+  replayFsvQueue,
   submitFsv,
   updateFsv,
   updateFsvPart,
@@ -16,9 +20,14 @@ import {
   uploadFsvReport,
   uploadFsvSignature,
 } from "@/lib/ticketing/fsv";
+import { useOnlineStatus } from "@/lib/useOnlineStatus";
 import { ItemListItem, listItems } from "@/lib/ticketing/masters";
 import { listPriceLists, PriceList } from "@/lib/ticketing/price-lists";
 import { apiFetch } from "@/lib/api";
+
+function isQueued(x: unknown): x is { queued: true } {
+  return typeof x === "object" && x !== null && "queued" in x && (x as { queued: unknown }).queued === true;
+}
 
 interface ItemWarehouseStock {
   warehouse: string;
@@ -42,6 +51,10 @@ export default function FsvDetailPage({ params }: { params: Promise<{ id: string
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const online = useOnlineStatus();
+  const [queuedActions, setQueuedActions] = useState<QueuedFsvAction[]>([]);
+  const [queueError, setQueueError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
 
   function load() {
     getFsv(id)
@@ -50,7 +63,50 @@ export default function FsvDetailPage({ params }: { params: Promise<{ id: string
       .finally(() => setLoading(false));
   }
 
+  function refreshQueue() {
+    listQueuedFsvActions(id).then(setQueuedActions);
+  }
+
   useEffect(load, [id]);
+  useEffect(refreshQueue, [id]);
+
+  // Piece 3/4 — replay whatever's queued the moment connectivity returns
+  // (and once on initial mount, in case the page loads back online after
+  // being closed while offline). Refreshes both the FSV data and the queue
+  // list afterward so the UI reflects whatever actually synced.
+  useEffect(() => {
+    if (!online) return;
+    replayFsvQueue(id).then(({ replayed, error }) => {
+      if (replayed > 0) {
+        setNotice(`Synced ${replayed} queued item${replayed > 1 ? "s" : ""} from earlier.`);
+        load();
+      }
+      setQueueError(error ?? null);
+      refreshQueue();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online, id]);
+
+  function retryQueueNow() {
+    setRetrying(true);
+    replayFsvQueue(id)
+      .then(({ replayed, error }) => {
+        if (replayed > 0) {
+          setNotice(`Synced ${replayed} queued item${replayed > 1 ? "s" : ""}.`);
+          load();
+        }
+        setQueueError(error ?? null);
+        refreshQueue();
+      })
+      .finally(() => setRetrying(false));
+  }
+
+  function clearQueuedAction(actionId: string) {
+    removeQueuedFsvAction(actionId).then(() => {
+      setQueueError(null);
+      refreshQueue();
+    });
+  }
 
   async function saveField(patch: Record<string, unknown>) {
     if (!fsv || fsv.status === "SUBMITTED") return;
@@ -69,8 +125,13 @@ export default function FsvDetailPage({ params }: { params: Promise<{ id: string
     if (!fsv || fsv.status === "SUBMITTED" || !blob) return;
     setSaving(true);
     try {
-      const updated = await uploadFsvSignature(fsv.id, blob);
-      setFsv(updated);
+      const result = await uploadFsvSignature(fsv.id, blob);
+      if (isQueued(result)) {
+        setNotice("You're offline — signature queued, will sync automatically once you're back online.");
+        refreshQueue();
+      } else {
+        setFsv(result);
+      }
     } catch {
       setError("Could not save signature.");
     } finally {
@@ -86,6 +147,58 @@ export default function FsvDetailPage({ params }: { params: Promise<{ id: string
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 px-6 py-8">
+      {!online && (
+        <div className="rounded-md bg-brand-amber-bg px-3 py-2 text-xs font-bold text-brand-amber">
+          You&apos;re offline — photos, signature, parts, and submit will be queued locally and synced automatically once you&apos;re back online.
+        </div>
+      )}
+
+      {queuedActions.length > 0 && (
+        <div className="rounded-md border border-brand-amber bg-brand-amber-bg px-3 py-2 text-xs text-navy">
+          <p className="font-bold text-brand-amber">
+            {queuedActions.length} item{queuedActions.length > 1 ? "s" : ""} queued, not yet synced:
+          </p>
+          <ul className="mt-1 space-y-1">
+            {queuedActions.map((a) => (
+              <li key={a.id} className="flex items-center justify-between gap-2">
+                <span>
+                  •{" "}
+                  {a.kind === "photo" && `Photo${a.caption ? ` — ${a.caption}` : ""}`}
+                  {a.kind === "signature" && "Signature"}
+                  {a.kind === "part" && `Part — ${a.body.itemName}`}
+                  {a.kind === "submit" && "Submit"}
+                  {" "}
+                  <span className="text-muted">({new Date(a.queuedAt).toLocaleTimeString()})</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => clearQueuedAction(a.id)}
+                  className="shrink-0 font-bold text-brand-red underline"
+                  title="Discard this queued item — it will NOT be synced"
+                >
+                  Clear
+                </button>
+              </li>
+            ))}
+          </ul>
+          {queueError && (
+            <p className="mt-2 rounded bg-brand-red-bg px-2 py-1 text-brand-red">
+              Last sync attempt failed: {queueError}
+              {queuedActions.some((a) => a.kind === "submit") &&
+                " If this is \"Log parts consumed...\", add a part or check \"No parts used\" below, then Clear the stuck Submit and try again."}
+            </p>
+          )}
+          <button
+            type="button"
+            disabled={!online || retrying}
+            onClick={retryQueueNow}
+            className="mt-2 font-bold text-navy underline disabled:opacity-50"
+          >
+            {retrying ? "Retrying…" : "Retry now"}
+          </button>
+        </div>
+      )}
+
       <div>
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h1 className="text-2xl font-bold text-navy">Field Service Visit #{fsv.visitNumber}</h1>
@@ -161,9 +274,9 @@ export default function FsvDetailPage({ params }: { params: Promise<{ id: string
         />
       </div>
 
-      <PartsSection fsv={fsv} readOnly={readOnly} onSave={saveField} reload={load} onError={setError} />
+      <PartsSection fsv={fsv} readOnly={readOnly} onSave={saveField} reload={load} onError={setError} onQueued={refreshQueue} />
 
-      <PhotosSection fsv={fsv} readOnly={readOnly} reload={load} onError={setError} />
+      <PhotosSection fsv={fsv} readOnly={readOnly} reload={load} onError={setError} onQueued={refreshQueue} />
 
       <ReportSection fsv={fsv} readOnly={readOnly} reload={load} onError={setError} />
 
@@ -221,9 +334,14 @@ export default function FsvDetailPage({ params }: { params: Promise<{ id: string
             setSaving(true);
             setError(null);
             try {
-              await submitFsv(fsv.id);
-              setNotice("Field Service Visit submitted. Add a resolution summary on the ticket page to mark it Engineer Resolved.");
-              router.push(`/dashboard/tickets/${fsv.ticketId}`);
+              const result = await submitFsv(fsv.id);
+              if (isQueued(result)) {
+                setNotice("You're offline — submission queued, will sync automatically once you're back online.");
+                refreshQueue();
+              } else {
+                setNotice("Field Service Visit submitted. Add a resolution summary on the ticket page to mark it Engineer Resolved.");
+                router.push(`/dashboard/tickets/${fsv.ticketId}`);
+              }
             } catch (err) {
               if (err instanceof ApiError) {
                 const body = err.body as { message?: string | string[] } | null;
@@ -315,12 +433,14 @@ function PartsSection({
   onSave,
   reload,
   onError,
+  onQueued,
 }: {
   fsv: FieldServiceVisit;
   readOnly: boolean;
   onSave: (patch: Record<string, unknown>) => void;
   reload: () => void;
   onError: (message: string | null) => void;
+  onQueued: () => void;
 }) {
   const [showAdd, setShowAdd] = useState(false);
   const [itemQuery, setItemQuery] = useState("");
@@ -410,7 +530,7 @@ function PartsSection({
     setBusy(true);
     onError(null);
     try {
-      await addFsvPart(fsv.id, {
+      const result = await addFsvPart(fsv.id, {
         itemCode: selectedItem.itemCode,
         itemName: selectedItem.itemName,
         qty: Number(qty),
@@ -419,6 +539,7 @@ function PartsSection({
         rate: Number(rate),
         sellingRate: Number(sellingRate),
       });
+      if (isQueued(result)) onQueued();
       reload();
       setShowAdd(false);
       setSelectedItem(null);
@@ -677,11 +798,13 @@ function PhotosSection({
   readOnly,
   reload,
   onError,
+  onQueued,
 }: {
   fsv: FieldServiceVisit;
   readOnly: boolean;
   reload: () => void;
   onError: (message: string | null) => void;
+  onQueued: () => void;
 }) {
   const [caption, setCaption] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -701,11 +824,17 @@ function PhotosSection({
     setUploading(true);
     onError(null);
     try {
+      let queuedCount = 0;
       for (const file of toUpload) {
-        await uploadFsvPhoto(fsv.id, file, caption.trim() || undefined);
+        const result = await uploadFsvPhoto(fsv.id, file, caption.trim() || undefined);
+        if (isQueued(result)) queuedCount++;
       }
       if (files.length > toUpload.length) {
         onError(`Only ${toUpload.length} of ${files.length} photos uploaded — maximum 5 photos per visit.`);
+      }
+      if (queuedCount > 0) {
+        onError(null);
+        onQueued();
       }
       setCaption("");
       reload();
