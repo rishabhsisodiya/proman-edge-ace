@@ -130,6 +130,12 @@ export class FsvController {
   }
 
   @Roles('ENGINEER')
+  @Delete('fsv/:id/photos/:photoId')
+  removePhoto(@Param('id') id: string, @Param('photoId') photoId: string) {
+    return this.fsv.removePhoto(id, photoId);
+  }
+
+  @Roles('ENGINEER')
   @Post('fsv/:id/signature/upload')
   @UseInterceptors(
     FileInterceptor('file', {

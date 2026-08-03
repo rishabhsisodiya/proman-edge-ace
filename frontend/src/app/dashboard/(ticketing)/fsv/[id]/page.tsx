@@ -11,6 +11,7 @@ import {
   listQueuedFsvActions,
   QueuedFsvAction,
   removeFsvPart,
+  removeFsvPhoto,
   removeQueuedFsvAction,
   replayFsvQueue,
   submitFsv,
@@ -830,6 +831,23 @@ function PhotosSection({
 }) {
   const [caption, setCaption] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+
+  // Client request (2026-08-03) — remove a wrongly-uploaded photo before
+  // submit. Online-only (not offline-queued), same as removeFsvPart — a
+  // mistaken upload is best fixed live rather than queued for later.
+  async function onRemove(photoId: string) {
+    setRemovingId(photoId);
+    onError(null);
+    try {
+      await removeFsvPhoto(fsv.id, photoId);
+      reload();
+    } catch {
+      onError("Could not remove photo.");
+    } finally {
+      setRemovingId(null);
+    }
+  }
 
   // Client feedback (2026-07-31): "Multiple photos cannot be uploaded in a
   // single FSV" — the backend already allowed up to 5 total (one at a time,
@@ -876,8 +894,23 @@ function PhotosSection({
       </label>
       <div className="mb-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {fsv.photos.map((p) => (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img key={p.id} src={p.url} alt={p.caption ?? "Visit photo"} className="h-20 w-full rounded-md border border-line object-cover" />
+          // Remove button always visible (not hover-gated) — engineers use
+          // this mostly on mobile/tablet, where hover doesn't exist.
+          <div key={p.id} className="relative">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={p.url} alt={p.caption ?? "Visit photo"} className="h-20 w-full rounded-md border border-line object-cover" />
+            {!readOnly && (
+              <button
+                type="button"
+                onClick={() => onRemove(p.id)}
+                disabled={removingId === p.id}
+                title="Remove photo"
+                className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-brand-red text-xs font-bold text-white shadow disabled:opacity-50"
+              >
+                {removingId === p.id ? "…" : "×"}
+              </button>
+            )}
+          </div>
         ))}
       </div>
       {!readOnly && !atMax && (

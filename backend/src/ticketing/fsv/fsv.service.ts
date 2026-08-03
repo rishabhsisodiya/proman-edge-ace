@@ -178,6 +178,15 @@ export class FsvService {
     return this.prisma.fsvPhoto.create({ data: { visitId: id, ...dto } });
   }
 
+  /** Client request (2026-08-03) — engineer can remove a wrongly-uploaded photo before submit, same immutability gate as removePart(). */
+  async removePhoto(id: string, photoId: string) {
+    const visit = await this.prisma.fieldServiceVisit.findUniqueOrThrow({ where: { id } });
+    if (visit.status === 'SUBMITTED') {
+      throw new BadRequestException('This Field Service Visit has already been submitted and is immutable');
+    }
+    return this.prisma.fsvPhoto.delete({ where: { id: photoId } });
+  }
+
   /**
    * §14.2 rules 22-26: validates, locks (immutable), and — per
    * ACE_Ticket_Master_Flow.png's "FSV submitted → resolve" link — moves the

@@ -182,6 +182,10 @@ export const removeFsvPart = (id: string, partId: string) =>
 export const addFsvPhoto = (id: string, url: string, caption?: string) =>
   post<FsvPhoto>(`/fsv/${id}/photos`, { url, caption });
 
+/** Client request (2026-08-03) — remove a wrongly-uploaded photo before submit. */
+export const removeFsvPhoto = (id: string, photoId: string) =>
+  apiFetch<void>(`/fsv/${id}/photos/${photoId}`, { method: "DELETE" });
+
 /**
  * Uploads the actual image file to the backend (stored on-server under
  * uploads/fsv-photos), unlike addFsvPhoto above which just records a URL
