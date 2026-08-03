@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, Role, ServiceType, Priority, Source, PendingReason, TicketStatus, CustomerCategory, NotifChannel, Region } from '@prisma/client';
+import { Prisma, Role, Priority, Source, PendingReason, TicketStatus, CustomerCategory, NotifChannel, Region } from '@prisma/client';
 import { parse } from 'csv-parse/sync';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
@@ -9,6 +9,7 @@ import { SLA_TARGET_DATE_SERVICE_TYPES, SLA_TARGET_DATE_LABEL } from './sla-poli
 import { WorkflowService } from '../workflow/workflow.service';
 import { SlaPolicyService } from '../sla-policy/sla-policy.service';
 import { HolidayService } from '../holiday/holiday.service';
+import { ServiceTypeConfigService } from '../service-types/service-type.service';
 import { NotificationService } from '../../notifications/notification.service';
 import { NotificationTemplateService } from '../../notifications/notification-template.service';
 
@@ -21,7 +22,7 @@ import { NotificationTemplateService } from '../../notifications/notification-te
  * Plan Days 4-10, T2). Left as an explicit stub rather than faking
  * classification for sources that can't occur today.
  */
-function autoClassify(source: Source): { serviceType?: ServiceType; priority?: Priority } {
+function autoClassify(source: Source): { serviceType?: string; priority?: Priority } {
   return {};
 }
 
@@ -30,7 +31,14 @@ function autoClassify(source: Source): { serviceType?: ServiceType; priority?: P
 // screen (not built yet). This is the service_type-only slice of it: enough
 // to give Call Center a sensible default without forcing a manual pick every
 // time, per §5.3 ("priority auto-set by Priority Matrix, overridable by CC/ASM").
-const DEFAULT_PRIORITY_BY_SERVICE_TYPE: Record<ServiceType, Priority> = {
+// Partial (2026-08-02, Service Types Tier 1) — was `Record<ServiceType,
+// Priority>`, a total map, guaranteed to have every key. Now that Admin can
+// add new service types not in this map, every lookup MUST fall back to
+// DEFAULT_PRIORITY_WHEN_UNKNOWN — see the `??` fix at the two call sites
+// below (this was the "missing-key fallback bug" flagged when this pass was
+// scoped: a lookup miss previously would have silently produced `undefined`
+// instead of falling back).
+const DEFAULT_PRIORITY_BY_SERVICE_TYPE: Partial<Record<string, Priority>> = {
   BREAKDOWN_CHARGEABLE: 'CRITICAL',
   WARRANTY_REPAIR: 'HIGH',
   TECHNICAL_AUDIT: 'MEDIUM',
@@ -58,7 +66,14 @@ const AUTO_MERGE_SOURCES: Source[] = ['API_PARTNER'];
 
 // Human-readable labels for the auto-generated subject (§5.3) — using the raw
 // enum value there leaks "BREAKDOWN_CHARGEABLE" straight into a user-facing field.
-const SERVICE_TYPE_LABEL: Record<ServiceType, string> = {
+// Partial (2026-08-02, Service Types Tier 1) — same reasoning as
+// DEFAULT_PRIORITY_BY_SERVICE_TYPE above. An Admin-added custom service type
+// won't have an entry here; serviceTypeLabel() below falls back to the raw
+// code itself rather than crashing or mislabeling — a known, accepted Tier 1
+// degradation (a custom type's subject/audit-log text shows its raw code,
+// e.g. "ONSITE_TRAINING", until/unless this map is fetched from
+// ServiceTypeConfig instead — out of scope for this pass).
+const SERVICE_TYPE_LABEL: Partial<Record<string, string>> = {
   WARRANTY_REPAIR: 'Warranty Repair',
   // Client request: drop "(Chargeable)" from the display label — billing
   // behavior is unchanged, this is a display-only rename.
@@ -71,8 +86,8 @@ const SERVICE_TYPE_LABEL: Record<ServiceType, string> = {
   WARRANTY_RENEWAL_OUTREACH: 'Warranty Renewal Outreach',
 };
 const NOT_YET_DETERMINED_LABEL = 'Not Yet Determined';
-function serviceTypeLabel(s: ServiceType | null): string {
-  return s ? SERVICE_TYPE_LABEL[s] : NOT_YET_DETERMINED_LABEL;
+function serviceTypeLabel(s: string | null): string {
+  return s ? (SERVICE_TYPE_LABEL[s] ?? s) : NOT_YET_DETERMINED_LABEL;
 }
 
 export interface RequestUser {
@@ -87,6 +102,7 @@ export class TicketsService {
     private readonly workflow: WorkflowService,
     private readonly slaPolicies: SlaPolicyService,
     private readonly holidays: HolidayService,
+    private readonly serviceTypes: ServiceTypeConfigService,
     private readonly notifications: NotificationService,
     private readonly notificationTemplates: NotificationTemplateService,
   ) {}
@@ -326,11 +342,17 @@ export class TicketsService {
     // than blocking creation. ASM/Engineer/Manager/Admin set the real value
     // later via updateServiceType() once it's known.
     const autoClass = autoClassify(dto.source);
-    const serviceType: ServiceType | null = dto.serviceType ?? autoClass.serviceType ?? null;
+    const serviceType: string | null = dto.serviceType ?? autoClass.serviceType ?? null;
+    // Replaces the old `@IsEnum(ServiceType)` DTO-level guarantee (2026-08-02,
+    // Service Types Tier 1) — serviceType is now a free string validated
+    // against ServiceTypeConfig here instead of a fixed TS enum.
+    if (dto.serviceType && !(await this.serviceTypes.isValidActiveCode(dto.serviceType))) {
+      throw new BadRequestException(`Unknown or inactive service type "${dto.serviceType}"`);
+    }
     const priority =
       dto.priority ??
       autoClass.priority ??
-      (serviceType ? DEFAULT_PRIORITY_BY_SERVICE_TYPE[serviceType] : DEFAULT_PRIORITY_WHEN_UNKNOWN);
+      (serviceType ? (DEFAULT_PRIORITY_BY_SERVICE_TYPE[serviceType] ?? DEFAULT_PRIORITY_WHEN_UNKNOWN) : DEFAULT_PRIORITY_WHEN_UNKNOWN);
 
     // §7.1 rule 2 — dedup check: same customer + equipment, created within
     // the last 24h, not already closed.
@@ -903,7 +925,10 @@ export class TicketsService {
    * and SLA due dates are recomputed against the newly-known service type,
    * since there was no SLA clock running at all while it was unset.
    */
-  async updateServiceType(id: string, serviceType: ServiceType, slaTargetDate: string | undefined, actor: RequestUser) {
+  async updateServiceType(id: string, serviceType: string, slaTargetDate: string | undefined, actor: RequestUser) {
+    if (!(await this.serviceTypes.isValidActiveCode(serviceType))) {
+      throw new BadRequestException(`Unknown or inactive service type "${serviceType}"`);
+    }
     const ticket = await this.prisma.ticket.findUniqueOrThrow({ where: { id } });
     const usesTargetDate = SLA_TARGET_DATE_SERVICE_TYPES.includes(serviceType);
     if (usesTargetDate && !slaTargetDate) {
@@ -1302,7 +1327,7 @@ export class TicketsService {
         if (!row.description?.trim()) {
           throw new Error('Missing "description"');
         }
-        if (row.serviceType && !Object.values(ServiceType).includes(row.serviceType as ServiceType)) {
+        if (row.serviceType && !(await this.serviceTypes.isValidActiveCode(row.serviceType))) {
           throw new Error(`Invalid "serviceType" (got "${row.serviceType}")`);
         }
         if (row.priority && !Object.values(Priority).includes(row.priority as Priority)) {
@@ -1313,7 +1338,7 @@ export class TicketsService {
 
         const dto: CreateTicketDto = {
           source: row.source as Source,
-          serviceType: (row.serviceType as ServiceType) || undefined,
+          serviceType: row.serviceType || undefined,
           priority: (row.priority as Priority) || undefined,
           description: row.description.trim(),
           customerId,
@@ -1384,7 +1409,7 @@ export class TicketsService {
     subject?: string;
   }) {
     if (!row.description?.trim()) throw new BadRequestException('Missing "description"');
-    if (row.serviceType && !Object.values(ServiceType).includes(row.serviceType as ServiceType)) {
+    if (row.serviceType && !(await this.serviceTypes.isValidActiveCode(row.serviceType))) {
       throw new BadRequestException(`Invalid "serviceType" (got "${row.serviceType}")`);
     }
     if (row.priority && !Object.values(Priority).includes(row.priority as Priority)) {
@@ -1407,7 +1432,7 @@ export class TicketsService {
 
     const dto: CreateTicketDto = {
       source: 'API_PARTNER',
-      serviceType: (row.serviceType as ServiceType) || undefined,
+      serviceType: row.serviceType || undefined,
       priority: (row.priority as Priority) || undefined,
       description: row.description.trim(),
       customerId,

@@ -8,6 +8,7 @@ import { AuthUser, getCurrentUser } from "@/lib/auth";
 import { registerPushNotifications } from "@/lib/push";
 import { loadWorkflowLabelOverrides } from "@/lib/ticketing/workflow-labels";
 import { loadPriorityLabelOverrides } from "@/lib/ticketing/priority-labels";
+import { loadServiceTypeOverrides } from "@/lib/ticketing/service-types";
 
 // Static prefix-match, most-specific first — the TopBar title should reflect
 // what page you're actually on, not always the same brand name.
@@ -29,6 +30,7 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/dashboard/admin/billing-rates", title: "Billing Rates" },
   { prefix: "/dashboard/admin/workflow-labels", title: "Workflow States & Transitions" },
   { prefix: "/dashboard/admin/priority-labels", title: "Ticket Priorities" },
+  { prefix: "/dashboard/admin/service-types", title: "Service Types" },
   { prefix: "/dashboard/admin", title: "Admin Console" },
   { prefix: "/dashboard/dashboards", title: "Dashboards" },
 ];
@@ -58,6 +60,7 @@ export default function DashboardLayout({
     registerPushNotifications();
     loadWorkflowLabelOverrides();
     loadPriorityLabelOverrides();
+    loadServiceTypeOverrides();
   }, []);
 
   return (

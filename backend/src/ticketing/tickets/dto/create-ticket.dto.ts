@@ -1,5 +1,5 @@
 import { IsEnum, IsISO8601, IsOptional, IsString, IsUUID, MaxLength, ValidateIf } from 'class-validator';
-import { Source, ServiceType, Priority, CustomerCategory } from '@prisma/client';
+import { Source, Priority, CustomerCategory } from '@prisma/client';
 import { SLA_TARGET_DATE_SERVICE_TYPES } from '../sla-policy.constants';
 
 export class CreateTicketDto {
@@ -12,9 +12,13 @@ export class CreateTicketDto {
   @IsEnum(CustomerCategory)
   customerCategory?: CustomerCategory;
 
+  // Free string (2026-08-02, Service Types Tier 1) — was `@IsEnum(ServiceType)`.
+  // Actual existence/active-status validation against ServiceTypeConfig now
+  // happens in TicketsService.create(), not at the DTO layer, since the set
+  // of valid values is Admin-configurable, not a fixed TS enum anymore.
   @IsOptional()
-  @IsEnum(ServiceType)
-  serviceType?: ServiceType; // auto-classified if omitted for auto-sources
+  @IsString()
+  serviceType?: string; // auto-classified if omitted for auto-sources
 
   @IsOptional()
   @IsEnum(Priority)

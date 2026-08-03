@@ -24,7 +24,11 @@ const SECTIONS = [
     description: "Annual Maintenance Contracts, coverage, and renewal status",
     href: "/dashboard/admin/amc-contracts",
   },
-  { label: "Service Types", description: "The 7 service_type values + billing model", href: null },
+  {
+    label: "Service Types",
+    description: "Add new service types, edit labels, activate/deactivate",
+    href: "/dashboard/admin/service-types",
+  },
   {
     label: "SLA Configuration",
     description: "Response/resolution policies, clock-pausing statuses, and the business-hours holiday list",

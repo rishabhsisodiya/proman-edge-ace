@@ -109,6 +109,12 @@ enum WarrantyStatus {
   OUT_OF_WARRANTY
 }
 
+/// Kept only for SlaPolicy's own keying (2026-08-02, Service Types Tier 1) —
+/// Ticket.serviceType itself moved to a plain string column referencing
+/// ServiceTypeConfig.code below, so Admin-added custom types can exist
+/// without being enum members. SLA Policy stays untouched/enum-keyed by
+/// design for this pass — an unconfigured custom type just has no matching
+/// SlaPolicy row, which already degrades gracefully to "no SLA window."
 enum ServiceType {
   WARRANTY_REPAIR
   BREAKDOWN_CHARGEABLE
@@ -121,6 +127,30 @@ enum ServiceType {
   /// before warranty_end_date, no AMC in place). A sales lead routed to the
   /// ASM, not a real service call — never manually selectable at creation.
   WARRANTY_RENEWAL_OUTREACH
+}
+
+/// Service Types Tier 1 (2026-08-02, client-agreed scope) — Admin can add a
+/// new service type (e.g. "Onsite Training") without a code deploy. Only
+/// ticket creation's dropdown/validation needs to know about a new type
+/// immediately; SLA Policy, priority defaults, and the SLA-Target-Date
+/// special-case logic all degrade gracefully for an unconfigured new type
+/// (no SLA clock yet, defaults to Medium priority, no special date field
+/// required) rather than every subsystem needing an update in the same pass.
+model ServiceTypeConfig {
+  /// Matches the original 8 enum value strings for the seeded rows — kept
+  /// as the actual stored value on Ticket.serviceType, not a separate id,
+  /// so existing tickets' data needs no transformation, only the column type
+  /// changes underneath them.
+  code             String   @id
+  label            String
+  /// AMC and WARRANTY_RENEWAL_OUTREACH are system-managed (auto-created by
+  /// the AMC/warranty engines, not manually selectable) — flagged so the
+  /// admin screen can show that context; isSystemManaged rows can still be
+  /// toggled inactive/renamed like any other row, just not hard-deleted.
+  isSystemManaged  Boolean  @default(false)
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
 
 /// Manual "Customer Category" dropdown (Ashwath feedback 2026-07-25) — a
@@ -599,7 +629,10 @@ model Ticket {
   // Nullable — client request: may genuinely be unknown at ticket creation
   // (Call Center hasn't diagnosed it yet). Set later by ASM/Engineer/Manager/
   // Admin via updateServiceType() once it's actually known.
-  serviceType              ServiceType?
+  // Plain string (2026-08-02, Service Types Tier 1) — was the `ServiceType`
+  // enum; validated at the application layer against ServiceTypeConfig
+  // instead, so Admin-added custom types don't require a schema/enum change.
+  serviceType              String?
   /// Manual dropdown, separate from the auto-calculated warranty/AMC check
   /// (see CustomerCategory enum doc) — settable at creation, editable after.
   customerCategory         CustomerCategory?

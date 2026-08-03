@@ -67,18 +67,19 @@ export const CUSTOMER_CATEGORY_LABEL: Record<CustomerCategory, string> = {
   AMC: "AMC",
 };
 
-// §2.2 — 5 of 7 FSD service types exist in the schema today (AMC and Spares
-// Supply are enum-only, not yet exercised by ticket creation validation).
-export type ServiceType =
-  | "WARRANTY_REPAIR"
-  | "BREAKDOWN_CHARGEABLE"
-  | "SCHEDULED_PM"
-  | "TECHNICAL_AUDIT"
-  | "RETROFIT_UPGRADE"
-  | "AMC"
-  | "SPARES_SUPPLY_INSTALLATION"
-  | "WARRANTY_RENEWAL_OUTREACH";
-export const SERVICE_TYPE_LABEL: Record<ServiceType, string> = {
+// Plain string (2026-08-02, Service Types Tier 1) — was a fixed literal
+// union of the 8 original enum values. Admin can now add new service types
+// at runtime (ServiceTypeConfig, backend), so this can no longer be a
+// closed set known at compile time.
+export type ServiceType = string;
+
+// Compiled-in fallback (2026-08-02) — same in-place-mutation pattern as
+// STATUS_LABEL/PRIORITY_LABEL: loadServiceTypeOverrides() (below) fetches
+// the real list from ServiceTypeConfig and rewrites this object/array's
+// contents in place once fetched, so every call site here keeps working
+// unchanged. This hardcoded version is only what renders before that fetch
+// resolves (or if it fails) — matches the original 8 seeded rows.
+export const SERVICE_TYPE_LABEL: Record<string, string> = {
   WARRANTY_REPAIR: "Warranty Repair",
   // Client request: drop "(Chargeable)" from the display label — billing
   // behavior is unchanged, this is a display-only rename.
@@ -102,7 +103,15 @@ export const SERVICE_TYPE_LABEL: Record<ServiceType, string> = {
 // creation either way.
 // WARRANTY_RENEWAL_OUTREACH (2026-07-31) still excluded — auto-created
 // only, never a manual choice; that decision is unrelated and unchanged.
-export const SELECTABLE_SERVICE_TYPES = (Object.keys(SERVICE_TYPE_LABEL) as ServiceType[]).filter(
+// Mutable-contents array (2026-08-02) — same in-place-mutation pattern as
+// SERVICE_TYPE_LABEL above, just for an array instead of an object:
+// loadServiceTypeOverrides() replaces this array's *contents*
+// (`.length = 0; .push(...)`) rather than reassigning the binding — an
+// ESM named export's binding can only be reassigned by the module that
+// declared it, so this stays `const` and every existing
+// `import { SELECTABLE_SERVICE_TYPES }` call site keeps reading the same
+// object reference, seeing the mutated contents automatically.
+export const SELECTABLE_SERVICE_TYPES: string[] = Object.keys(SERVICE_TYPE_LABEL).filter(
   (t) => t !== "WARRANTY_RENEWAL_OUTREACH",
 );
 
