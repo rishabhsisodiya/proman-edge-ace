@@ -69,7 +69,11 @@ const SECTIONS = [
     description: "Per-trigger, per-channel message content (13 of 23 triggers wired so far)",
     href: "/dashboard/admin/notification-templates",
   },
-  { label: "Skill Tags", description: "Standard engineer skill-tag list", href: null },
+  {
+    label: "Skill Tags",
+    description: "Master list of engineer skill tags, used on User Management",
+    href: "/dashboard/admin/skill-tags",
+  },
   {
     label: "Billing Rates",
     description: "engineer_level → hourly rate, used for labour billing on chargeable tickets",

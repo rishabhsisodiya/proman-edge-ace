@@ -408,6 +408,22 @@ model BillingRate {
   updatedAt  DateTime @updatedAt
 }
 
+/// Skill Tags master list (2026-08-03, client-agreed scope) — replaces
+/// User.skillTags' previous free-text entry. Deliberately unrelated to
+/// BillingRate/engineerLevel (client clarification: skill tags describe
+/// what an engineer is skilled at; engineer level determines their billing
+/// rate — two separate concerns that happen to both live on User). No
+/// isActive/soft-delete — User.skillTags is a plain string array, not a
+/// real FK relation, so a tag can be hard-deleted safely; existing users
+/// just keep whatever string they had if a tag is later removed from the
+/// master list (same "no cleanup forced" tradeoff already accepted for
+/// other free-text-turned-picker fields in this project).
+model SkillTag {
+  id        String   @id @default(uuid())
+  label     String   @unique
+  createdAt DateTime @default(now())
+}
+
 /// Admin-managed list of ERPNext Selling Price List names quotations can be
 /// created against (e.g. "Test price", "ACE Pricing") — client has multiple,
 /// engineer/CS picks one per quotation instead of one hardcoded env default.

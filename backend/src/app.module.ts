@@ -15,6 +15,7 @@ import { PredictiveRuleModule } from './ticketing/predictive-rules/predictive-ru
 import { WorkflowLabelModule } from './ticketing/workflow-labels/workflow-label.module';
 import { PriorityLabelModule } from './ticketing/priority-labels/priority-label.module';
 import { ServiceTypeConfigModule } from './ticketing/service-types/service-type.module';
+import { SkillTagModule } from './ticketing/skill-tags/skill-tag.module';
 import { ReportsModule } from './reports/reports.module';
 import { DashboardsAceModule } from './dashboards-ace/dashboards-ace.module';
 import { SyncModule } from './ticketing/sync/sync.module';
@@ -57,6 +58,7 @@ import { DispatchModule } from './dashboards/dispatch/dispatch.module';
     WorkflowLabelModule,
     PriorityLabelModule,
     ServiceTypeConfigModule,
+    SkillTagModule,
     ReportsModule,
     DashboardsAceModule,
     SyncModule,

@@ -17,6 +17,9 @@ import {
   updateUser,
 } from "@/lib/ticketing/users";
 import { Region } from "@/lib/ticketing/types";
+import { listSkillTags, SkillTagRow } from "@/lib/ticketing/skill-tags";
+import { BillingRate, listBillingRates } from "@/lib/ticketing/billing-rates";
+import SearchMultiSelect from "@/components/SearchMultiSelect";
 
 const REGIONS: Region[] = ["NORTH", "SOUTH", "EAST", "WEST", "CENTRAL", "BANGLADESH"];
 
@@ -290,11 +293,23 @@ function CreateUserModal({
   const [role, setRole] = useState<Role>("CALL_CENTER");
   const [regions, setRegions] = useState<Region[]>([]);
   const [companyIds, setCompanyIds] = useState<string[]>([]);
-  const [skillTagsText, setSkillTagsText] = useState("");
+  const [skillTags, setSkillTags] = useState<string[]>([]);
   const [engineerLevel, setEngineerLevel] = useState("");
   const [erpEmployeeId, setErpEmployeeId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [skillTagOptions, setSkillTagOptions] = useState<SkillTagRow[]>([]);
+  const [billingRates, setBillingRates] = useState<BillingRate[]>([]);
+
+  // Skill Tags master list + Engineer Level sourced from Billing Rates
+  // (2026-08-03, client-agreed scope) — both replace what used to be plain
+  // free-text entry, per the client's own clarification that these are two
+  // unrelated concerns (skill = what an engineer can do; level = what
+  // determines their billing rate) that just happen to both live on User.
+  useEffect(() => {
+    listSkillTags().then(setSkillTagOptions).catch(() => setSkillTagOptions([]));
+    listBillingRates().then(setBillingRates).catch(() => setBillingRates([]));
+  }, []);
 
   // Selecting an ERP Employee prefills name/mobile/email (email only when the
   // ERP record has a login on file) — every field stays editable, this is a
@@ -321,10 +336,7 @@ function CreateUserModal({
         role,
         regions,
         companyIds,
-        skillTags: skillTagsText
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean),
+        skillTags,
         engineerLevel: engineerLevel || undefined,
         erpEmployeeId: erpEmployeeId || undefined,
       });
@@ -411,12 +423,47 @@ function CreateUserModal({
         {role === "ENGINEER" && (
           <>
             <div>
-              <label className="mb-1 block text-xs font-bold text-navy">Skill tags (comma-separated)</label>
-              <input value={skillTagsText} onChange={(e) => setSkillTagsText(e.target.value)} className="h-9 w-full rounded-md border border-line px-2 text-sm text-navy" />
+              <label className="mb-1 block text-xs font-bold text-navy">Skill tags</label>
+              <SearchMultiSelect
+                label=""
+                selected={skillTags}
+                onChange={setSkillTags}
+                options={skillTagOptions.map((t) => ({ id: t.label, label: t.label }))}
+                placeholder="Search skill tags…"
+              />
+              {skillTagOptions.length === 0 && (
+                <p className="mt-1 text-xs text-muted">
+                  No skill tags exist yet — add some at{" "}
+                  <a href="/dashboard/admin/skill-tags" className="underline">
+                    Admin → Skill Tags
+                  </a>
+                  .
+                </p>
+              )}
             </div>
             <div>
               <label className="mb-1 block text-xs font-bold text-navy">Engineer level</label>
-              <input value={engineerLevel} onChange={(e) => setEngineerLevel(e.target.value)} className="h-9 w-full rounded-md border border-line px-2 text-sm text-navy" />
+              <select
+                value={engineerLevel}
+                onChange={(e) => setEngineerLevel(e.target.value)}
+                className="h-9 w-full rounded-md border border-line px-2 text-sm text-navy"
+              >
+                <option value="">Not set</option>
+                {billingRates.map((r) => (
+                  <option key={r.id} value={r.level}>
+                    {r.level}
+                  </option>
+                ))}
+              </select>
+              {billingRates.length === 0 && (
+                <p className="mt-1 text-xs text-muted">
+                  No billing rate levels exist yet — add some at{" "}
+                  <a href="/dashboard/admin/billing-rates" className="underline">
+                    Admin → Billing Rates
+                  </a>
+                  .
+                </p>
+              )}
             </div>
           </>
         )}
@@ -450,11 +497,18 @@ function EditUserModal({
   const [role, setRole] = useState<Role>(user.role);
   const [regions, setRegions] = useState<Region[]>(user.regions.map((r) => r.region));
   const [companyIds, setCompanyIds] = useState<string[]>(user.companies.map((c) => c.company.id));
-  const [skillTagsText, setSkillTagsText] = useState(user.skillTags.join(", "));
+  const [skillTags, setSkillTags] = useState<string[]>(user.skillTags);
   const [engineerLevel, setEngineerLevel] = useState(user.engineerLevel ?? "");
   const [isActive, setIsActive] = useState(user.isActive);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [skillTagOptions, setSkillTagOptions] = useState<SkillTagRow[]>([]);
+  const [billingRates, setBillingRates] = useState<BillingRate[]>([]);
+
+  useEffect(() => {
+    listSkillTags().then(setSkillTagOptions).catch(() => setSkillTagOptions([]));
+    listBillingRates().then(setBillingRates).catch(() => setBillingRates([]));
+  }, []);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -467,10 +521,7 @@ function EditUserModal({
         role,
         regions,
         companyIds,
-        skillTags: skillTagsText
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean),
+        skillTags,
         engineerLevel: engineerLevel || undefined,
         isActive,
       });
@@ -520,12 +571,37 @@ function EditUserModal({
         {role === "ENGINEER" && (
           <>
             <div>
-              <label className="mb-1 block text-xs font-bold text-navy">Skill tags (comma-separated)</label>
-              <input value={skillTagsText} onChange={(e) => setSkillTagsText(e.target.value)} className="h-9 w-full rounded-md border border-line px-2 text-sm text-navy" />
+              <label className="mb-1 block text-xs font-bold text-navy">Skill tags</label>
+              <SearchMultiSelect
+                label=""
+                selected={skillTags}
+                onChange={setSkillTags}
+                options={skillTagOptions.map((t) => ({ id: t.label, label: t.label }))}
+                placeholder="Search skill tags…"
+              />
             </div>
             <div>
               <label className="mb-1 block text-xs font-bold text-navy">Engineer level</label>
-              <input value={engineerLevel} onChange={(e) => setEngineerLevel(e.target.value)} className="h-9 w-full rounded-md border border-line px-2 text-sm text-navy" />
+              <select
+                value={engineerLevel}
+                onChange={(e) => setEngineerLevel(e.target.value)}
+                className="h-9 w-full rounded-md border border-line px-2 text-sm text-navy"
+              >
+                <option value="">Not set</option>
+                {/* Legacy free-typed value (2026-08-03) — if this user's current
+                    engineerLevel doesn't match any real Billing Rate level (set
+                    before this dropdown existed), show it as its own option so
+                    saving doesn't silently blank/change it out from under them;
+                    Admin still has to explicitly pick a real level to change it. */}
+                {engineerLevel && !billingRates.some((r) => r.level === engineerLevel) && (
+                  <option value={engineerLevel}>{engineerLevel} (not a configured Billing Rate — please update)</option>
+                )}
+                {billingRates.map((r) => (
+                  <option key={r.id} value={r.level}>
+                    {r.level}
+                  </option>
+                ))}
+              </select>
             </div>
           </>
         )}

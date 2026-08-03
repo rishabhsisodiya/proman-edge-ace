@@ -3,6 +3,8 @@ import { Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { PASSWORD_POLICY_REGEX } from '../auth/auth.service';
+import { SkillTagService } from '../ticketing/skill-tags/skill-tag.service';
+import { BillingRateService } from '../ticketing/billing-rates/billing-rate.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 
@@ -24,7 +26,35 @@ const USER_SAFE_SELECT = {
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly skillTags: SkillTagService,
+    private readonly billingRates: BillingRateService,
+  ) {}
+
+  /**
+   * Skill Tags master-list + Engineer Level/Billing Rate enforcement
+   * (2026-08-03, client-agreed scope) — replaces the previous free-text
+   * entry for both fields. Client clarification: these are deliberately
+   * unrelated concerns (skill tags = what an engineer can do; engineer
+   * level = what determines their billing rate) that happen to both live
+   * on User, not one combined mechanism.
+   */
+  private async validateSkillTagsAndLevel(skillTags: string[] | undefined, engineerLevel: string | undefined) {
+    if (skillTags && skillTags.length > 0) {
+      const known = await this.skillTags.allLabels();
+      const unknown = skillTags.filter((t) => !known.has(t));
+      if (unknown.length > 0) {
+        throw new BadRequestException(`Unknown skill tag(s): ${unknown.join(', ')} — add them to the Skill Tags master list first`);
+      }
+    }
+    if (engineerLevel) {
+      const rate = await this.billingRates.rateForLevel(engineerLevel);
+      if (rate === null) {
+        throw new BadRequestException(`Unknown engineer level "${engineerLevel}" — it must match an existing Billing Rate level`);
+      }
+    }
+  }
 
   /**
    * Engineer candidates for the Manager Console's "Assign engineer" panel —
@@ -84,6 +114,7 @@ export class UsersService {
     if (!PASSWORD_POLICY_REGEX.test(dto.password)) {
       throw new BadRequestException('Password must be 8+ chars with upper, lower, number, and special character');
     }
+    await this.validateSkillTagsAndLevel(dto.skillTags, dto.engineerLevel);
 
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (existing) throw new ConflictException('A user with this email already exists');
@@ -133,6 +164,7 @@ export class UsersService {
     if (dto.role === 'ADMIN') {
       throw new BadRequestException('Admin accounts cannot be created here');
     }
+    await this.validateSkillTagsAndLevel(dto.skillTags, dto.engineerLevel);
 
     const roleChanging = dto.role !== undefined && dto.role !== user.role;
     const deactivating = dto.isActive === false && user.isActive;
