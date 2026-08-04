@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { AuthUser, getCurrentUser } from "@/lib/auth";
@@ -22,6 +22,22 @@ import {
 } from "@/lib/ticketing/types";
 import { Pagination } from "@/components/Pagination";
 import { SortableTh } from "@/components/SortableTh";
+import { useSessionState } from "@/lib/useSessionState";
+
+// sessionStorage keys — filters survive a trip to the ticket detail page and
+// back, cleared when the tab closes (client request, 2026-08-04).
+const FK = {
+  region: "ticketsList:region",
+  priority: "ticketsList:priority",
+  status: "ticketsList:status",
+  serviceType: "ticketsList:serviceType",
+  assigned: "ticketsList:assigned",
+  slaBreached: "ticketsList:slaBreached",
+  tags: "ticketsList:tags",
+  page: "ticketsList:page",
+  sortBy: "ticketsList:sortBy",
+  sortDir: "ticketsList:sortDir",
+};
 
 const REGIONS: Region[] = ["NORTH", "SOUTH", "EAST", "WEST", "CENTRAL", "BANGLADESH"];
 const PRIORITIES: Priority[] = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
@@ -48,18 +64,28 @@ export default function TicketsListPage() {
     setUser(getCurrentUser());
   }, []);
 
-  const [region, setRegion] = useState("");
-  const [priority, setPriority] = useState("");
-  const [status, setStatus] = useState("");
-  const [serviceType, setServiceType] = useState("");
-  const [assigned, setAssigned] = useState("");
-  const [slaBreached, setSlaBreached] = useState(false);
-  const [tags, setTags] = useState("");
-  const [page, setPage] = useState(1);
+  const [region, setRegion] = useSessionState(FK.region, "");
+  const [priority, setPriority] = useSessionState(FK.priority, "");
+  const [status, setStatus] = useSessionState(FK.status, "");
+  const [serviceType, setServiceType] = useSessionState(FK.serviceType, "");
+  const [assigned, setAssigned] = useSessionState(FK.assigned, "");
+  const [slaBreached, setSlaBreached] = useSessionState(FK.slaBreached, false);
+  const [tags, setTags] = useSessionState(FK.tags, "");
+  const [page, setPage] = useSessionState(FK.page, 1);
   const [total, setTotal] = useState(0);
   const pageSize = 25;
-  const [sortBy, setSortBy] = useState("createdAt");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [sortBy, setSortBy] = useSessionState(FK.sortBy, "createdAt");
+  const [sortDir, setSortDir] = useSessionState<"asc" | "desc">(FK.sortDir, "desc");
+
+  function clearAll() {
+    setRegion("");
+    setPriority("");
+    setStatus("");
+    setServiceType("");
+    setAssigned("");
+    setSlaBreached(false);
+    setTags("");
+  }
 
   function onSort(key: string) {
     if (key === sortBy) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -78,7 +104,14 @@ export default function TicketsListPage() {
       .catch(() => {});
   }, []);
 
+  // Skip on mount — otherwise a restored page number gets clobbered back to 1
+  // every time this page remounts (e.g. returning from a ticket's detail page).
+  const filtersMounted = useRef(false);
   useEffect(() => {
+    if (!filtersMounted.current) {
+      filtersMounted.current = true;
+      return;
+    }
     setPage(1);
   }, [region, priority, status, serviceType, assigned, slaBreached, tags]);
 
@@ -217,6 +250,12 @@ export default function TicketsListPage() {
           placeholder="Search tags (comma-separated)"
           className="rounded-lg border border-line px-3 py-1.5 text-sm"
         />
+        <button
+          onClick={clearAll}
+          className="rounded-lg border border-line bg-white px-3 py-1.5 text-sm font-bold text-navy hover:bg-navy-tint"
+        >
+          Clear all
+        </button>
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-line bg-white shadow-[0_1px_4px_rgba(42,47,105,.06)]">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import {
@@ -21,6 +21,22 @@ import {
 import { Pagination } from "@/components/Pagination";
 import { SortableTh } from "@/components/SortableTh";
 import { getTodayAmcVisits, TodayAmcVisit } from "@/lib/ticketing/amc";
+import { useSessionState } from "@/lib/useSessionState";
+
+// sessionStorage keys — filters survive a trip to the ticket detail page and
+// back, cleared when the tab closes (client request, 2026-08-04).
+const FK = {
+  status: "asmDashboard:status",
+  priority: "asmDashboard:priority",
+  serviceType: "asmDashboard:serviceType",
+  assigned: "asmDashboard:assigned",
+  slaBreached: "asmDashboard:slaBreached",
+  rejected: "asmDashboard:rejected",
+  tags: "asmDashboard:tags",
+  page: "asmDashboard:page",
+  sortBy: "asmDashboard:sortBy",
+  sortDir: "asmDashboard:sortDir",
+};
 
 const PRIORITIES: Priority[] = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 const STATUSES: TicketStatus[] = Object.keys(STATUS_LABEL) as TicketStatus[];
@@ -50,18 +66,18 @@ export default function AsmDashboardPage() {
   const [allTickets, setAllTickets] = useState<Ticket[]>([]);
   const [todayVisits, setTodayVisits] = useState<TodayAmcVisit[]>([]);
 
-  const [status, setStatus] = useState("");
-  const [priority, setPriority] = useState("");
-  const [serviceType, setServiceType] = useState("");
-  const [assigned, setAssigned] = useState("");
-  const [slaBreached, setSlaBreached] = useState(false);
-  const [rejected, setRejected] = useState(false);
-  const [tags, setTags] = useState("");
-  const [page, setPage] = useState(1);
+  const [status, setStatus] = useSessionState(FK.status, "");
+  const [priority, setPriority] = useSessionState(FK.priority, "");
+  const [serviceType, setServiceType] = useSessionState(FK.serviceType, "");
+  const [assigned, setAssigned] = useSessionState(FK.assigned, "");
+  const [slaBreached, setSlaBreached] = useSessionState(FK.slaBreached, false);
+  const [rejected, setRejected] = useSessionState(FK.rejected, false);
+  const [tags, setTags] = useSessionState(FK.tags, "");
+  const [page, setPage] = useSessionState(FK.page, 1);
   const [total, setTotal] = useState(0);
   const pageSize = 25;
-  const [sortBy, setSortBy] = useState("createdAt");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [sortBy, setSortBy] = useSessionState(FK.sortBy, "createdAt");
+  const [sortDir, setSortDir] = useSessionState<"asc" | "desc">(FK.sortDir, "desc");
 
   function onSort(key: string) {
     if (key === sortBy) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -81,7 +97,14 @@ export default function AsmDashboardPage() {
       .catch(() => {});
   }, []);
 
+  // Skip on mount — otherwise a restored page number gets clobbered back to 1
+  // every time this page remounts (e.g. returning from a ticket's detail page).
+  const filtersMounted = useRef(false);
   useEffect(() => {
+    if (!filtersMounted.current) {
+      filtersMounted.current = true;
+      return;
+    }
     setPage(1);
   }, [status, priority, serviceType, assigned, slaBreached, rejected, tags]);
 
@@ -205,10 +228,12 @@ export default function AsmDashboardPage() {
               quickFilter("all");
               setSlaBreached(false);
               setTags("");
+              setPriority("");
+              setServiceType("");
             }}
             className="h-9 shrink-0 whitespace-nowrap rounded-md bg-navy-tint px-3 text-xs font-bold text-navy hover:bg-navy hover:text-white"
           >
-            Clear
+            Clear all
           </button>
         </div>
 
