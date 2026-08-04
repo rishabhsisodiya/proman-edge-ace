@@ -534,6 +534,7 @@ export class TicketsService {
   /** Region/assignment-scoped list — enforced at the query layer, not the UI. */
   async list(actor: RequestUser, filters: Record<string, string | undefined>) {
     const where: Prisma.TicketWhereInput = {};
+    let scopedRegions: Region[] | null = null;
 
     if (actor.role === 'ENGINEER') {
       where.assignedEngineerId = actor.userId;
@@ -545,14 +546,28 @@ export class TicketsService {
       // decision 2026-08-02: an unassigned Manager sees nothing rather than
       // silently falling back to full visibility).
       const regions = await this.prisma.userRegion.findMany({ where: { userId: actor.userId } });
-      where.customer = { region: { in: regions.map((r) => r.region) } };
+      scopedRegions = regions.map((r) => r.region);
+      where.customer = { region: { in: scopedRegions } };
     }
     // CALL_CENTER, ADMIN: unscoped (full visibility)
 
     if (filters.status) where.status = filters.status as any;
     else if (filters.excludeClosed === 'true') where.status = { not: 'CLOSED' };
     if (filters.priority) where.priority = filters.priority as any;
-    if (filters.region) where.customer = { ...(where.customer as object), region: filters.region as any };
+    if (filters.region) {
+      // Bug fix (2026-08-04): this used to blindly overwrite the
+      // region-scoped `where.customer` above with the raw filter value —
+      // an ASM/Manager picking a different region from the filter dropdown
+      // would see that region's tickets, bypassing their own scope
+      // entirely. Now the filter only narrows within their already-allowed
+      // regions; picking one outside it returns nothing, not a scope escape.
+      const requestedRegion = filters.region as Region;
+      if (scopedRegions && !scopedRegions.includes(requestedRegion)) {
+        where.customer = { region: { in: [] } };
+      } else {
+        where.customer = { ...(where.customer as object), region: requestedRegion };
+      }
+    }
     if (filters.serviceType) where.serviceType = filters.serviceType as any;
     if (filters.assigned === 'true') where.assignedEngineerId = { not: null };
     if (filters.assigned === 'false') where.assignedEngineerId = null;

@@ -140,18 +140,25 @@ export default function TicketsListPage() {
       </div>
 
       <div className="flex flex-wrap gap-3 rounded-lg border border-line bg-white p-3 shadow-[0_1px_4px_rgba(42,47,105,.06)]">
-        <select
-          value={region}
-          onChange={(e) => setRegion(e.target.value)}
-          className="rounded-lg border border-line px-3 py-1.5 text-sm"
-        >
-          <option value="">All regions</option>
-          {REGIONS.map((r) => (
-            <option key={r} value={r}>
-              {r}
-            </option>
-          ))}
-        </select>
+        {/* ASM/Manager are always region-scoped server-side to their own
+            assigned region(s) — showing "All regions" here implied a
+            visibility they don't have (2026-08-04 fix, alongside the
+            backend bug where picking a different region actually leaked
+            that region's tickets). Only Call Center/Admin (org-wide) get this filter. */}
+        {user && (user.role === "CALL_CENTER" || user.role === "ADMIN") && (
+          <select
+            value={region}
+            onChange={(e) => setRegion(e.target.value)}
+            className="rounded-lg border border-line px-3 py-1.5 text-sm"
+          >
+            <option value="">All regions</option>
+            {REGIONS.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+        )}
         <select
           value={priority}
           onChange={(e) => setPriority(e.target.value)}

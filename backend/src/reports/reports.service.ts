@@ -724,8 +724,18 @@ export class ReportsService {
       where: { createdAt: { gte: dateFrom, lte: now }, ...regionFilter },
       select: { id: true, createdAt: true, priority: true },
     });
+    // Bug fix (2026-08-04): exact-match on newValue === 'ASSIGNED' silently
+    // missed every transition with an attached comment — the audit log
+    // stores those as "ASSIGNED (some note)" (see WorkflowService.applyTransition's
+    // auditNote formatting), which includes the very common auto-routing
+    // case ("ASSIGNED (Auto-routed to ...)"). `startsWith` matches both.
     const assignedLogs = await this.prisma.auditLog.findMany({
-      where: { entityType: 'TICKET', fieldName: 'status', newValue: 'ASSIGNED', entityId: { in: createdTickets.map((t) => t.id) } },
+      where: {
+        entityType: 'TICKET',
+        fieldName: 'status',
+        newValue: { startsWith: 'ASSIGNED' },
+        entityId: { in: createdTickets.map((t) => t.id) },
+      },
       orderBy: { changedAt: 'asc' },
     });
     const firstAssignedAt = new Map<string, Date>();
