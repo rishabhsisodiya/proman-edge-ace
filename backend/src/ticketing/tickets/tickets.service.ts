@@ -772,6 +772,16 @@ export class TicketsService {
       include: { customer: true, equipment: true, site: true },
     });
 
+    // 3rd-rejection escalation block (client-clarified rejection rule,
+    // 2026-08-04) — a ticket flagged escalated after multiple rejections
+    // cannot be reassigned until a region-scoped Manager acknowledges via
+    // acknowledgeEscalation() below.
+    if (ticket.escalatedMultipleRejections) {
+      throw new ForbiddenException(
+        'This ticket has been escalated after multiple rejections. A Manager must acknowledge the escalation before it can be reassigned.',
+      );
+    }
+
     await this.prisma.ticket.update({ where: { id }, data: { assignedEngineerId: engineerId } });
 
     if (ticket.status === 'OPEN') {
@@ -885,9 +895,10 @@ export class TicketsService {
    * Engineer rejects an assignment (§5.4 Rejection Rule). Ticket returns to
    * Assigned (engineer unassigned) for ASM to manually reassign. Tracks
    * rejectionCount/rejectionReasons for the 3-tier escalation (1st: ASM
-   * notified, 2nd: +Manager alert, 3rd: escalates) — actual notification
-   * dispatch is a separate track (T4, not built yet), so this just returns
-   * the tier for the caller to act on/display.
+   * notified, 2nd: +Manager alert, 3rd: escalates — client-clarified
+   * 2026-08-04, `escalatedMultipleRejections` now actually blocks
+   * reassignment in assign()/asmRejectResolution() until a region-scoped
+   * Manager acknowledges via acknowledgeEscalation()).
    */
   async reject(id: string, reason: string, actor: RequestUser) {
     const ticket = await this.prisma.ticket.findUniqueOrThrow({
@@ -896,6 +907,11 @@ export class TicketsService {
     });
     const existingReasons = Array.isArray(ticket.rejectionReasons) ? ticket.rejectionReasons : [];
     const rejectionCount = ticket.rejectionCount + 1;
+    // Re-flags (not just first-time-sets) on every rejection while count >= 3
+    // — client decision: acknowledgement is tied to a specific rejection
+    // event, not a permanent unlock, so a 4th/5th/... rejection re-blocks
+    // reassignment even if a prior escalation was already acknowledged.
+    const nowEscalated = rejectionCount >= 3;
 
     await this.prisma.ticket.update({
       where: { id },
@@ -906,6 +922,7 @@ export class TicketsService {
           { engineerId: actor.userId, reason, timestamp: new Date().toISOString() },
         ] as any,
         assignedEngineerId: null,
+        ...(nowEscalated ? { escalatedMultipleRejections: true, escalationAcknowledgedAt: null, escalationAcknowledgedByUserId: null } : {}),
       },
     });
 
@@ -925,7 +942,9 @@ export class TicketsService {
       rejectionCount >= 3 ? 'ESCALATED_TO_MANAGER' : rejectionCount === 2 ? 'MANAGER_ALERTED' : 'ASM_NOTIFIED';
 
     // N-05/06/07 (FSD §9) — tier picked by rejection count. 2nd/3rd tiers also
-    // notify every active Manager (no "owning Manager" concept on a ticket).
+    // notify the region-scoped Manager(s) covering this ticket's customer
+    // (no "owning Manager" concept on a ticket, and never org-wide — see
+    // managersForRegion()).
     const triggerCode = rejectionCount >= 3 ? 'N-07' : rejectionCount === 2 ? 'N-06' : 'N-05';
     const vars = {
       ticket_no: ticket.ticketNo,
@@ -966,9 +985,18 @@ export class TicketsService {
     if (ticket.status !== 'ENGINEER_RESOLVED') {
       throw new BadRequestException('Only an Engineer Resolved ticket can be rejected this way');
     }
+    // This method reassigns (picks engineerId) in the same call as rejecting
+    // — same escalation block as assign() below, since it's still "ASM
+    // reassigns" in substance.
+    if (ticket.escalatedMultipleRejections) {
+      throw new ForbiddenException(
+        'This ticket has been escalated after multiple rejections. A Manager must acknowledge the escalation before it can be reassigned.',
+      );
+    }
 
     const existingReasons = Array.isArray(ticket.rejectionReasons) ? ticket.rejectionReasons : [];
     const rejectionCount = ticket.rejectionCount + 1;
+    const nowEscalated = rejectionCount >= 3;
 
     await this.prisma.ticket.update({
       where: { id },
@@ -979,6 +1007,7 @@ export class TicketsService {
           { engineerId: ticket.assignedEngineerId, reason, timestamp: new Date().toISOString() },
         ] as any,
         assignedEngineerId: engineerId,
+        ...(nowEscalated ? { escalatedMultipleRejections: true, escalationAcknowledgedAt: null, escalationAcknowledgedByUserId: null } : {}),
       },
     });
 
@@ -994,6 +1023,50 @@ export class TicketsService {
       rejectionCount >= 3 ? 'ESCALATED_TO_MANAGER' : rejectionCount === 2 ? 'MANAGER_ALERTED' : 'ASM_NOTIFIED';
 
     return { ...updated, escalationTier };
+  }
+
+  /**
+   * Clears the 3rd-rejection escalation block (client-clarified rejection
+   * rule, 2026-08-04) so ASM can reassign again — restricted to a
+   * region-scoped Manager covering this ticket's own customer (same
+   * scoping as every other Manager-facing check/notification in this
+   * service, not any Manager org-wide). Logged to AuditLog, same pattern as
+   * the blacklist-override trail.
+   */
+  async acknowledgeEscalation(id: string, actor: RequestUser) {
+    const ticket = await this.prisma.ticket.findUniqueOrThrow({ where: { id }, include: { customer: true } });
+    if (!ticket.escalatedMultipleRejections) {
+      throw new BadRequestException('This ticket is not currently escalated.');
+    }
+    // Manager-only, region-scoped — same as the blacklist-override guard
+    // above (no Admin bypass there either, deliberately kept consistent).
+    const regionManagers = await this.managersForRegion(ticket.customer.region);
+    if (!regionManagers.some((m) => m.id === actor.userId)) {
+      throw new ForbiddenException('Only a Manager covering this ticket\'s region can acknowledge this escalation.');
+    }
+
+    const updated = await this.prisma.ticket.update({
+      where: { id },
+      data: {
+        escalatedMultipleRejections: false,
+        escalationAcknowledgedAt: new Date(),
+        escalationAcknowledgedByUserId: actor.userId,
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        entityType: 'TICKET',
+        entityId: id,
+        fieldName: 'escalationAcknowledged',
+        oldValue: 'true',
+        newValue: 'false',
+        changedByUserId: actor.userId,
+        changeSource: 'WEB_UI',
+      },
+    });
+
+    return updated;
   }
 
   /**

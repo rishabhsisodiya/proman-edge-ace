@@ -736,6 +736,19 @@ model Ticket {
   assignedEngineer         User?               @relation("EngineerTickets", fields: [assignedEngineerId], references: [id])
   rejectionCount           Int                 @default(0)
   rejectionReasons         Json                @default("[]")
+  /// 3rd-rejection escalation (client-clarified rejection rule, 2026-08-04)
+  /// — true whenever rejectionCount >= 3 and a region-scoped Manager hasn't
+  /// yet acknowledged this specific escalation. Blocks TicketsService.assign()
+  /// (and the reassign-engineer path of asmRejectResolution()) while true.
+  /// Re-set to true on every subsequent rejection while rejectionCount >= 3,
+  /// even if a prior escalation was already acknowledged (client decision:
+  /// acknowledgement is tied to a specific rejection event, not a permanent
+  /// unlock) — deliberately a flag, not a distinct TicketStatus, since the
+  /// FSD's own wording keeps the ticket in "Assigned state" through all 3
+  /// tiers and only tier 3 additionally "flags" it.
+  escalatedMultipleRejections    Boolean         @default(false)
+  escalationAcknowledgedAt       DateTime?
+  escalationAcknowledgedByUserId String?
   /// FSD §14.1 rule 20 — incremented every time TicketsService.reopen() fires.
   reOpenCount              Int                 @default(0)
   pendingReason            PendingReason?

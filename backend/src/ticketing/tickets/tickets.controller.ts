@@ -116,6 +116,15 @@ export class TicketsController {
     return this.tickets.asmRejectResolution(id, dto.engineerId, dto.reason, { userId: req.user.userId, role: req.user.role });
   }
 
+  // Clears the 3rd-rejection escalation block (client-clarified rejection
+  // rule, 2026-08-04) — restricted at the service layer to the Manager(s)
+  // actually covering this ticket's region, not just any Manager.
+  @Roles('MANAGER')
+  @Post(':id/acknowledge-escalation')
+  acknowledgeEscalation(@Param('id') id: string, @Req() req: any) {
+    return this.tickets.acknowledgeEscalation(id, { userId: req.user.userId, role: req.user.role });
+  }
+
   // FSD §15.1 permission matrix — "Override warranty flag" is Manager/Admin only.
   @Roles('MANAGER', 'ADMIN')
   @Post(':id/override-warranty')

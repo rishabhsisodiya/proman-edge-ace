@@ -30,6 +30,8 @@ export const rejectTicket = (id: string, reason: string) =>
   post<Ticket & { escalationTier: string }>(`/tickets/${id}/reject`, { reason });
 export const asmRejectResolution = (id: string, engineerId: string, reason: string) =>
   post<Ticket & { escalationTier: string }>(`/tickets/${id}/reject-resolution`, { engineerId, reason });
+// Clears the 3rd-rejection escalation block (client-clarified rejection rule, 2026-08-04) — Manager-only, region-scoped, enforced server-side.
+export const acknowledgeEscalation = (id: string) => post<Ticket>(`/tickets/${id}/acknowledge-escalation`);
 export const reachedSite = (id: string, comment?: string, gpsLat?: number, gpsLong?: number) =>
   post<Ticket>(`/tickets/${id}/reached-site`, { comment, gpsLat, gpsLong });
 export const startWorking = (id: string, comment?: string) => post<Ticket>(`/tickets/${id}/start-working`, { comment });

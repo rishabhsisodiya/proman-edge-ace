@@ -41,6 +41,7 @@ import {
 } from "@/lib/ticketing/types";
 import {
   acceptTicket,
+  acknowledgeEscalation,
   asmResolveTicket,
   asmRejectResolution,
   assignTicket,
@@ -388,6 +389,25 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             <p className="break-words text-navy">
               {ticket.rejectionCount} time{ticket.rejectionCount > 1 ? "s" : ""} — see Timeline for reasons
             </p>
+          </div>
+        )}
+        {ticket.escalatedMultipleRejections && (
+          <div className="min-w-0 sm:col-span-2">
+            <span className="inline-block rounded-full bg-brand-red-bg px-2.5 py-0.5 text-[10px] font-bold text-brand-red">
+              Escalated — Multiple Rejections
+            </span>
+            <p className="mt-1 text-xs text-muted">
+              This ticket cannot be reassigned until a Manager covering its region acknowledges the escalation.
+            </p>
+            {user?.role === "MANAGER" && (
+              <button
+                onClick={() => runAction(() => acknowledgeEscalation(ticket.id), "Escalation acknowledged — ticket can be reassigned.")}
+                disabled={busy}
+                className="mt-2 rounded-md bg-orange px-3 py-1.5 text-xs font-bold text-navy disabled:opacity-50"
+              >
+                Acknowledge Escalation
+              </button>
+            )}
           </div>
         )}
         {ticket.reachedSiteGpsLat != null && ticket.reachedSiteGpsLong != null && (

@@ -175,6 +175,8 @@ export interface Ticket {
   csatResponseText?: string | null;
   rejectionCount?: number;
   rejectionReasons?: { engineerId: string; reason: string; timestamp: string }[];
+  escalatedMultipleRejections?: boolean;
+  escalationAcknowledgedAt?: string | null;
   reOpenCount?: number;
   reachedSiteGpsLat?: number | null;
   reachedSiteGpsLong?: number | null;
