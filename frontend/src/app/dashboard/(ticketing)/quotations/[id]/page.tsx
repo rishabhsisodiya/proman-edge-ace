@@ -1,7 +1,7 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
-import { ApiError } from "@/lib/api";
+import { use, useEffect, useRef, useState } from "react";
+import { ApiError, apiFetch } from "@/lib/api";
 import {
   addQuotationItem,
   checkDeliveryNoteForQuotation,
@@ -17,7 +17,7 @@ import {
   updateQuotationItem,
   uploadCustomerPoDocument,
 } from "@/lib/ticketing/quotation";
-import { ItemListItem, listItems } from "@/lib/ticketing/masters";
+import { ItemDetail, ItemListItem, listItems } from "@/lib/ticketing/masters";
 import { listPriceLists, PriceList } from "@/lib/ticketing/price-lists";
 
 const STATUS_LABEL: Record<Quotation["status"], string> = {
@@ -540,6 +540,25 @@ function ItemsSection({
     }, 250);
     return () => clearTimeout(handle);
   }, [query, linePriceListName]);
+
+  // Client-reported bug (2026-08-04): changing the Price List after an item
+  // is already selected left Unit Price stale — nothing re-fetched against
+  // the new list. Skipped on mount (the effect above sets the initial
+  // linePriceListName once priceLists resolve, which isn't a user-driven
+  // change and shouldn't trigger a refetch before any item is selected).
+  const linePriceListMounted = useRef(false);
+  useEffect(() => {
+    if (!linePriceListMounted.current) {
+      linePriceListMounted.current = true;
+      return;
+    }
+    if (!selected) return;
+    const qs = linePriceListName ? `?priceListName=${encodeURIComponent(linePriceListName)}` : "";
+    apiFetch<ItemDetail>(`/items/${encodeURIComponent(selected.itemCode)}${qs}`)
+      .then((detail) => setUnitPrice(detail.sellingRate != null ? String(detail.sellingRate) : "0"))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linePriceListName]);
 
   return (
     <div>

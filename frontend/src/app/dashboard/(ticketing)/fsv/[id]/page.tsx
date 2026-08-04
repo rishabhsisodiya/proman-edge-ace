@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ApiError } from "@/lib/api";
 import SignaturePad from "@/components/fsv/SignaturePad";
@@ -547,6 +547,26 @@ function PartsSection({
     return () => clearTimeout(handle);
   }, [itemQuery, priceListName]);
 
+  // Client-reported bug (2026-08-04): changing the Price List after an item
+  // is already selected left the Rate/Selling Rate stale — the dropdown
+  // stayed editable but nothing re-fetched against the new list. Skipped on
+  // mount (the price-list-loading effect above sets the initial value once
+  // priceLists resolve, which isn't a user-driven change and shouldn't
+  // trigger a refetch before any item is even selected).
+  const priceListMounted = useRef(false);
+  useEffect(() => {
+    if (!priceListMounted.current) {
+      priceListMounted.current = true;
+      return;
+    }
+    if (!selectedItem) return;
+    const qs = priceListName ? `?priceListName=${encodeURIComponent(priceListName)}` : "";
+    apiFetch<ItemDetail>(`/items/${encodeURIComponent(selectedItem.itemCode)}${qs}`)
+      .then((detail) => setSellingRate(detail.sellingRate != null ? String(detail.sellingRate) : "0"))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [priceListName]);
+
   async function pickItem(it: ItemListItem) {
     const qs = priceListName ? `?priceListName=${encodeURIComponent(priceListName)}` : "";
     const detail = await apiFetch<ItemDetail>(`/items/${encodeURIComponent(it.itemCode)}${qs}`);
@@ -619,6 +639,7 @@ function PartsSection({
               <th className="px-2 py-1.5">Item</th>
               <th className="px-2 py-1.5">Qty</th>
               <th className="px-2 py-1.5">Warehouse</th>
+              <th className="px-2 py-1.5">Rate</th>
               <th className="px-2 py-1.5">Amount</th>
               {!readOnly && <th className="px-2 py-1.5" />}
             </tr>
@@ -652,6 +673,10 @@ function PartsSection({
                       className="h-7 w-20 rounded-md border border-line px-1 text-xs"
                     />
                   </td>
+                  <td className="px-2 py-1.5 text-muted">
+                    {/* Amount isn't directly editable — derived from Qty × Rate — so it's shown live here as a preview, not an input. */}
+                    ₹{((Number(editQty) || 0) * (Number(editSellingRate) || 0)).toFixed(2)}
+                  </td>
                   <td className="px-2 py-1.5 text-right whitespace-nowrap">
                     <button onClick={() => saveEdit(p.id)} disabled={editBusy} className="mr-2 font-bold text-brand-green disabled:opacity-50">
                       Save
@@ -668,6 +693,7 @@ function PartsSection({
                     {p.qty} {p.uom}
                   </td>
                   <td className="px-2 py-1.5 text-muted">{p.warehouse}</td>
+                  <td className="px-2 py-1.5 text-muted">₹{p.sellingRate}</td>
                   <td className="px-2 py-1.5 text-muted">₹{p.amount}</td>
                   {!readOnly && (
                     <td className="px-2 py-1.5 text-right whitespace-nowrap">
