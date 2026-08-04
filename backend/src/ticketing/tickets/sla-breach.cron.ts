@@ -1,9 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { Region, SlaClockStatus } from '@prisma/client';
+import { Region, Role, SlaClockStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationService } from '../../notifications/notification.service';
 import { NotificationTemplateService } from '../../notifications/notification-template.service';
+import { SlaNotificationRuleService } from '../sla-notification-rule/sla-notification-rule.service';
 
 /**
  * SLA breach monitoring cron (2026-07-28, FSD §14.3 — was ❌ pending in the
@@ -16,6 +17,16 @@ import { NotificationTemplateService } from '../../notifications/notification-te
  * warning, resolution breach, respectively. State is persisted on the ticket
  * (slaResponseStatus/slaResolutionStatus) so it's badge-able/filterable in
  * the UI independent of whether the notification itself succeeds.
+ *
+ * Breach recipients (2026-08-04, client request — FSD: "automatic
+ * notification shall be sent to the Manager and the Managing Director (MD)
+ * ... Admin-level configuration option ... to set up and manage these SLA
+ * notification rules") — previously hardcoded per breach type; now driven
+ * by SlaNotificationRuleService, Admin-configurable per role at
+ * /dashboard/admin/sla. Manager stays region-scoped when enabled (client
+ * confirmed: region Manager only, not every Manager org-wide); MD is
+ * org-wide (single top-level role, no region concept for it in this
+ * schema).
  */
 @Injectable()
 export class SlaBreachCron {
@@ -25,6 +36,7 @@ export class SlaBreachCron {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationService,
     private readonly notificationTemplates: NotificationTemplateService,
+    private readonly notificationRules: SlaNotificationRuleService,
   ) {}
 
   @Cron('*/15 * * * *') // every 15 minutes — SLA windows can be as short as a few hours
@@ -99,7 +111,8 @@ export class SlaBreachCron {
     this.logger.log(`SLA breach cron complete — ${checked} ticket(s) checked, ${changed} status change(s)`);
   }
 
-  // Region-scoped Manager lookup (client decision, 2026-08-02) — same
+  // Region-scoped Manager lookup (client decision, 2026-08-02, reconfirmed
+  // 2026-08-04 for SLA breach notifications specifically) — same
   // pattern/fail-safe as TicketsService.managersForRegion(): a null region
   // matches no one, rather than falling back to notifying every Manager.
   private async managersForRegion(region: Region | null) {
@@ -109,21 +122,62 @@ export class SlaBreachCron {
     return this.prisma.user.findMany({ where: { id: { in: regions.map((r) => r.userId) } } });
   }
 
-  private async callCenterUsers() {
-    return this.prisma.user.findMany({ where: { role: 'CALL_CENTER', isActive: true } });
+  private async usersByRole(role: Role) {
+    return this.prisma.user.findMany({ where: { role, isActive: true } });
   }
 
-  /** N-15 — SLA response breach: ASM + Call Center + Manager, Email + Push. */
-  private async fireResponseBreach(t: { id: string; ticketNo: string; priority: string; slaResponseDue: Date | null; assignedAsm: { id: string; email: string } | null; customer: { region: Region | null } }) {
-    const vars = { ticket_no: t.ticketNo, priority: t.priority, sla_response_due: t.slaResponseDue?.toISOString() ?? 'N/A' };
+  /**
+   * Resolves the actual recipients for a breach type, given the set of
+   * roles Admin has enabled for it (SlaNotificationRuleService). ASM and
+   * Engineer resolve to this specific ticket's assignee (or nobody, if
+   * unassigned); every other role resolves org-wide except Manager, which
+   * stays region-scoped (client confirmed 2026-08-04 — region Manager only).
+   */
+  private async recipientsForRoles(
+    roles: Role[],
+    t: {
+      assignedAsm: { id: string; email: string } | null;
+      assignedEngineer: { id: string; email: string } | null;
+      customer: { region: Region | null };
+    },
+  ): Promise<{ email: string; userId: string }[]> {
     const recipients: { email: string; userId: string }[] = [];
-    if (t.assignedAsm) recipients.push({ email: t.assignedAsm.email, userId: t.assignedAsm.id });
-    recipients.push(...(await this.callCenterUsers()).map((u) => ({ email: u.email, userId: u.id })));
-    recipients.push(...(await this.managersForRegion(t.customer.region)).map((u) => ({ email: u.email, userId: u.id })));
+    for (const role of roles) {
+      switch (role) {
+        case 'ASM':
+          if (t.assignedAsm) recipients.push({ email: t.assignedAsm.email, userId: t.assignedAsm.id });
+          break;
+        case 'ENGINEER':
+          if (t.assignedEngineer) recipients.push({ email: t.assignedEngineer.email, userId: t.assignedEngineer.id });
+          break;
+        case 'MANAGER':
+          recipients.push(...(await this.managersForRegion(t.customer.region)).map((u) => ({ email: u.email, userId: u.id })));
+          break;
+        default:
+          // CALL_CENTER, ADMIN, CS_SUPPORT, MD — org-wide, no region concept.
+          recipients.push(...(await this.usersByRole(role)).map((u) => ({ email: u.email, userId: u.id })));
+      }
+    }
+    return recipients;
+  }
+
+  /** N-15 — SLA response breach: recipients Admin-configured per role, Email + Push. */
+  private async fireResponseBreach(t: {
+    id: string;
+    ticketNo: string;
+    priority: string;
+    slaResponseDue: Date | null;
+    assignedAsm: { id: string; email: string } | null;
+    assignedEngineer: { id: string; email: string } | null;
+    customer: { region: Region | null };
+  }) {
+    const vars = { ticket_no: t.ticketNo, priority: t.priority, sla_response_due: t.slaResponseDue?.toISOString() ?? 'N/A' };
+    const roles = await this.notificationRules.getEnabledRoles('RESPONSE');
+    const recipients = await this.recipientsForRoles(roles, t);
     await this.sendToAll('N-15', recipients, vars, t.id);
   }
 
-  /** N-16 — SLA resolution 90% warning: ASM + Engineer, Push + Email. */
+  /** N-16 — SLA resolution 90% warning: ASM + Engineer, Push + Email. Not Admin-configurable — this is an early heads-up to the people already on the ticket, not an escalation. */
   private async fireResolutionWarning(t: {
     id: string;
     ticketNo: string;
@@ -138,13 +192,14 @@ export class SlaBreachCron {
     await this.sendToAll('N-16', recipients, vars, t.id);
   }
 
-  /** N-17 — SLA resolution breach: ASM + Manager, Email + WhatsApp (no WhatsApp number for internal users — sent via Email + Push instead). */
+  /** N-17 — SLA resolution breach: recipients Admin-configured per role, Email + Push (WhatsApp needs a phone number, not an email — internal users only have email on file, so this goes out via Email + Push despite the FSD listing WhatsApp; customer-facing WhatsApp triggers like N-01 use the customer's mobile instead). */
   private async fireResolutionBreach(t: {
     id: string;
     ticketNo: string;
     status: string;
     slaResolutionDue: Date | null;
     assignedAsm: { id: string; email: string } | null;
+    assignedEngineer: { id: string; email: string } | null;
     customer: { region: Region | null };
   }) {
     const vars = {
@@ -152,17 +207,9 @@ export class SlaBreachCron {
       status: t.status,
       sla_resolution_due: t.slaResolutionDue?.toISOString() ?? 'N/A',
     };
-    const recipients: { email: string; userId: string }[] = [];
-    if (t.assignedAsm) recipients.push({ email: t.assignedAsm.email, userId: t.assignedAsm.id });
-    recipients.push(...(await this.managersForRegion(t.customer.region)).map((u) => ({ email: u.email, userId: u.id })));
-    // WhatsApp needs a phone number, not an email — internal users (ASM/Manager)
-    // only have email on file, so N-17 goes out via Email + Push for them
-    // despite the FSD listing WhatsApp; the customer-facing WhatsApp triggers
-    // (N-01 etc.) use the customer's mobile instead.
-    for (const r of recipients) {
-      await this.sendOne('N-17', 'EMAIL', r.email, vars, t.id);
-      await this.sendOne('N-17', 'PUSH', r.email, vars, t.id, r.userId);
-    }
+    const roles = await this.notificationRules.getEnabledRoles('RESOLUTION');
+    const recipients = await this.recipientsForRoles(roles, t);
+    await this.sendToAll('N-17', recipients, vars, t.id);
   }
 
   private async sendToAll(triggerCode: string, recipients: { email: string; userId: string }[], vars: Record<string, string>, ticketId: string) {

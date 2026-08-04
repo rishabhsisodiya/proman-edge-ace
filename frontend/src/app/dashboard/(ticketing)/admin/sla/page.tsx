@@ -25,17 +25,32 @@ import {
   uploadHolidays,
 } from "@/lib/ticketing/holidays";
 import { Priority, ServiceType, SERVICE_TYPE_LABEL, STATUS_LABEL, TicketStatus } from "@/lib/ticketing/types";
+import {
+  listSlaNotificationRules,
+  setSlaNotificationRule,
+  SlaBreachType,
+  SlaNotificationRule,
+} from "@/lib/ticketing/sla-notification-rules";
+import { Role } from "@/lib/auth";
+import { ROLE_LABEL } from "@/lib/ticketing/users";
 
 const SERVICE_TYPES: ServiceType[] = Object.keys(SERVICE_TYPE_LABEL) as ServiceType[];
 const PRIORITIES: Priority[] = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 const STATUSES: TicketStatus[] = Object.keys(STATUS_LABEL) as TicketStatus[];
+
+// Roles relevant to SLA breach notifications — excludes the Proman Edge
+// dashboard-only roles (Sales Head, Manufacturing Head, etc.), which have
+// nothing to do with ticket SLAs. Matches backend SlaNotificationRuleService.
+const NOTIFICATION_ROLES: Role[] = ["CALL_CENTER", "ASM", "ENGINEER", "MANAGER", "ADMIN", "CS_SUPPORT", "MD"];
+const BREACH_TYPES: SlaBreachType[] = ["RESPONSE", "RESOLUTION"];
+const BREACH_TYPE_LABEL: Record<SlaBreachType, string> = { RESPONSE: "Response Breach", RESOLUTION: "Resolution Breach" };
 
 // Merged (2026-07-30, client request — "all related to SLA only") — was 3
 // separate Admin Console entries (SLA Policies, SLA Pause States, Holidays),
 // now one page with tabs. Same components/logic as before, just no longer
 // spread across 3 routes.
 export default function SlaConfigPage() {
-  const [tab, setTab] = useState<"policies" | "pause-states" | "holidays">("policies");
+  const [tab, setTab] = useState<"policies" | "pause-states" | "holidays" | "notification-rules">("policies");
 
   return (
     <div className="w-full px-6 py-10">
@@ -70,11 +85,19 @@ export default function SlaConfigPage() {
         >
           Holidays
         </button>
+        <button
+          type="button"
+          onClick={() => setTab("notification-rules")}
+          className={`px-3 py-2 text-sm font-bold ${tab === "notification-rules" ? "border-b-2 border-orange text-navy" : "text-muted"}`}
+        >
+          Notification Rules
+        </button>
       </div>
 
       {tab === "policies" && <PoliciesTab />}
       {tab === "pause-states" && <PauseStatesTab />}
       {tab === "holidays" && <HolidaysTab />}
+      {tab === "notification-rules" && <NotificationRulesTab />}
     </div>
   );
 }
@@ -628,6 +651,106 @@ function HolidaysTab() {
             </tbody>
           </table>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ Notification Rules
+
+// Admin-configurable SLA breach notification recipients (client request,
+// 2026-08-04 — FSD: "automatic notification shall be sent to the Manager
+// and the Managing Director (MD) ... Admin-level configuration option ...
+// to set up and manage these SLA notification rules"). Manager stays
+// region-scoped when checked (client confirmed: region Manager only, not
+// every Manager org-wide) — that scoping happens server-side, this screen
+// only controls which roles participate at all.
+function NotificationRulesTab() {
+  const [rules, setRules] = useState<SlaNotificationRule[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+
+  function load() {
+    setLoading(true);
+    setError(null);
+    listSlaNotificationRules()
+      .then(setRules)
+      .catch((err) => {
+        if (err instanceof ApiError && err.status === 403) setError("Admin access required.");
+        else setError("Could not load SLA notification rules.");
+      })
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(load, []);
+
+  function isEnabled(breachType: SlaBreachType, role: Role) {
+    return rules.find((r) => r.breachType === breachType && r.role === role)?.enabled ?? false;
+  }
+
+  async function onToggle(breachType: SlaBreachType, role: Role) {
+    const k = `${breachType}__${role}`;
+    setBusyKey(k);
+    setError(null);
+    try {
+      await setSlaNotificationRule(breachType, role, !isEnabled(breachType, role));
+      load();
+    } catch {
+      setError("Could not update this notification rule.");
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  return (
+    <div>
+      <p className="mb-6 text-sm text-muted">
+        Which roles get notified when a ticket&apos;s SLA is breached — response breach and resolution breach are
+        configured separately. Checking <b>ASM</b> or <b>Engineer</b> notifies only whoever is assigned to that
+        specific ticket, not every ASM/Engineer. Checking <b>Manager</b> notifies only the Manager(s) covering the
+        ticket&apos;s own region, not every Manager. Every other role (Call Center, Admin, CS Support, MD) is
+        notified organization-wide, regardless of the ticket.
+      </p>
+
+      {error && <p className="mb-4 rounded-md bg-brand-red-bg px-3 py-2 text-xs text-brand-red">{error}</p>}
+
+      {loading ? (
+        <p className="text-sm text-muted">Loading…</p>
+      ) : (
+        <table className="w-full rounded-lg border border-line bg-white text-sm">
+          <thead>
+            <tr className="border-b border-line text-left text-xs font-bold uppercase tracking-wide text-navy">
+              <th className="px-4 py-3">Role</th>
+              {BREACH_TYPES.map((bt) => (
+                <th key={bt} className="px-4 py-3 text-center">
+                  {BREACH_TYPE_LABEL[bt]}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {NOTIFICATION_ROLES.map((role) => (
+              <tr key={role} className="border-b border-line last:border-0">
+                <td className="px-4 py-3 text-navy">{ROLE_LABEL[role]}</td>
+                {BREACH_TYPES.map((bt) => {
+                  const k = `${bt}__${role}`;
+                  return (
+                    <td key={bt} className="px-4 py-3 text-center">
+                      <input
+                        type="checkbox"
+                        checked={isEnabled(bt, role)}
+                        disabled={busyKey === k}
+                        onChange={() => onToggle(bt, role)}
+                        className="h-4 w-4"
+                      />
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </div>
   );

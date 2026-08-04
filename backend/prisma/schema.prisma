@@ -1120,6 +1120,30 @@ enum SlaClockStatus {
   BREACHED
 }
 
+/// Admin-configurable SLA breach notification recipients (client request,
+/// 2026-08-04 — FSD wording: "An Admin-level configuration option shall be
+/// provided to set up and manage these SLA notification rules"). Previously
+/// hardcoded in SlaBreachCron (ASM + Call Center + region-Manager on
+/// response breach, ASM + region-Manager on resolution breach) — recipients
+/// are now toggled per role, per breach type, here instead. Manager stays
+/// region-scoped when enabled (client confirmed 2026-08-04: region Manager
+/// only, not every Manager org-wide); MD is org-wide (single top-level role,
+/// no region concept).
+enum SlaBreachType {
+  RESPONSE
+  RESOLUTION
+}
+
+model SlaNotificationRule {
+  id         String        @id @default(uuid())
+  breachType SlaBreachType
+  role       Role
+  enabled    Boolean       @default(false)
+  updatedAt  DateTime      @updatedAt
+
+  @@unique([breachType, role])
+}
+
 enum VisitStatus {
   SCHEDULED_PENDING
   /// Nightly AMC cron (2026-07-27) auto-created a real Ticket for this visit.

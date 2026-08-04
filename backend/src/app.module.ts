@@ -9,6 +9,7 @@ import { CustomersModule } from './ticketing/customers/customers.module';
 import { RegionMappingModule } from './ticketing/region-mapping/region-mapping.module';
 import { SlaPolicyModule } from './ticketing/sla-policy/sla-policy.module';
 import { SlaPauseStateModule } from './ticketing/sla-pause-state/sla-pause-state.module';
+import { SlaNotificationRuleModule } from './ticketing/sla-notification-rule/sla-notification-rule.module';
 import { HolidayModule } from './ticketing/holiday/holiday.module';
 import { CsatModule } from './ticketing/csat/csat.module';
 import { PredictiveRuleModule } from './ticketing/predictive-rules/predictive-rule.module';
@@ -53,6 +54,7 @@ import { DispatchModule } from './dashboards/dispatch/dispatch.module';
     RegionMappingModule,
     SlaPolicyModule,
     SlaPauseStateModule,
+    SlaNotificationRuleModule,
     HolidayModule,
     CsatModule,
     PredictiveRuleModule,
