@@ -21,6 +21,17 @@ export class BillingRateController {
     return this.billingRates.create(dto.level, dto.hourlyRate);
   }
 
+  /** §6.2 Engineer Utilization KPI's "configurable work_hours_per_day" — static routes, must stay above `:id` or Nest would try to resolve "utilization-settings" as a billing rate id. */
+  @Get('utilization-settings')
+  getUtilizationSettings() {
+    return this.billingRates.getUtilizationHoursPerDay().then((hoursPerDay) => ({ hoursPerDay }));
+  }
+
+  @Patch('utilization-settings')
+  setUtilizationSettings(@Body('hoursPerDay') hoursPerDay: number) {
+    return this.billingRates.setUtilizationHoursPerDay(hoursPerDay);
+  }
+
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateBillingRateDto) {
     return this.billingRates.update(id, dto.hourlyRate);

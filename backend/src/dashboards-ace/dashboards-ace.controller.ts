@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -19,5 +19,11 @@ export class DashboardsAceController {
   @Get('executive-summary')
   executiveSummary() {
     return this.dashboards.executiveSummary();
+  }
+
+  @Roles('MANAGER', 'ADMIN')
+  @Get('manager-summary')
+  managerSummary(@Req() req: any) {
+    return this.dashboards.managerSummary({ userId: req.user.userId, role: req.user.role });
   }
 }

@@ -12,27 +12,46 @@ interface NavItem {
   roles: Role[];
 }
 
-// One ticketing nav entry per role (§6.1 — each role gets its own dashboard,
-// not a shared one) — a function, not a static list, since the label/href
-// depend on which role is looking, not on a fixed roles[] membership check.
-function ticketingNavItem(role: Role | undefined): NavItem | null {
+// One (or more) ticketing nav entries per role (§6.1 — each role gets its
+// own dashboard, not a shared one) — a function, not a static list, since
+// the label/href depend on which role is looking, not on a fixed roles[]
+// membership check.
+//
+// Manager/Service-Aftersales-Head/Admin get TWO entries, not one (2026-08-04
+// — was a single "Tickets" link to /dashboard/service, which combined the
+// §10.1 W-05 Manager Dashboard content and the W-07 Ticket List on one
+// page; client asked to split them): "Dashboard" (KPI cards, regional pie
+// charts, AMC pipeline, revenue, at-risk accounts — /dashboard/manager) and
+// "Tickets" (the filterable list — /dashboard/service, unchanged route).
+//
+// Same /dashboard/manager route for both Manager and Admin, deliberately —
+// the backend (`kpiMatrix`/`managerSummary`) already renders it differently
+// per role: region-scoped (their own region(s) only) for Manager, org-wide/
+// all-region for Admin (2026-08-04 clarification — Admin still needs their
+// own "Dashboard" link, just showing every region's KPIs, not one). The
+// page itself relabels as "Admin Dashboard" when Admin is looking, see
+// manager/page.tsx.
+function ticketingNavItems(role: Role | undefined): NavItem[] {
   switch (role) {
     case "CALL_CENTER":
-      return { label: "Dashboard", href: "/dashboard/call-center", roles: [] };
+      return [{ label: "Dashboard", href: "/dashboard/call-center", roles: [] }];
     case "ASM":
-      return { label: "Dashboard", href: "/dashboard/asm", roles: [] };
+      return [{ label: "Dashboard", href: "/dashboard/asm", roles: [] }];
     case "ENGINEER":
-      return { label: "My Tickets", href: "/dashboard/my-tickets", roles: [] };
+      return [{ label: "My Tickets", href: "/dashboard/my-tickets", roles: [] }];
     case "CS_SUPPORT":
-      return { label: "Dashboard", href: "/dashboard/cs-support", roles: [] };
+      return [{ label: "Dashboard", href: "/dashboard/cs-support", roles: [] }];
     case "MD":
-      return { label: "Dashboard", href: "/dashboard/executive", roles: [] };
+      return [{ label: "Dashboard", href: "/dashboard/executive", roles: [] }];
     case "MANAGER":
     case "SERVICE_AFTERSALES_HEAD":
-    case "ADMIN": // Admin browses the unscoped Manager-style view; Admin Console is separate
-      return { label: "Tickets", href: "/dashboard/service", roles: [] };
+    case "ADMIN":
+      return [
+        { label: "Dashboard", href: "/dashboard/manager", roles: [] },
+        { label: "Tickets", href: "/dashboard/service", roles: [] },
+      ];
     default:
-      return null;
+      return [];
   }
 }
 
@@ -92,20 +111,13 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
-  const ticketItem = ticketingNavItem(user?.role);
+  const ticketItems = ticketingNavItems(user?.role);
   const erpItems = ERP_NAV_ITEMS.filter((item) => user && item.roles.includes(user.role)); // strict — no Admin bypass here
   const adminItems = user?.role === "ADMIN" ? ADMIN_ONLY_ITEMS : [];
   const reportsItems = user && REPORTS_NAV_ITEM.roles.includes(user.role) ? [REPORTS_NAV_ITEM] : [];
   const customersItems = user && CUSTOMERS_NAV_ITEM.roles.includes(user.role) ? [CUSTOMERS_NAV_ITEM] : [];
   const itemsNavItems = user && ITEMS_NAV_ITEM.roles.includes(user.role) ? [ITEMS_NAV_ITEM] : [];
-  const items = [
-    ...(ticketItem ? [ticketItem] : []),
-    ...customersItems,
-    ...itemsNavItems,
-    ...erpItems,
-    ...reportsItems,
-    ...adminItems,
-  ];
+  const items = [...ticketItems, ...customersItems, ...itemsNavItems, ...erpItems, ...reportsItems, ...adminItems];
 
   return (
     <>

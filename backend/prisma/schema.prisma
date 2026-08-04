@@ -1029,6 +1029,18 @@ model FinanceSettings {
   gmTargetByEntity Json  @default("{}")
 }
 
+/// Single-row settings table (id fixed at 1) — the FSD's §6.2 Engineer
+/// Utilization KPI formula divides by "engineer headcount × configurable
+/// work_hours_per_day"; no such admin setting existed until now (2026-08-04),
+/// both the Engineer Performance Report and the KPI Matrix hardcoded 8.
+/// Lives alongside BillingRate (also an Admin engineer-related setting) on
+/// the same admin screen, same reasoning AmcEngineSettings was folded into
+/// the AMC Contracts page rather than getting its own standalone screen.
+model EngineerUtilizationSettings {
+  id           Int @id @default(1)
+  hoursPerDay  Float @default(8)
+}
+
 enum PartsCoverage {
   NONE
   CONSUMABLES_ONLY

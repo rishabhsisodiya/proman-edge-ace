@@ -147,6 +147,9 @@ export default function ReportsPage() {
           <h1 className="text-lg font-bold text-navy">Reports</h1>
         </div>
         <div className="flex items-center gap-4">
+          <Link href="/dashboard/reports/kpi" className="text-xs font-medium text-muted hover:text-navy">
+            KPI Matrix
+          </Link>
           <Link href="/dashboard/reports/schedules" className="text-xs font-medium text-muted hover:text-navy">
             Scheduled Reports
           </Link>

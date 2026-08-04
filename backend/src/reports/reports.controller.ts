@@ -1,8 +1,10 @@
-import { Controller, Get, Param, Query, Res, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { Response } from 'express';
+import { Region } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { PrismaService } from '../prisma/prisma.service';
 import { ReportFilters, ReportResult, ReportsService } from './reports.service';
 import { toExcelBuffer, toPdfBuffer } from './report-export.util';
 import { PDF_SUPPORTED, REPORT_DESCRIPTIONS, REPORT_TITLES, ReportKey, runReport } from './report-registry';
@@ -11,7 +13,10 @@ import { PDF_SUPPORTED, REPORT_DESCRIPTIONS, REPORT_TITLES, ReportKey, runReport
 @Roles('MANAGER', 'ADMIN')
 @Controller('reports')
 export class ReportsController {
-  constructor(private readonly reports: ReportsService) {}
+  constructor(
+    private readonly reports: ReportsService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   @Get()
   list() {
@@ -34,6 +39,23 @@ export class ReportsController {
     const buffer = await toPdfBuffer('Ticket Status Timeline', result.columns, result.rows);
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'inline; filename="ticket-status-timeline.pdf"' });
     res.send(buffer);
+  }
+
+  /**
+   * §6.2 Core KPI matrix — static route, must stay above `:key` or Nest
+   * would try to run it as a report. Manager is always auto-scoped to their
+   * own assigned regions (2026-08-04, client decision — "Manager is region
+   * based so he should not see other region details"), ignoring any
+   * `region` query param they might pass. Admin gets org-wide by default,
+   * or one explicit region via `?region=`.
+   */
+  @Get('kpi-matrix')
+  async kpiMatrix(@Query('period') period: 'month' | 'quarter' | 'year' | undefined, @Query('region') region: Region | undefined, @Req() req: any) {
+    if (req.user.role === 'MANAGER') {
+      const rows = await this.prisma.userRegion.findMany({ where: { userId: req.user.userId } });
+      return this.reports.kpiMatrix(period ?? 'month', rows.map((r) => r.region));
+    }
+    return this.reports.kpiMatrix(period ?? 'month', region ? [region] : undefined);
   }
 
   @Get(':key')

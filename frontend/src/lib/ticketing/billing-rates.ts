@@ -18,3 +18,12 @@ export const updateBillingRate = (id: string, hourlyRate: number) =>
 
 export const deleteBillingRate = (id: string) =>
   apiFetch<void>(`/admin/billing-rates/${id}`, { method: "DELETE" });
+
+/** §6.2 Engineer Utilization KPI's "configurable work_hours_per_day". */
+export const getUtilizationSettings = () => apiFetch<{ hoursPerDay: number }>(`/admin/billing-rates/utilization-settings`);
+
+export const setUtilizationSettings = (hoursPerDay: number) =>
+  apiFetch<{ hoursPerDay: number }>(`/admin/billing-rates/utilization-settings`, {
+    method: "PATCH",
+    body: JSON.stringify({ hoursPerDay }),
+  });

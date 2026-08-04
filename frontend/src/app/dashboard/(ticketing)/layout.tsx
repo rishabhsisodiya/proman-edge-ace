@@ -41,13 +41,16 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/dashboard/dashboards", title: "Dashboards" },
 ];
 
-// /dashboard/service is shared by Admin and Manager/Service-Aftersales-Head
-// (Sidebar.tsx's ticketingNavItem) — the title should reflect which one is
-// actually looking, not always say "Manager Dashboard".
+// /dashboard/service is the Ticket List (§10.1 W-07), shared by Admin and
+// Manager/Service-Aftersales-Head — always "Tickets" now (2026-08-04: was
+// "Manager Dashboard" for non-Admin when this page also embedded the KPI
+// summary; that content moved to its own /dashboard/manager route).
+// /dashboard/manager is shared by Manager and Admin too — "Admin Dashboard"
+// vs "Manager Dashboard" depending on who's looking (org-wide vs
+// region-scoped data, see manager/page.tsx).
 function titleForPath(pathname: string, role: AuthUser["role"] | undefined): string {
-  if (pathname.startsWith("/dashboard/service")) {
-    return role === "ADMIN" ? "Tickets" : "Manager Dashboard";
-  }
+  if (pathname.startsWith("/dashboard/service")) return "Tickets";
+  if (pathname.startsWith("/dashboard/manager")) return role === "ADMIN" ? "Admin Dashboard" : "Manager Dashboard";
   const match = PAGE_TITLES.find((p) => pathname.startsWith(p.prefix));
   return match?.title ?? "Proman Edge - ACE Service";
 }

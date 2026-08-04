@@ -6,7 +6,8 @@ import Link from "next/link";
 const TICKETING_DASHBOARDS = [
   { label: "Call Center", description: "Intake, unassigned, SLA-at-risk", href: "/dashboard/call-center" },
   { label: "ASM", description: "Territory open tickets, pending acceptance", href: "/dashboard/asm" },
-  { label: "Manager / Tickets", description: "Full ticket list, regional SLA overview", href: "/dashboard/service" },
+  { label: "Manager Dashboard", description: "KPI snapshot, regional breakdown, AMC pipeline, revenue, at-risk accounts", href: "/dashboard/manager" },
+  { label: "Tickets (Manager/Admin)", description: "Full filterable ticket list", href: "/dashboard/service" },
   { label: "Executive / MD", description: "Summary KPI tiles (read-only)", href: "/dashboard/executive" },
   { label: "CS Support", description: "Quotations pending PO, parts pending delivery", href: "/dashboard/cs-support" },
 ];

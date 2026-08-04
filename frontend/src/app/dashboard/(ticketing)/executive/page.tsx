@@ -42,7 +42,7 @@ export default function ExecutiveDashboardPage() {
       <h1 className="mb-1 text-xl font-bold text-navy">Executive Dashboard</h1>
       <p className="mb-6 text-sm text-muted">Summary KPI tiles — read-only.</p>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6">
         <Tile label="Open Tickets" value={String(summary.openTicketsCount)} />
         <Tile
           label="SLA Compliance"
@@ -51,8 +51,21 @@ export default function ExecutiveDashboardPage() {
         />
         <Tile label="Avg MTTR" value={summary.avgMttrHours != null ? `${summary.avgMttrHours}h` : "—"} />
         <Tile label="Revenue (MTD)" value={`₹${summary.revenueMtd.toLocaleString()}`} />
+        <Tile
+          label="CSAT Avg"
+          value={summary.csatAvg != null ? `${summary.csatAvg}/5` : "—"}
+          accent={summary.csatAvg != null && summary.csatAvg < 3.5 ? "text-brand-red" : undefined}
+        />
         <Tile label="AMC Renewals Due" value={String(summary.amcRenewalsDue)} />
       </div>
+
+      {summary.revenueMtdPendingDrafts > 0 && (
+        <p className="mt-3 text-xs text-muted">
+          Revenue (MTD) counts Submitted ERPNext invoices only — an additional ₹
+          {summary.revenueMtdPendingDrafts.toLocaleString()} is sitting in draft invoices this month, pending
+          Finance submission.
+        </p>
+      )}
     </div>
   );
 }

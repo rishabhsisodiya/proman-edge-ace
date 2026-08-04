@@ -37,7 +37,7 @@ function Tile({ label, value, accent }: { label: string; value: string | number;
   );
 }
 
-export default function ManagerDashboardPage() {
+export default function TicketsListPage() {
   const router = useRouter();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -119,8 +119,8 @@ export default function ManagerDashboardPage() {
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-[22px] font-black text-navy">Manager Dashboard</h2>
-          <p className="text-sm text-muted">Regional ticket overview and SLA status</p>
+          <h2 className="text-[22px] font-black text-navy">Tickets</h2>
+          <p className="text-sm text-muted">Filterable ticket list</p>
         </div>
         {user && ["CALL_CENTER", "ASM", "MANAGER", "ADMIN"].includes(user.role) && (
           <button

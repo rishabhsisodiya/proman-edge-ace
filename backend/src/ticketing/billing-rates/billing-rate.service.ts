@@ -29,4 +29,22 @@ export class BillingRateService {
     const rate = await this.prisma.billingRate.findUnique({ where: { level } });
     return rate ? Number(rate.hourlyRate) : null;
   }
+
+  /** §6.2 Engineer Utilization KPI's "configurable work_hours_per_day" — used by both the Engineer Performance Report and the KPI Matrix. */
+  async getUtilizationHoursPerDay(): Promise<number> {
+    const row = await this.prisma.engineerUtilizationSettings.upsert({
+      where: { id: 1 },
+      create: { id: 1 },
+      update: {},
+    });
+    return row.hoursPerDay;
+  }
+
+  async setUtilizationHoursPerDay(hoursPerDay: number) {
+    return this.prisma.engineerUtilizationSettings.upsert({
+      where: { id: 1 },
+      create: { id: 1, hoursPerDay },
+      update: { hoursPerDay },
+    });
+  }
 }

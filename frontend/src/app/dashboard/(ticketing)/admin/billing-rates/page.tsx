@@ -2,7 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
-import { BillingRate, createBillingRate, deleteBillingRate, listBillingRates, updateBillingRate } from "@/lib/ticketing/billing-rates";
+import {
+  BillingRate,
+  createBillingRate,
+  deleteBillingRate,
+  getUtilizationSettings,
+  listBillingRates,
+  setUtilizationSettings,
+  updateBillingRate,
+} from "@/lib/ticketing/billing-rates";
 
 // §5.2 Billing Rates — engineer_level -> hourly rate, used to bill labour on
 // chargeable Breakdown tickets at close. Level is free text (matches
@@ -17,6 +25,10 @@ export default function BillingRatesPage() {
   const [newRate, setNewRate] = useState("");
   const [adding, setAdding] = useState(false);
 
+  const [hoursPerDay, setHoursPerDay] = useState("8");
+  const [savingHours, setSavingHours] = useState(false);
+  const [hoursNotice, setHoursNotice] = useState<string | null>(null);
+
   function load() {
     setLoading(true);
     setError(null);
@@ -27,9 +39,30 @@ export default function BillingRatesPage() {
         else setError("Could not load billing rates.");
       })
       .finally(() => setLoading(false));
+    getUtilizationSettings()
+      .then((s) => setHoursPerDay(String(s.hoursPerDay)))
+      .catch(() => {});
   }
 
   useEffect(load, []);
+
+  async function onSaveHours() {
+    const v = Number(hoursPerDay);
+    if (!v || v <= 0) {
+      setError("Work hours per day must be a positive number.");
+      return;
+    }
+    setSavingHours(true);
+    setHoursNotice(null);
+    try {
+      await setUtilizationSettings(v);
+      setHoursNotice("Saved — used by the Engineer Utilization KPI and Engineer Performance Report.");
+    } catch {
+      setError("Could not save work hours per day.");
+    } finally {
+      setSavingHours(false);
+    }
+  }
 
   async function onAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -84,6 +117,35 @@ export default function BillingRatesPage() {
         engineer&apos;s level is set on their user record; a level with no rate configured here means labour is
         simply left off that ticket&apos;s invoice until one is added.
       </p>
+
+      <div className="mb-6 rounded-lg border border-line bg-white p-4">
+        <p className="mb-1 text-sm font-bold text-navy">Engineer Utilization — Work Hours Per Day</p>
+        <p className="mb-3 text-xs text-muted">
+          §6.2 Engineer Utilization KPI formula: total FSV work hours ÷ (engineer headcount × this number). Used by
+          both the KPI Matrix and the Engineer Performance Report.
+        </p>
+        <div className="flex flex-wrap items-end gap-2">
+          <div>
+            <label className="mb-1 block text-xs font-bold text-navy">Hours Per Day</label>
+            <input
+              type="number"
+              min={1}
+              max={24}
+              value={hoursPerDay}
+              onChange={(e) => setHoursPerDay(e.target.value)}
+              className="h-9 w-28 rounded-md border border-line px-2 text-sm text-navy"
+            />
+          </div>
+          <button
+            onClick={onSaveHours}
+            disabled={savingHours}
+            className="h-9 rounded-md bg-orange px-4 text-sm font-bold text-navy transition disabled:opacity-50"
+          >
+            {savingHours ? "Saving…" : "Save"}
+          </button>
+          {hoursNotice && <span className="text-xs text-brand-green">{hoursNotice}</span>}
+        </div>
+      </div>
 
       <form onSubmit={onAdd} className="mb-6 flex flex-wrap items-end gap-2 rounded-lg border border-line bg-white p-4">
         <div>

@@ -72,6 +72,21 @@ function qs(filters: ReportFilters): string {
 
 export const listReports = () => apiFetch<ReportListItem[]>(`/reports`);
 
+/** §6.2 Core KPI matrix. */
+export interface KpiMatrixRow {
+  kpi: string;
+  formula: string;
+  current: number | null;
+  unit: string;
+  target: string;
+  breachAlert: string;
+  status: "OK" | "BELOW_TARGET" | "BREACHED" | "NO_DATA";
+}
+
+/** `region` is ignored server-side for Manager (always auto-scoped to their own regions) — only meaningful for Admin. */
+export const getKpiMatrix = (period: "month" | "quarter" | "year", region?: string) =>
+  apiFetch<KpiMatrixRow[]>(`/reports/kpi-matrix?period=${period}${region ? `&region=${region}` : ""}`);
+
 export const runReport = (key: ReportKey, filters: ReportFilters) => apiFetch<ReportResult>(`/reports/${key}${qs(filters)}`);
 
 export const ticketStatusTimeline = (ticketId: string) => apiFetch<ReportResult>(`/reports/ticket-status-timeline/${ticketId}`);

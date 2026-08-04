@@ -133,7 +133,7 @@ export function dashboardPathForRole(role: Role): string {
       return "/dashboard/my-tickets";
     case "MANAGER":
     case "SERVICE_AFTERSALES_HEAD":
-      return "/dashboard/service";
+      return "/dashboard/manager";
     // MD, ENGINEERING_DESIGN_HEAD, QMS_HEAD have no dedicated dashboard page
     // built yet — falls through to default.
     default:
