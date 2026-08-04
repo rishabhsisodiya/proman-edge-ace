@@ -1,10 +1,55 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { Role } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAmcContractDto, UpdateAmcContractDto } from './dto/amc-contract.dto';
 
 @Injectable()
 export class AmcContractService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * §6.1 ASM Dashboard "Today's AMC visits" — was entirely missing
+   * (2026-08-04 fix), the ASM dashboard page had no backend tile for this
+   * at all. Region-scoped for ASM (same UserRegion pattern used everywhere
+   * else — e.g. TicketsService.list()) since the FSD frames this as "my
+   * territory"-style content elsewhere on the same dashboard; Manager/Admin
+   * get every region.
+   */
+  async todayVisits(actor: { userId: string; role: Role }) {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(startOfDay.getTime() + 86400000);
+
+    const regionScope =
+      actor.role === 'ASM'
+        ? {
+            contract: {
+              customer: {
+                region: {
+                  in: (await this.prisma.userRegion.findMany({ where: { userId: actor.userId } })).map((r) => r.region),
+                },
+              },
+            },
+          }
+        : {};
+
+    const visits = await this.prisma.amcScheduledVisit.findMany({
+      where: { plannedDate: { gte: startOfDay, lt: endOfDay }, ...regionScope },
+      include: { contract: { include: { customer: true } } },
+      orderBy: { plannedDate: 'asc' },
+    });
+    // No Prisma relation from AmcScheduledVisit -> Equipment (plain
+    // equipmentId field) — batch-fetch instead of a schema change just for this tile.
+    const equipmentById = new Map(
+      (
+        await this.prisma.equipment.findMany({
+          where: { id: { in: visits.map((v) => v.equipmentId) } },
+          select: { id: true, serialNo: true, itemName: true },
+        })
+      ).map((e) => [e.id, e]),
+    );
+    return visits.map((v) => ({ ...v, equipment: equipmentById.get(v.equipmentId) ?? null }));
+  }
 
   list(customerId?: string) {
     return this.prisma.amcContract.findMany({

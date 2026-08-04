@@ -20,6 +20,7 @@ import {
 } from "@/lib/ticketing/types";
 import { Pagination } from "@/components/Pagination";
 import { SortableTh } from "@/components/SortableTh";
+import { getTodayAmcVisits, TodayAmcVisit } from "@/lib/ticketing/amc";
 
 const PRIORITIES: Priority[] = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 const STATUSES: TicketStatus[] = Object.keys(STATUS_LABEL) as TicketStatus[];
@@ -47,6 +48,7 @@ export default function AsmDashboardPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [allTickets, setAllTickets] = useState<Ticket[]>([]);
+  const [todayVisits, setTodayVisits] = useState<TodayAmcVisit[]>([]);
 
   const [status, setStatus] = useState("");
   const [priority, setPriority] = useState("");
@@ -72,6 +74,10 @@ export default function AsmDashboardPage() {
   useEffect(() => {
     apiFetch<Paginated<Ticket>>("/tickets?pageSize=5000")
       .then((res) => setAllTickets(res.data))
+      .catch(() => {});
+    // §6.1 "Today's AMC visits" — was entirely missing (2026-08-04 fix).
+    getTodayAmcVisits()
+      .then(setTodayVisits)
       .catch(() => {});
   }, []);
 
@@ -146,6 +152,20 @@ export default function AsmDashboardPage() {
           accent={stats.rejectedCount > 0 ? "text-brand-amber" : undefined}
         />
       </div>
+
+      {todayVisits.length > 0 && (
+        <div className="rounded-lg border border-line bg-white p-4 shadow-[0_1px_4px_rgba(42,47,105,.06)]">
+          <p className="mb-2 text-xs font-bold uppercase tracking-wider text-navy">Today&apos;s AMC Visits ({todayVisits.length})</p>
+          <div className="flex flex-wrap gap-2">
+            {todayVisits.map((v) => (
+              <div key={v.id} className="rounded-md bg-navy-soft px-3 py-2 text-xs">
+                <span className="font-bold text-navy">{v.contract.customer.customerName}</span>
+                <span className="text-muted"> — {v.equipment?.itemName ?? "Equipment n/a"} ({v.contract.contractReferenceNo})</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex items-center gap-3 overflow-x-auto rounded-lg border border-line bg-white p-3 shadow-[0_1px_4px_rgba(42,47,105,.06)]">
         <div className="flex shrink-0 gap-2">

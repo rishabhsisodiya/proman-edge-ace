@@ -92,6 +92,18 @@ export const listAmcContracts = (customerId?: string) =>
 
 export const getAmcContract = (id: string) => apiFetch<AmcContractRecord>(`/amc-contracts/${id}`);
 
+/** §6.1 ASM Dashboard "Today's AMC visits" — region-scoped for ASM, all regions for Manager/Admin. */
+export interface TodayAmcVisit {
+  id: string;
+  plannedDate: string;
+  status: string;
+  notes: string | null;
+  contract: { contractReferenceNo: string; customer: { customerName: string; region: string | null } };
+  equipment: { serialNo: string; itemName: string } | null;
+}
+
+export const getTodayAmcVisits = () => apiFetch<TodayAmcVisit[]>(`/amc-contracts/today-visits`);
+
 export const createAmcContract = (input: AmcContractFormInput) =>
   apiFetch<AmcContractSaveResult>(`/amc-contracts`, { method: "POST", body: JSON.stringify(input) });
 

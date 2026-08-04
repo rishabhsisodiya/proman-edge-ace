@@ -57,7 +57,11 @@ export default function CallCenterDashboardPage() {
   const now = Date.now();
   const stats = useMemo(() => {
     const open = tickets.filter((t) => t.status !== "CLOSED").length;
-    const unassigned = tickets.filter((t) => !t.assignedEngineer && t.status !== "CLOSED").length;
+    // §6.1 spec: "Tickets where assigned_asm_id IS NULL" — was checking
+    // assignedEngineer instead (2026-08-04 fix); those are two different
+    // assignment stages (ASM routes the ticket first, only later hands it
+    // to an Engineer), so this was undercounting/miscounting "Unassigned".
+    const unassigned = tickets.filter((t) => !t.assignedAsm && t.status !== "CLOSED").length;
     const todayIntake = tickets.filter((t) => isToday(t.createdAt)).length;
     const slaAtRisk = tickets.filter(
       (t) => t.slaResolutionDue && t.status !== "CLOSED" && new Date(t.slaResolutionDue).getTime() - now < 2 * 60 * 60 * 1000,

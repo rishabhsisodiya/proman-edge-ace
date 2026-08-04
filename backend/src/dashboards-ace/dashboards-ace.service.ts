@@ -26,8 +26,15 @@ export class DashboardsAceService {
 
   /** Quotations pending PO, parts pending delivery — CS Support's work queue. */
   async csSupportSummary() {
+    // §6.1 spec: "Quotations in 'Sent' status > 3 days" — was returning
+    // every pending quotation regardless of age (2026-08-04 fix); the UI
+    // only ever used the 3-day/7-day marks as cosmetic red-highlighting,
+    // never as an actual filter, so the tile counted quotations that had
+    // only just been sent minutes ago as "pending PO" alongside genuinely
+    // stale ones.
+    const threeDaysAgo = new Date(Date.now() - 3 * 86400000);
     const quotationsPendingPo = await this.prisma.quotation.findMany({
-      where: { status: 'SENT', customerPoNumber: null },
+      where: { status: 'SENT', customerPoNumber: null, sentAt: { lte: threeDaysAgo } },
       include: { customer: true, ticket: true },
       orderBy: { sentAt: 'asc' },
     });

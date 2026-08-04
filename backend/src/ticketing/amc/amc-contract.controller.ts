@@ -40,6 +40,12 @@ export class AmcContractController {
     return this.amc.list(customerId);
   }
 
+  /** §6.1 ASM Dashboard "Today's AMC visits" — static route, must stay above `:id` or Nest would try to resolve "today-visits" as a contract id. */
+  @Get('today-visits')
+  todayVisits(@Req() req: Request & { user: { userId: string; role: any } }) {
+    return this.amc.todayVisits({ userId: req.user.userId, role: req.user.role });
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.amc.findOne(id);
