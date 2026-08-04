@@ -22,13 +22,18 @@ import {
   uploadFsvSignature,
 } from "@/lib/ticketing/fsv";
 import { useOnlineStatus } from "@/lib/useOnlineStatus";
-import { ItemListItem, listItems } from "@/lib/ticketing/masters";
+import { ItemListItem, listAllWarehouses, listItems } from "@/lib/ticketing/masters";
 import { listPriceLists, PriceList } from "@/lib/ticketing/price-lists";
 import { apiFetch } from "@/lib/api";
 
 function isQueued(x: unknown): x is { queued: true } {
   return typeof x === "object" && x !== null && "queued" in x && (x as { queued: unknown }).queued === true;
 }
+
+// Client-reported bug (2026-08-04): items with no warehouse stock of their
+// own left the Warehouse field blank/free-text with no default. Confirmed
+// this exact warehouse exists in the synced ItemWarehouseStock data.
+const DEFAULT_WAREHOUSE = "Bidadi Stores - PISPL";
 
 interface ItemWarehouseStock {
   warehouse: string;
@@ -485,6 +490,16 @@ function PartsSection({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Fallback warehouse list (client-reported bug, 2026-08-04) — used when
+  // the selected item has no stock rows of its own, so the Warehouse field
+  // always has real options instead of degrading to free text.
+  const [allWarehouses, setAllWarehouses] = useState<string[]>([]);
+  useEffect(() => {
+    listAllWarehouses()
+      .then(setAllWarehouses)
+      .catch(() => setAllWarehouses([]));
+  }, []);
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editQty, setEditQty] = useState("");
   const [editWarehouse, setEditWarehouse] = useState("");
@@ -536,7 +551,7 @@ function PartsSection({
     const qs = priceListName ? `?priceListName=${encodeURIComponent(priceListName)}` : "";
     const detail = await apiFetch<ItemDetail>(`/items/${encodeURIComponent(it.itemCode)}${qs}`);
     setSelectedItem(detail);
-    setWarehouse(detail.warehouseStock[0]?.warehouse ?? "");
+    setWarehouse(detail.warehouseStock[0]?.warehouse ?? DEFAULT_WAREHOUSE);
     const costRate = Number(detail.valuationRate ?? detail.standardRate ?? 0);
     setRate(costRate ? String(costRate) : "0");
     setSellingRate(detail.sellingRate != null ? String(detail.sellingRate) : "0");
@@ -755,16 +770,25 @@ function PartsSection({
                     </select>
                   ) : (
                     // No warehouse stock on file for this item (e.g. not yet
-                    // synced from ERPNext) — the select would otherwise have
-                    // zero options, permanently blocking Add (warehouse
-                    // stayed "" forever). Let the engineer type it manually.
-                    <input
-                      type="text"
+                    // synced from ERPNext) — falls back to every warehouse
+                    // synced across all items (client-reported bug,
+                    // 2026-08-04), defaulted to DEFAULT_WAREHOUSE via
+                    // pickItem(), rather than a free-text box with nothing
+                    // to pick from.
+                    <select
                       value={warehouse}
                       onChange={(e) => setWarehouse(e.target.value)}
-                      placeholder="Enter warehouse name"
                       className="h-9 w-full rounded-md border border-line px-2 text-sm"
-                    />
+                    >
+                      {!allWarehouses.includes(warehouse) && warehouse && (
+                        <option value={warehouse}>{warehouse}</option>
+                      )}
+                      {allWarehouses.map((w) => (
+                        <option key={w} value={w}>
+                          {w}
+                        </option>
+                      ))}
+                    </select>
                   )}
                 </div>
                 <div>

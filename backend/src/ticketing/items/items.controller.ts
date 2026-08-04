@@ -25,6 +25,12 @@ export class ItemsController {
     });
   }
 
+  /** Static route — must stay above `:itemCode`. Fallback list for FSV's warehouse field when an item has no stock rows of its own. */
+  @Get('warehouses')
+  listAllWarehouses() {
+    return this.items.listAllWarehouses();
+  }
+
   @Get(':itemCode')
   findOne(@Param('itemCode') itemCode: string, @Query('priceListName') priceListName?: string) {
     return this.items.findOne(itemCode, priceListName);

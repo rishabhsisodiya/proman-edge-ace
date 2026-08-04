@@ -75,4 +75,22 @@ export class ItemsService {
     await this.itemSync.manualRetry(itemCode);
     return this.findOne(itemCode, priceListName);
   }
+
+  /**
+   * Fallback warehouse list for FSV's "Add Part" flow (client-reported bug,
+   * 2026-08-04) — when an item has no ItemWarehouseStock rows of its own,
+   * the warehouse field previously degraded to free text with nothing to
+   * pick from. This is every distinct warehouse already synced from
+   * ERPNext across all items, not a separate ERPNext Warehouse-doctype
+   * sync — the data already exists here (~320 warehouses, confirmed
+   * against the dev DB), no new sync needed.
+   */
+  async listAllWarehouses() {
+    const rows = await this.prisma.itemWarehouseStock.findMany({
+      distinct: ['warehouse'],
+      select: { warehouse: true },
+      orderBy: { warehouse: 'asc' },
+    });
+    return rows.map((r) => r.warehouse);
+  }
 }

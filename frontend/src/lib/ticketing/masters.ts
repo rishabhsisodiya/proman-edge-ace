@@ -164,6 +164,9 @@ export const getItem = (itemCode: string) => apiFetch<ItemDetail>(`/items/${enco
 export const syncItemFromErp = (itemCode: string) =>
   apiFetch<ItemDetail>(`/items/${encodeURIComponent(itemCode)}/sync`, { method: "POST" });
 
+/** Fallback warehouse list for FSV's "Add Part" flow — every distinct warehouse synced across all items, used when the selected item has no stock rows of its own. */
+export const listAllWarehouses = () => apiFetch<string[]>(`/items/warehouses`);
+
 export interface CustomerSiteListItem {
   id: string;
   siteName: string;
