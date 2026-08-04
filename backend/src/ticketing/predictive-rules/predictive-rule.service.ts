@@ -21,10 +21,35 @@ export class PredictiveRuleService {
     operatingHoursInterval: number,
     breakdownFrequencyThreshold: number,
     breakdownFrequencyWindowMonths: number,
+    warrantyPmIntervalMonths: number,
   ) {
     return this.prisma.predictiveRuleConfig.update({
       where: { id },
-      data: { monthsSinceService, operatingHoursInterval, breakdownFrequencyThreshold, breakdownFrequencyWindowMonths },
+      data: {
+        monthsSinceService,
+        operatingHoursInterval,
+        breakdownFrequencyThreshold,
+        breakdownFrequencyWindowMonths,
+        warrantyPmIntervalMonths,
+      },
+    });
+  }
+
+  /** Warranty PM ticket-creation look-ahead (2026-08-04) — single-row settings, same pattern as AmcEngineSettings/EngineerUtilizationSettings. */
+  async getWarrantyPmLookAheadDays(): Promise<number> {
+    const row = await this.prisma.warrantyPmEngineSettings.upsert({
+      where: { id: 1 },
+      create: { id: 1 },
+      update: {},
+    });
+    return row.lookAheadDays;
+  }
+
+  setWarrantyPmLookAheadDays(lookAheadDays: number) {
+    return this.prisma.warrantyPmEngineSettings.upsert({
+      where: { id: 1 },
+      create: { id: 1, lookAheadDays },
+      update: { lookAheadDays },
     });
   }
 }

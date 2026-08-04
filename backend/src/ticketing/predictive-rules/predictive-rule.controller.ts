@@ -16,6 +16,17 @@ export class PredictiveRuleController {
     return this.rules.list();
   }
 
+  /** Warranty PM ticket-creation look-ahead — static route, must stay above `:id` or Nest would try to resolve "warranty-pm-settings" as a rule id. */
+  @Get('warranty-pm-settings')
+  getWarrantyPmSettings() {
+    return this.rules.getWarrantyPmLookAheadDays().then((lookAheadDays) => ({ lookAheadDays }));
+  }
+
+  @Patch('warranty-pm-settings')
+  setWarrantyPmSettings(@Body('lookAheadDays') lookAheadDays: number) {
+    return this.rules.setWarrantyPmLookAheadDays(lookAheadDays);
+  }
+
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdatePredictiveRuleDto) {
     return this.rules.update(
@@ -24,6 +35,7 @@ export class PredictiveRuleController {
       dto.operatingHoursInterval,
       dto.breakdownFrequencyThreshold,
       dto.breakdownFrequencyWindowMonths,
+      dto.warrantyPmIntervalMonths,
     );
   }
 }

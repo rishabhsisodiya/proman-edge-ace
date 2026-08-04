@@ -1574,6 +1574,41 @@ export class TicketsService {
     return this.create(dto, { userId: actorUserId, role: 'ADMIN' });
   }
 
+  /**
+   * Warranty PM visit schedule cron entry point (2026-08-04, new
+   * requirement — not in the original FSD §7.3 warranty rules). A
+   * WarrantyPmVisit's planned date is within the configured look-ahead
+   * window, so raise a real ticket via the same create() engine every other
+   * source uses — tagged source=WARRANTY_TRIGGERED, serviceType=SCHEDULED_PM,
+   * same shape as createFromAmcSchedule() above. Same no-logged-in-user
+   * attribution pattern as every other cron-originated ticket.
+   */
+  async createFromWarrantyPmSchedule(params: {
+    customerId: string;
+    equipmentId: string;
+    equipmentSerialNo: string;
+    visitSeqNo: number;
+    plannedDate: Date;
+  }) {
+    let actorUserId = process.env.PARTNER_ACTOR_USER_ID;
+    if (!actorUserId) {
+      const admin = await this.prisma.user.findFirst({ where: { role: 'ADMIN' } });
+      if (!admin) throw new BadRequestException('No PARTNER_ACTOR_USER_ID configured and no ADMIN user exists to attribute this ticket to');
+      actorUserId = admin.id;
+    }
+
+    const dto: CreateTicketDto = {
+      source: 'WARRANTY_TRIGGERED',
+      serviceType: 'SCHEDULED_PM',
+      description: `Scheduled warranty-period PM visit #${params.visitSeqNo} for ${params.equipmentSerialNo}.`,
+      customerId: params.customerId,
+      equipmentId: params.equipmentId,
+      slaTargetDate: params.plannedDate.toISOString(),
+    };
+
+    return this.create(dto, { userId: actorUserId, role: 'ADMIN' });
+  }
+
   /** FSD §7.4 — Predictive maintenance rule fired (any of the 3). Always `source=predictive`; serviceType/priority vary by which rule fired (see PredictiveEngineCron). */
   async createFromPredictiveTrigger(params: {
     customerId: string;

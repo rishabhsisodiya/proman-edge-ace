@@ -2,7 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
-import { listPredictiveRules, PredictiveRuleConfig, updatePredictiveRule } from "@/lib/ticketing/predictive-rules";
+import {
+  getWarrantyPmSettings,
+  listPredictiveRules,
+  PredictiveRuleConfig,
+  setWarrantyPmSettings,
+  updatePredictiveRule,
+} from "@/lib/ticketing/predictive-rules";
 import { EQUIP_CATEGORY_LABEL, EquipCategory } from "@/lib/ticketing/equipment-admin";
 
 interface Draft {
@@ -10,6 +16,7 @@ interface Draft {
   operatingHoursInterval: string;
   breakdownFrequencyThreshold: string;
   breakdownFrequencyWindowMonths: string;
+  warrantyPmIntervalMonths: string;
 }
 
 // Predictive Rules (2026-07-31, FSD §7.4) — per-equipment-category
@@ -25,6 +32,10 @@ export default function PredictiveRulesPage() {
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [showInfo, setShowInfo] = useState(false);
 
+  const [lookAheadDays, setLookAheadDays] = useState("7");
+  const [savingLookAhead, setSavingLookAhead] = useState(false);
+  const [lookAheadNotice, setLookAheadNotice] = useState<string | null>(null);
+
   function load() {
     setLoading(true);
     setError(null);
@@ -38,6 +49,7 @@ export default function PredictiveRulesPage() {
             operatingHoursInterval: String(r.operatingHoursInterval),
             breakdownFrequencyThreshold: String(r.breakdownFrequencyThreshold),
             breakdownFrequencyWindowMonths: String(r.breakdownFrequencyWindowMonths),
+            warrantyPmIntervalMonths: String(r.warrantyPmIntervalMonths),
           };
         setDrafts(d);
       })
@@ -46,9 +58,30 @@ export default function PredictiveRulesPage() {
         else setError("Could not load predictive rules.");
       })
       .finally(() => setLoading(false));
+    getWarrantyPmSettings()
+      .then((s) => setLookAheadDays(String(s.lookAheadDays)))
+      .catch(() => {});
   }
 
   useEffect(load, []);
+
+  async function onSaveLookAhead() {
+    const v = Number(lookAheadDays);
+    if (!v || v < 1) {
+      setError("Look-ahead days must be a positive number.");
+      return;
+    }
+    setSavingLookAhead(true);
+    setLookAheadNotice(null);
+    try {
+      await setWarrantyPmSettings(v);
+      setLookAheadNotice("Saved — used by the Warranty PM visit ticket-creation cron.");
+    } catch {
+      setError("Could not save the look-ahead setting.");
+    } finally {
+      setSavingLookAhead(false);
+    }
+  }
 
   async function onSave(rule: PredictiveRuleConfig) {
     const draft = drafts[rule.id];
@@ -56,11 +89,13 @@ export default function PredictiveRulesPage() {
     const operatingHoursInterval = Number(draft?.operatingHoursInterval);
     const breakdownFrequencyThreshold = Number(draft?.breakdownFrequencyThreshold);
     const breakdownFrequencyWindowMonths = Number(draft?.breakdownFrequencyWindowMonths);
+    const warrantyPmIntervalMonths = Number(draft?.warrantyPmIntervalMonths);
     if (
       !monthsSinceService || monthsSinceService < 1 ||
       !operatingHoursInterval || operatingHoursInterval < 1 ||
       !breakdownFrequencyThreshold || breakdownFrequencyThreshold < 1 ||
-      !breakdownFrequencyWindowMonths || breakdownFrequencyWindowMonths < 1
+      !breakdownFrequencyWindowMonths || breakdownFrequencyWindowMonths < 1 ||
+      !warrantyPmIntervalMonths || warrantyPmIntervalMonths < 1
     ) {
       setError("All values must be positive numbers.");
       return;
@@ -68,7 +103,14 @@ export default function PredictiveRulesPage() {
     setSavingId(rule.id);
     setError(null);
     try {
-      await updatePredictiveRule(rule.id, monthsSinceService, operatingHoursInterval, breakdownFrequencyThreshold, breakdownFrequencyWindowMonths);
+      await updatePredictiveRule(
+        rule.id,
+        monthsSinceService,
+        operatingHoursInterval,
+        breakdownFrequencyThreshold,
+        breakdownFrequencyWindowMonths,
+        warrantyPmIntervalMonths,
+      );
       load();
     } catch {
       setError("Could not save this rule.");
@@ -113,6 +155,7 @@ export default function PredictiveRulesPage() {
                 <th className="px-4 py-3">Operating Hours Interval</th>
                 <th className="px-4 py-3">Breakdown Count Threshold</th>
                 <th className="px-4 py-3">Breakdown Window (months)</th>
+                <th className="px-4 py-3">Warranty PM Interval (months)</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -123,6 +166,7 @@ export default function PredictiveRulesPage() {
                   operatingHoursInterval: "",
                   breakdownFrequencyThreshold: "",
                   breakdownFrequencyWindowMonths: "",
+                  warrantyPmIntervalMonths: "",
                 };
                 const busy = savingId === rule.id;
                 return (
@@ -170,6 +214,16 @@ export default function PredictiveRulesPage() {
                         className="h-8 w-20 rounded-md border border-line px-2 text-xs text-navy disabled:opacity-50"
                       />
                     </td>
+                    <td className="px-4 py-2">
+                      <input
+                        type="number"
+                        min={1}
+                        value={draft.warrantyPmIntervalMonths}
+                        disabled={busy}
+                        onChange={(e) => updateDraft(rule.id, "warrantyPmIntervalMonths", e.target.value)}
+                        className="h-8 w-20 rounded-md border border-line px-2 text-xs text-navy disabled:opacity-50"
+                      />
+                    </td>
                     <td className="px-4 py-2 text-right">
                       <button onClick={() => onSave(rule)} disabled={busy} className="text-xs font-bold text-navy disabled:opacity-50">
                         {busy ? "Saving…" : "Save"}
@@ -180,6 +234,34 @@ export default function PredictiveRulesPage() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {!loading && (
+        <div className="mt-6 max-w-md rounded-lg border border-line bg-white p-4">
+          <p className="mb-1 text-xs font-bold uppercase tracking-wide text-navy">Warranty PM Ticket Look-Ahead</p>
+          <p className="mb-3 text-xs text-muted">
+            Days before a scheduled warranty PM visit's planned date that its ticket gets auto-created.
+          </p>
+          <div className="flex items-center gap-3">
+            <input
+              type="number"
+              min={1}
+              value={lookAheadDays}
+              disabled={savingLookAhead}
+              onChange={(e) => setLookAheadDays(e.target.value)}
+              className="h-8 w-20 rounded-md border border-line px-2 text-xs text-navy disabled:opacity-50"
+            />
+            <span className="text-xs text-muted">days</span>
+            <button
+              onClick={onSaveLookAhead}
+              disabled={savingLookAhead}
+              className="text-xs font-bold text-navy disabled:opacity-50"
+            >
+              {savingLookAhead ? "Saving…" : "Save"}
+            </button>
+          </div>
+          {lookAheadNotice && <p className="mt-2 text-xs text-brand-green">{lookAheadNotice}</p>}
         </div>
       )}
 
@@ -244,6 +326,23 @@ function InfoModal({ onClose }: { onClose: () => void }) {
               the other rule won't create a second (breakdown frequency is checked first, being the more severe
               cause). Rule 3 has its own equivalent guard against an already-open Scheduled PM predictive ticket.
               This prevents the same equipment from piling up duplicate tickets while one is still being worked.
+            </p>
+          </section>
+
+          <section>
+            <p className="mb-1 text-xs font-bold uppercase tracking-wide text-navy">Warranty PM Visit Schedule</p>
+            <p className="mb-1 text-muted">
+              A 4th mechanism, separate from the 3 rules above — runs daily at 3:30 AM IST, right after them. For
+              every active equipment record with no active AMC contract (AMC already schedules its own visits), it
+              auto-generates PM visit dates spaced "Warranty PM Interval" months apart, starting from the warranty
+              start date, for as long as they land on/before the warranty end date. The number of visits is not
+              fixed — it's however many intervals actually fit inside that equipment's real warranty window.
+            </p>
+            <p className="text-muted">
+              A ticket is auto-created for each visit once its planned date falls within the "Warranty PM Ticket
+              Look-Ahead" window below — a Scheduled PM ticket, same as Rule 3. Both mechanisms check for any
+              already-open Scheduled PM ticket (regardless of which one created it) before creating a new one, so
+              equipment covered by both can't end up with duplicates.
             </p>
           </section>
 

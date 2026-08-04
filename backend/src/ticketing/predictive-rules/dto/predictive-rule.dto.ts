@@ -16,4 +16,8 @@ export class UpdatePredictiveRuleDto {
   @IsInt()
   @Min(1)
   breakdownFrequencyWindowMonths!: number;
+
+  @IsInt()
+  @Min(1)
+  warrantyPmIntervalMonths!: number;
 }

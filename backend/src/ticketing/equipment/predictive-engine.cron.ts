@@ -63,7 +63,7 @@ export class PredictiveEngineCron {
         if (config && eq.operatingHoursMeter != null) {
           const checkpoint = eq.predictiveHoursCheckpoint ?? 0;
           if (eq.operatingHoursMeter - checkpoint >= config.operatingHoursInterval) {
-            const hasOpenScheduledPm = await this.hasOpenPredictiveTicket(eq.id, 'SCHEDULED_PM');
+            const hasOpenScheduledPm = await this.hasOpenScheduledPmTicket(eq.id);
             if (!hasOpenScheduledPm) {
               await this.createPredictiveTicket(
                 eq,
@@ -95,6 +95,22 @@ export class PredictiveEngineCron {
   private hasOpenPredictiveTicket(equipmentId: string, serviceType: 'TECHNICAL_AUDIT' | 'SCHEDULED_PM') {
     return this.prisma.ticket
       .findFirst({ where: { equipmentId, serviceType, source: 'PREDICTIVE', status: { not: 'CLOSED' } } })
+      .then((t) => t != null);
+  }
+
+  /**
+   * Widened duplicate-guard for Scheduled PM specifically (2026-08-04) —
+   * unlike `hasOpenPredictiveTicket` above (scoped to source='PREDICTIVE',
+   * fine for Technical Audit since nothing else creates that type), Scheduled
+   * PM tickets can now also come from the Warranty PM visit schedule
+   * (source='WARRANTY_TRIGGERED'). Checks for an open Scheduled PM ticket
+   * from ANY source, so the two mechanisms can't both create one for the
+   * same equipment around the same time. `WarrantyPmEngineCron` mirrors this
+   * exact check before creating its own tickets.
+   */
+  private hasOpenScheduledPmTicket(equipmentId: string) {
+    return this.prisma.ticket
+      .findFirst({ where: { equipmentId, serviceType: 'SCHEDULED_PM', status: { not: 'CLOSED' } } })
       .then((t) => t != null);
   }
 

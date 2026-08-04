@@ -650,6 +650,7 @@ model Equipment {
   // one as active). A single FK couldn't represent that.
   amcContracts         AmcContract[]
   tickets              Ticket[]
+  warrantyPmVisits     WarrantyPmVisit[]
   createdAt            DateTime       @default(now())
   updatedAt            DateTime       @updatedAt
 }
@@ -835,7 +836,41 @@ model PredictiveRuleConfig {
   operatingHoursInterval         Int
   breakdownFrequencyThreshold    Int           @default(3)
   breakdownFrequencyWindowMonths Int           @default(6)
+  /// Warranty-period PM visit scheduling (2026-08-04, new requirement — not
+  /// in the original FSD's §7.3 warranty rules). Per equipment-category,
+  /// same admin screen as the other predictive thresholds. Visit count is
+  /// NOT fixed — however many `warrantyStartDate + N, +2N, ...` intervals
+  /// fit before `warrantyEndDate` is how many get generated, so a
+  /// non-12-month warranty still gets sensible coverage instead of visits
+  /// landing outside the warranty window.
+  warrantyPmIntervalMonths       Int           @default(3)
   updatedAt                      DateTime      @updatedAt
+}
+
+/// Single-row settings table (id fixed at 1), same pattern as
+/// AmcEngineSettings/EngineerUtilizationSettings — the ticket-creation
+/// look-ahead for Warranty PM visits (2026-08-04), admin-configurable per
+/// client decision rather than hardcoded, consistent with AMC's own
+/// look-ahead window.
+model WarrantyPmEngineSettings {
+  id            Int @id @default(1)
+  lookAheadDays Int @default(7)
+}
+
+/// Warranty-period PM visit schedule (2026-08-04) — same shape as
+/// AmcScheduledVisit deliberately, but keyed to Equipment's own warranty
+/// dates instead of an AmcContract (this equipment may have no AMC at all;
+/// if it does have an active one, WarrantyPmEngineCron skips it entirely —
+/// AMC's own scheduled-visit mechanism already covers it).
+model WarrantyPmVisit {
+  id             String      @id @default(uuid())
+  equipmentId    String
+  equipment      Equipment   @relation(fields: [equipmentId], references: [id])
+  visitSeqNo     Int
+  plannedDate    DateTime
+  status         VisitStatus @default(SCHEDULED_PENDING)
+  linkedTicketId String?
+  actualDate     DateTime?
 }
 
 enum ScheduledReportFrequency {
