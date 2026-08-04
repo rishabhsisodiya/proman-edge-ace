@@ -34,6 +34,7 @@ const FK = {
   assigned: "ticketsList:assigned",
   slaBreached: "ticketsList:slaBreached",
   tags: "ticketsList:tags",
+  search: "ticketsList:search",
   page: "ticketsList:page",
   sortBy: "ticketsList:sortBy",
   sortDir: "ticketsList:sortDir",
@@ -71,11 +72,21 @@ export default function TicketsListPage() {
   const [assigned, setAssigned] = useSessionState(FK.assigned, "");
   const [slaBreached, setSlaBreached] = useSessionState(FK.slaBreached, false);
   const [tags, setTags] = useSessionState(FK.tags, "");
+  const [search, setSearch] = useSessionState(FK.search, "");
   const [page, setPage] = useSessionState(FK.page, 1);
   const [total, setTotal] = useState(0);
   const pageSize = 25;
   const [sortBy, setSortBy] = useSessionState(FK.sortBy, "createdAt");
   const [sortDir, setSortDir] = useSessionState<"asc" | "desc">(FK.sortDir, "desc");
+
+  // Debounced separately from `search` itself so the persisted value updates
+  // as the user types (survives an immediate nav-away) without firing a
+  // request per keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState(search);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 350);
+    return () => clearTimeout(t);
+  }, [search]);
 
   function clearAll() {
     setRegion("");
@@ -85,6 +96,7 @@ export default function TicketsListPage() {
     setAssigned("");
     setSlaBreached(false);
     setTags("");
+    setSearch("");
   }
 
   function onSort(key: string) {
@@ -113,7 +125,7 @@ export default function TicketsListPage() {
       return;
     }
     setPage(1);
-  }, [region, priority, status, serviceType, assigned, slaBreached, tags]);
+  }, [region, priority, status, serviceType, assigned, slaBreached, tags, debouncedSearch]);
 
   useEffect(() => {
     setLoading(true);
@@ -126,6 +138,7 @@ export default function TicketsListPage() {
     if (assigned) params.set("assigned", assigned);
     if (slaBreached) params.set("slaBreached", "true");
     if (tags.trim()) params.set("tags", tags.trim());
+    if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim());
     params.set("page", String(page));
     params.set("pageSize", String(pageSize));
     params.set("sortBy", sortBy);
@@ -138,7 +151,7 @@ export default function TicketsListPage() {
       })
       .catch(() => setError("Could not load tickets. Is the backend running and seeded?"))
       .finally(() => setLoading(false));
-  }, [region, priority, status, serviceType, assigned, slaBreached, tags, page, sortBy, sortDir]);
+  }, [region, priority, status, serviceType, assigned, slaBreached, tags, debouncedSearch, page, sortBy, sortDir]);
 
   const stats = useMemo(() => {
     const open = allTickets.filter((t) => t.status !== "CLOSED").length;
@@ -173,6 +186,13 @@ export default function TicketsListPage() {
       </div>
 
       <div className="flex flex-wrap gap-3 rounded-lg border border-line bg-white p-3 shadow-[0_1px_4px_rgba(42,47,105,.06)]">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search ticket no., subject, customer, equipment serial no..."
+          className="w-72 rounded-lg border border-line px-3 py-1.5 text-sm"
+        />
         {/* ASM/Manager are always region-scoped server-side to their own
             assigned region(s) — showing "All regions" here implied a
             visibility they don't have (2026-08-04 fix, alongside the

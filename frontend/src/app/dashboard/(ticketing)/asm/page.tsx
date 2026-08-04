@@ -33,6 +33,7 @@ const FK = {
   slaBreached: "asmDashboard:slaBreached",
   rejected: "asmDashboard:rejected",
   tags: "asmDashboard:tags",
+  search: "asmDashboard:search",
   page: "asmDashboard:page",
   sortBy: "asmDashboard:sortBy",
   sortDir: "asmDashboard:sortDir",
@@ -73,11 +74,21 @@ export default function AsmDashboardPage() {
   const [slaBreached, setSlaBreached] = useSessionState(FK.slaBreached, false);
   const [rejected, setRejected] = useSessionState(FK.rejected, false);
   const [tags, setTags] = useSessionState(FK.tags, "");
+  const [search, setSearch] = useSessionState(FK.search, "");
   const [page, setPage] = useSessionState(FK.page, 1);
   const [total, setTotal] = useState(0);
   const pageSize = 25;
   const [sortBy, setSortBy] = useSessionState(FK.sortBy, "createdAt");
   const [sortDir, setSortDir] = useSessionState<"asc" | "desc">(FK.sortDir, "desc");
+
+  // Debounced separately from `search` itself so the persisted value updates
+  // as the user types (survives an immediate nav-away) without firing a
+  // request per keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState(search);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 350);
+    return () => clearTimeout(t);
+  }, [search]);
 
   function onSort(key: string) {
     if (key === sortBy) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -106,7 +117,7 @@ export default function AsmDashboardPage() {
       return;
     }
     setPage(1);
-  }, [status, priority, serviceType, assigned, slaBreached, rejected, tags]);
+  }, [status, priority, serviceType, assigned, slaBreached, rejected, tags, debouncedSearch]);
 
   useEffect(() => {
     setLoading(true);
@@ -120,6 +131,7 @@ export default function AsmDashboardPage() {
     if (slaBreached) params.set("slaBreached", "true");
     if (rejected) params.set("rejected", "true");
     if (tags.trim()) params.set("tags", tags.trim());
+    if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim());
     params.set("page", String(page));
     params.set("pageSize", String(pageSize));
     params.set("sortBy", sortBy);
@@ -132,7 +144,7 @@ export default function AsmDashboardPage() {
       })
       .catch(() => setError("Could not load tickets. Is the backend running and seeded?"))
       .finally(() => setLoading(false));
-  }, [status, priority, serviceType, assigned, slaBreached, rejected, tags, page, sortBy, sortDir]);
+  }, [status, priority, serviceType, assigned, slaBreached, rejected, tags, debouncedSearch, page, sortBy, sortDir]);
 
   const stats = useMemo(() => {
     const open = allTickets.filter((t) => t.status !== "CLOSED").length;
@@ -191,6 +203,13 @@ export default function AsmDashboardPage() {
       )}
 
       <div className="flex items-center gap-3 overflow-x-auto rounded-lg border border-line bg-white p-3 shadow-[0_1px_4px_rgba(42,47,105,.06)]">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search ticket no., subject, customer, equipment serial no..."
+          className="h-9 w-72 shrink-0 rounded-md border border-line px-3 text-xs"
+        />
         <div className="flex shrink-0 gap-2">
           <button
             onClick={() => quickFilter("unassigned")}
@@ -228,6 +247,7 @@ export default function AsmDashboardPage() {
               quickFilter("all");
               setSlaBreached(false);
               setTags("");
+              setSearch("");
               setPriority("");
               setServiceType("");
             }}

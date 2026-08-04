@@ -596,6 +596,31 @@ export class TicketsService {
         where.tags = { hasSome: matchingTags };
       }
     }
+    // Free-text search (client request, 2026-08-04) — ticket no., subject,
+    // description, customer name, equipment serial no. Uses `AND` rather
+    // than assigning `where.OR` directly, since `slaBreached` above already
+    // uses `where.OR` for its own 2-way condition — a second unguarded
+    // `where.OR =` here would silently clobber it instead of combining.
+    if (filters.search?.trim()) {
+      const q = filters.search.trim();
+      const searchOr: Prisma.TicketWhereInput = {
+        OR: [
+          { ticketNo: { contains: q, mode: 'insensitive' } },
+          { subject: { contains: q, mode: 'insensitive' } },
+          { description: { contains: q, mode: 'insensitive' } },
+          { customer: { customerName: { contains: q, mode: 'insensitive' } } },
+          { equipment: { serialNo: { contains: q, mode: 'insensitive' } } },
+        ],
+      };
+      where.AND = where.OR
+        ? [{ OR: where.OR }, searchOr]
+        : Array.isArray(where.AND)
+          ? [...where.AND, searchOr]
+          : where.AND
+            ? [where.AND, searchOr]
+            : [searchOr];
+      if (where.OR) delete where.OR;
+    }
 
     // Capped well above 100 — a few dashboards (Call Center, ASM, Manager/
     // Service) still need one unbounded-ish fetch for their own client-side
