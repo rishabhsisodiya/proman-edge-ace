@@ -20,6 +20,7 @@ import {
 } from "@/lib/ticketing/types";
 import { Pagination } from "@/components/Pagination";
 import { SortableTh } from "@/components/SortableTh";
+import { TagsCell } from "@/components/TagsCell";
 import { getTodayAmcVisits, TodayAmcVisit } from "@/lib/ticketing/amc";
 import { useSessionState } from "@/lib/useSessionState";
 
@@ -32,7 +33,6 @@ const FK = {
   assigned: "asmDashboard:assigned",
   slaBreached: "asmDashboard:slaBreached",
   rejected: "asmDashboard:rejected",
-  tags: "asmDashboard:tags",
   search: "asmDashboard:search",
   page: "asmDashboard:page",
   sortBy: "asmDashboard:sortBy",
@@ -73,7 +73,6 @@ export default function AsmDashboardPage() {
   const [assigned, setAssigned] = useSessionState(FK.assigned, "");
   const [slaBreached, setSlaBreached] = useSessionState(FK.slaBreached, false);
   const [rejected, setRejected] = useSessionState(FK.rejected, false);
-  const [tags, setTags] = useSessionState(FK.tags, "");
   const [search, setSearch] = useSessionState(FK.search, "");
   const [page, setPage] = useSessionState(FK.page, 1);
   const [total, setTotal] = useState(0);
@@ -117,7 +116,7 @@ export default function AsmDashboardPage() {
       return;
     }
     setPage(1);
-  }, [status, priority, serviceType, assigned, slaBreached, rejected, tags, debouncedSearch]);
+  }, [status, priority, serviceType, assigned, slaBreached, rejected, debouncedSearch]);
 
   useEffect(() => {
     setLoading(true);
@@ -130,7 +129,6 @@ export default function AsmDashboardPage() {
     if (assigned) params.set("assigned", assigned);
     if (slaBreached) params.set("slaBreached", "true");
     if (rejected) params.set("rejected", "true");
-    if (tags.trim()) params.set("tags", tags.trim());
     if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim());
     params.set("page", String(page));
     params.set("pageSize", String(pageSize));
@@ -144,7 +142,7 @@ export default function AsmDashboardPage() {
       })
       .catch(() => setError("Could not load tickets. Is the backend running and seeded?"))
       .finally(() => setLoading(false));
-  }, [status, priority, serviceType, assigned, slaBreached, rejected, tags, debouncedSearch, page, sortBy, sortDir]);
+  }, [status, priority, serviceType, assigned, slaBreached, rejected, debouncedSearch, page, sortBy, sortDir]);
 
   const stats = useMemo(() => {
     const open = allTickets.filter((t) => t.status !== "CLOSED").length;
@@ -207,7 +205,7 @@ export default function AsmDashboardPage() {
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search ticket no., subject, customer, equipment serial no..."
+          placeholder="Search ticket no., subject, customer, equipment serial no., tags..."
           className="h-9 w-72 shrink-0 rounded-md border border-line px-3 text-xs"
         />
         <div className="flex shrink-0 gap-2">
@@ -235,18 +233,10 @@ export default function AsmDashboardPage() {
           >
             Rejected
           </button>
-          <input
-            type="text"
-            value={tags}
-            onChange={(e) => setTags(e.target.value)}
-            placeholder="Search tags (comma-separated)"
-            className="h-9 shrink-0 rounded-md border border-line px-3 text-xs"
-          />
           <button
             onClick={() => {
               quickFilter("all");
               setSlaBreached(false);
-              setTags("");
               setSearch("");
               setPriority("");
               setServiceType("");
@@ -352,26 +342,27 @@ function TicketTable({
             <SortableTh label="Status" sortKey="status" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
             <SortableTh label="Warranty" sortKey="warrantyEligible" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
             <SortableTh label="Engineer" sortKey="engineerName" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
+            <th className="px-4 font-bold">Tags</th>
           </tr>
         </thead>
         <tbody>
           {loading && (
             <tr>
-              <td colSpan={6} className="px-4 py-3 text-center text-muted">
+              <td colSpan={7} className="px-4 py-3 text-center text-muted">
                 Loading…
               </td>
             </tr>
           )}
           {!loading && error && (
             <tr>
-              <td colSpan={6} className="px-4 py-3 text-center text-brand-red">
+              <td colSpan={7} className="px-4 py-3 text-center text-brand-red">
                 {error}
               </td>
             </tr>
           )}
           {!loading && !error && tickets.length === 0 && (
             <tr>
-              <td colSpan={6} className="px-4 py-3 text-center text-muted">
+              <td colSpan={7} className="px-4 py-3 text-center text-muted">
                 {emptyText}
               </td>
             </tr>
@@ -409,6 +400,9 @@ function TicketTable({
                 </span>
               </td>
               <td className="px-4">{t.assignedEngineer?.fullName ?? "Unassigned"}</td>
+              <td className="px-4">
+                <TagsCell tags={t.tags} />
+              </td>
             </tr>
           ))}
         </tbody>

@@ -577,32 +577,27 @@ export class TicketsService {
     // Client feedback (2026-07-31) — rejected tickets weren't distinguishable
     // from any other unassigned ASSIGNED ticket anywhere in the UI.
     if (filters.rejected === 'true') where.rejectionCount = { gt: 0 };
-    // Free-text tags (client decision, 2026-08-01) — comma-separated exact
-    // tag matches, searchable by ASM/Manager/Admin from the ticket list.
-    // Case-insensitive (2026-08-03 fix) — Prisma's `hasSome` on a String[]
-    // column is a case-sensitive exact match in Postgres (no `mode:
-    // 'insensitive'` option exists for array filters, only for scalar
-    // string `contains`/`equals`), so a search for "urgent" would silently
-    // miss a ticket tagged "Urgent" — resolved by looking up every distinct
-    // tag actually in use, matching the search terms against those
-    // case-insensitively, and passing the real (correctly-cased) matches
-    // into `hasSome`. Still exact-tag matching, not substring search — that
-    // wasn't asked for, only case-insensitivity was.
-    if (filters.tags) {
-      const searchTerms = filters.tags.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean);
-      if (searchTerms.length) {
-        const distinctTags = await this.prisma.$queryRaw<{ tag: string }[]>`SELECT DISTINCT unnest("tags") AS tag FROM "Ticket"`;
-        const matchingTags = distinctTags.map((r) => r.tag).filter((tag) => searchTerms.includes(tag.toLowerCase()));
-        where.tags = { hasSome: matchingTags };
-      }
-    }
     // Free-text search (client request, 2026-08-04) — ticket no., subject,
-    // description, customer name, equipment serial no. Uses `AND` rather
-    // than assigning `where.OR` directly, since `slaBreached` above already
-    // uses `where.OR` for its own 2-way condition — a second unguarded
-    // `where.OR =` here would silently clobber it instead of combining.
+    // description, customer name, equipment serial no., and (2026-08-04,
+    // merged in per client follow-up) tags — folded into this one box
+    // instead of the separate exact-match "Search tags" input. Uses `AND`
+    // rather than assigning `where.OR` directly, since `slaBreached` above
+    // already uses `where.OR` for its own 2-way condition — a second
+    // unguarded `where.OR =` here would silently clobber it instead of
+    // combining.
     if (filters.search?.trim()) {
       const q = filters.search.trim();
+      // Tags are a String[] column — Postgres/Prisma has no `contains` for
+      // array elements, only exact `hasSome`/`has`. Substring tag matching
+      // (client wants "urg" to find a ticket tagged "Urgent", consistent
+      // with every other field in this search) needs a raw-SQL assist: find
+      // ticket ids with any tag ILIKE-matching the query, then fold those
+      // ids into the same OR as everything else.
+      const taggedMatches = await this.prisma.$queryRaw<{ id: string }[]>`
+        SELECT id FROM "Ticket" t
+        WHERE EXISTS (SELECT 1 FROM unnest(t."tags") AS tag WHERE tag ILIKE ${'%' + q + '%'})
+      `;
+      const taggedIds = taggedMatches.map((r) => r.id);
       const searchOr: Prisma.TicketWhereInput = {
         OR: [
           { ticketNo: { contains: q, mode: 'insensitive' } },
@@ -610,6 +605,7 @@ export class TicketsService {
           { description: { contains: q, mode: 'insensitive' } },
           { customer: { customerName: { contains: q, mode: 'insensitive' } } },
           { equipment: { serialNo: { contains: q, mode: 'insensitive' } } },
+          ...(taggedIds.length ? [{ id: { in: taggedIds } }] : []),
         ],
       };
       where.AND = where.OR

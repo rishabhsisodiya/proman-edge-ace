@@ -22,6 +22,7 @@ import {
 } from "@/lib/ticketing/types";
 import { Pagination } from "@/components/Pagination";
 import { SortableTh } from "@/components/SortableTh";
+import { TagsCell } from "@/components/TagsCell";
 import { useSessionState } from "@/lib/useSessionState";
 
 // sessionStorage keys — filters survive a trip to the ticket detail page and
@@ -33,7 +34,6 @@ const FK = {
   serviceType: "ticketsList:serviceType",
   assigned: "ticketsList:assigned",
   slaBreached: "ticketsList:slaBreached",
-  tags: "ticketsList:tags",
   search: "ticketsList:search",
   page: "ticketsList:page",
   sortBy: "ticketsList:sortBy",
@@ -71,7 +71,6 @@ export default function TicketsListPage() {
   const [serviceType, setServiceType] = useSessionState(FK.serviceType, "");
   const [assigned, setAssigned] = useSessionState(FK.assigned, "");
   const [slaBreached, setSlaBreached] = useSessionState(FK.slaBreached, false);
-  const [tags, setTags] = useSessionState(FK.tags, "");
   const [search, setSearch] = useSessionState(FK.search, "");
   const [page, setPage] = useSessionState(FK.page, 1);
   const [total, setTotal] = useState(0);
@@ -95,7 +94,6 @@ export default function TicketsListPage() {
     setServiceType("");
     setAssigned("");
     setSlaBreached(false);
-    setTags("");
     setSearch("");
   }
 
@@ -125,7 +123,7 @@ export default function TicketsListPage() {
       return;
     }
     setPage(1);
-  }, [region, priority, status, serviceType, assigned, slaBreached, tags, debouncedSearch]);
+  }, [region, priority, status, serviceType, assigned, slaBreached, debouncedSearch]);
 
   useEffect(() => {
     setLoading(true);
@@ -137,7 +135,6 @@ export default function TicketsListPage() {
     if (serviceType) params.set("serviceType", serviceType);
     if (assigned) params.set("assigned", assigned);
     if (slaBreached) params.set("slaBreached", "true");
-    if (tags.trim()) params.set("tags", tags.trim());
     if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim());
     params.set("page", String(page));
     params.set("pageSize", String(pageSize));
@@ -151,7 +148,7 @@ export default function TicketsListPage() {
       })
       .catch(() => setError("Could not load tickets. Is the backend running and seeded?"))
       .finally(() => setLoading(false));
-  }, [region, priority, status, serviceType, assigned, slaBreached, tags, debouncedSearch, page, sortBy, sortDir]);
+  }, [region, priority, status, serviceType, assigned, slaBreached, debouncedSearch, page, sortBy, sortDir]);
 
   const stats = useMemo(() => {
     const open = allTickets.filter((t) => t.status !== "CLOSED").length;
@@ -190,7 +187,7 @@ export default function TicketsListPage() {
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search ticket no., subject, customer, equipment serial no..."
+          placeholder="Search ticket no., subject, customer, equipment serial no., tags..."
           className="w-72 rounded-lg border border-line px-3 py-1.5 text-sm"
         />
         {/* ASM/Manager are always region-scoped server-side to their own
@@ -263,13 +260,6 @@ export default function TicketsListPage() {
         >
           SLA Breached
         </button>
-        <input
-          type="text"
-          value={tags}
-          onChange={(e) => setTags(e.target.value)}
-          placeholder="Search tags (comma-separated)"
-          className="rounded-lg border border-line px-3 py-1.5 text-sm"
-        />
         <button
           onClick={clearAll}
           className="rounded-lg border border-line bg-white px-3 py-1.5 text-sm font-bold text-navy hover:bg-navy-tint"
@@ -290,26 +280,27 @@ export default function TicketsListPage() {
               <SortableTh label="Warranty" sortKey="warrantyEligible" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
               <SortableTh label="Region" sortKey="region" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
               <SortableTh label="Engineer" sortKey="engineerName" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
+              <th className="px-4 font-bold">Tags</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr className="h-11">
-                <td colSpan={8} className="px-4 text-center text-muted">
+                <td colSpan={9} className="px-4 text-center text-muted">
                   Loading tickets…
                 </td>
               </tr>
             )}
             {!loading && error && (
               <tr className="h-11">
-                <td colSpan={8} className="px-4 text-center text-brand-red">
+                <td colSpan={9} className="px-4 text-center text-brand-red">
                   {error}
                 </td>
               </tr>
             )}
             {!loading && !error && tickets.length === 0 && (
               <tr className="h-11">
-                <td colSpan={8} className="px-4 text-center text-muted">
+                <td colSpan={9} className="px-4 text-center text-muted">
                   No tickets match these filters.
                 </td>
               </tr>
@@ -353,6 +344,9 @@ export default function TicketsListPage() {
                   </td>
                   <td className="px-4">{t.customer.region}</td>
                   <td className="px-4">{t.assignedEngineer?.fullName ?? "Unassigned"}</td>
+                  <td className="px-4">
+                    <TagsCell tags={t.tags} />
+                  </td>
                 </tr>
               ))}
           </tbody>
