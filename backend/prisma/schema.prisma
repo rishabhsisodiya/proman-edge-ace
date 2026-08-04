@@ -497,18 +497,30 @@ model CustomerSite {
   id               String  @id @default(uuid())
   // Not in the FSD's own Customer SQL spec (site_addresses explicitly marked
   // "no" there) — our own addition, sourced from ERPNext Address records
-  // linked to a Customer with address_type = 'Shipping'. Nullable + unique
-  // so it's only set for sync-created sites, and re-running sync doesn't
-  // create duplicates.
+  // linked to a Customer. Nullable + unique so it's only set for
+  // sync-created sites, and re-running sync doesn't create duplicates.
   erpnextAddressId String? @unique
 
   customerId   String
   customer     Customer    @relation(fields: [customerId], references: [id])
   siteName     String
+  // ACE_Master_Data_SQL_Queries_site_address.md §5.1.1 (2026-08-04) — the
+  // site_addresses sub-query now pulls EVERY address linked to a customer
+  // (previously ACE only synced address_type='Shipping'), plus these extra
+  // fields it returns that weren't captured before.
+  addressType  String?
   addressLine1 String
+  addressLine2 String?
   city         String
   state        String
   pin          String
+  country      String?
+  /// Address.is_primary_address — flags the customer's primary/billing address in the list.
+  isBilling    Boolean @default(false)
+  /// Address.disabled — kept on purpose for historical equipment (an
+  /// installation's site can go inactive in ERPNext without the equipment
+  /// itself being gone); hide from new-ticket site pickers, don't delete.
+  disabled     Boolean @default(false)
   gpsLat       Float?
   gpsLong      Float?
   equipment    Equipment[]
@@ -578,6 +590,14 @@ model Equipment {
   // entry may happen before a customer's sites are known/synced.
   siteId               String?
   site                 CustomerSite?  @relation(fields: [siteId], references: [id])
+  /// ACE_Master_Data_SQL_Queries_site_address.md §5.1.2 edge case (~41 rows,
+  /// 0.4%, 2026-08-04) — Equipment Tracking.site_address sometimes points to
+  /// an Address linked to a DIFFERENT customer (shared/related-entity
+  /// address), so it can't resolve into this equipment's own customer's
+  /// site list. Raw ERPNext Address id kept here for visibility ("unmatched
+  /// site") instead of silently dropping it or erroring — `siteId` stays
+  /// null in this case.
+  unmatchedSiteAddressId String?
   gpsLat               Float?
   gpsLong              Float?
   installationDate     DateTime

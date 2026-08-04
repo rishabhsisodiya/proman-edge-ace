@@ -3,9 +3,14 @@ import { EquipCategory } from '@prisma/client';
 import { ErpDbService } from '../../erp/erp-db.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
+// ACE_Master_Data_SQL_Queries_site_address.md §5.1.2 (2026-08-04) — added
+// site_address (= installation_site_id), the join key back to
+// CustomerSite.erpnextAddressId (§5.1.1). ERPNext computes this itself
+// (the SO's shipping address, else billing) — ACE just reads it, no
+// fallback logic needed on this side.
 const EQUIPMENT_TRACKING_SELECT = `
   SELECT
-      serial_id, sales_order, customer, item_code, item_name, qty,
+      serial_id, sales_order, customer, site_address, item_code, item_name, qty,
       warranty_start_date, warranty_end_date, warranty_period_days,
       delivery_date, equipment_category, model_number, status, modified
   FROM \`tabEquipment Tracking\`
@@ -15,6 +20,7 @@ interface ErpEquipmentTrackingRow {
   serial_id: string;
   sales_order: string;
   customer: string;
+  site_address: string | null;
   item_code: string;
   item_name: string;
   // MariaDB returns DECIMAL columns as strings via mysql2 — parse before use.
@@ -146,6 +152,37 @@ export class EquipmentTrackingSyncService {
     const qty = Math.round(Number(row.qty)) || 1;
     const equipmentCategory = mapCategory(row.equipment_category);
 
+    // §5.1.2 installation_site_id resolution — matches this equipment's own
+    // customer's site_addresses by erpnextAddressId (same ERPNext Address
+    // id, populated by the §5.1.1 sync). Two non-error outcomes, not one:
+    // null site_address (~155 rows, SO had no address — leave both fields
+    // null) vs. a site_address that resolves to a DIFFERENT customer's
+    // address (~41 rows, 0.4%, shared/related-entity address) — flagged via
+    // unmatchedSiteAddressId instead of silently dropped or errored.
+    // Explicit `null` (not `undefined`) when unresolved, on both create and
+    // update — Prisma treats `undefined` as "don't touch," which would
+    // leave a stale siteId in place if a previously-resolved site ever stops
+    // matching on a later sync (e.g. re-pointed in ERP).
+    let siteId: string | null = null;
+    let unmatchedSiteAddressId: string | null = null;
+    if (row.site_address) {
+      const site = await this.prisma.customerSite.findFirst({
+        where: { customerId: customer.id, erpnextAddressId: row.site_address },
+      });
+      if (site) siteId = site.id;
+      else unmatchedSiteAddressId = row.site_address;
+    }
+
+    // §5.1.2 Cancelled handling — the query deliberately never filters
+    // Cancelled rows out (so ACE finds out when a SO line gets voided and
+    // can react), but only Cancelled maps onto ACE's own operational
+    // status: Expired just means the warranty period lapsed, the physical
+    // machine is presumably still installed and serviceable, so it's left
+    // alone. Active doesn't force ACE's status back either — a manually-set
+    // UNDER_REPAIR/etc. in ACE shouldn't get silently overwritten by the
+    // commercial-side sync.
+    const cancelledStatus = row.status === 'Cancelled' ? ({ status: 'DECOMMISSIONED' } as const) : {};
+
     const existing = await this.prisma.equipment.findUnique({ where: { serialNo: row.serial_id } });
 
     // Only check for a possible duplicate the first time this serial_id is
@@ -168,6 +205,8 @@ export class EquipmentTrackingSyncService {
         equipmentCategory,
         modelNumber: row.model_number,
         customerId: customer.id,
+        siteId,
+        unmatchedSiteAddressId,
         // installationDate isn't provided by this feed — approximated from
         // delivery date, same as any other date this sync doesn't have a
         // direct source for (client-confirmed acceptable, 2026-07-30).
@@ -180,10 +219,13 @@ export class EquipmentTrackingSyncService {
         quantity: qty,
         erpTrackingStatus: row.status,
         possibleDuplicateOfId,
+        ...cancelledStatus,
       },
       update: {
         itemCode: row.item_code,
         itemName: row.item_name,
+        siteId,
+        unmatchedSiteAddressId,
         equipmentCategory,
         modelNumber: row.model_number,
         customerId: customer.id,
@@ -194,9 +236,13 @@ export class EquipmentTrackingSyncService {
         warrantyStatus: this.warrantyStatus(warrantyEnd),
         quantity: qty,
         erpTrackingStatus: row.status,
-        // status (EquipStatus, this app's own operational lifecycle) and the
-        // duplicate flag are deliberately NOT touched on update — see the
-        // schema comments on Equipment.erpTrackingStatus/possibleDuplicateOfId.
+        // The duplicate flag is deliberately NOT touched on update — see the
+        // schema comment on Equipment.possibleDuplicateOfId. `status` IS
+        // touched, but only for the Cancelled case (via cancelledStatus
+        // above) — this is exactly the case that matters most in practice,
+        // since a cancellation almost always happens to equipment that's
+        // already been synced once, not a brand-new row.
+        ...cancelledStatus,
       },
     });
 

@@ -89,32 +89,45 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
-// Not in the FSD's own Customer SQL spec (site_addresses marked "no" there)
-// — our own addition. address_type = 'Shipping' addresses are real physical
-// site locations (confirmed against real data — e.g. actual crusher plant
-// addresses distinct from the billing/office address); 'Billing' stays as
-// Customer's own billingAddress* fields via customer_primary_address.
+// ACE_Master_Data_SQL_Queries_site_address.md §5.1.1 (2026-08-04) — was
+// scoped to address_type = 'Shipping' only; Shivam's updated spec wants
+// EVERY address linked to the customer ("sabhi" = all), no address_type
+// filter and deliberately NO disabled filter either — a disabled address
+// can still be a real historical equipment install site and must resolve
+// via Equipment Tracking's installation_site_id (see
+// EquipmentTrackingSyncService). `erpnext_address_id` (= tabAddress.name)
+// is the join key both sides use.
 const SITE_ADDRESS_SELECT = `
   SELECT
-      a.name         AS erpnext_address_id,
-      a.address_title AS address_title,
-      a.address_line1 AS address_line1,
-      a.city         AS city,
-      a.state        AS state,
-      a.pincode      AS pincode
+      a.name                AS erpnext_address_id,
+      a.address_title       AS address_title,
+      a.address_type        AS address_type,
+      a.address_line1       AS address_line1,
+      a.address_line2       AS address_line2,
+      a.city                AS city,
+      a.state                AS state,
+      a.pincode             AS pincode,
+      a.country              AS country,
+      a.is_primary_address  AS is_primary_address,
+      a.disabled            AS disabled
   FROM \`tabAddress\` a
   JOIN \`tabDynamic Link\` dl ON dl.parent = a.name
   WHERE dl.link_doctype = 'Customer' AND dl.parenttype = 'Address'
-    AND dl.link_name = ? AND a.address_type = 'Shipping'
+    AND dl.link_name = ?
 `;
 
 interface ErpSiteAddressRow {
   erpnext_address_id: string;
   address_title: string | null;
+  address_type: string | null;
   address_line1: string | null;
+  address_line2: string | null;
   city: string | null;
   state: string | null;
   pincode: string | null;
+  country: string | null;
+  is_primary_address: number | boolean | null;
+  disabled: number | boolean | null;
 }
 
 /**
@@ -304,24 +317,22 @@ export class CustomerSyncService {
   private async syncSites(customerId: string, erpnextCustomerId: string): Promise<void> {
     const rows = await this.erpDb.query<ErpSiteAddressRow>(SITE_ADDRESS_SELECT, [erpnextCustomerId]);
     for (const row of rows) {
+      const shared = {
+        siteName: row.address_title ?? row.erpnext_address_id,
+        addressType: row.address_type ?? undefined,
+        addressLine1: row.address_line1 ?? '',
+        addressLine2: row.address_line2 ?? undefined,
+        city: row.city ?? '',
+        state: row.state ?? '',
+        pin: row.pincode ?? '',
+        country: row.country ?? undefined,
+        isBilling: Boolean(row.is_primary_address),
+        disabled: Boolean(row.disabled),
+      };
       await this.prisma.customerSite.upsert({
         where: { erpnextAddressId: row.erpnext_address_id },
-        create: {
-          erpnextAddressId: row.erpnext_address_id,
-          customerId,
-          siteName: row.address_title ?? row.erpnext_address_id,
-          addressLine1: row.address_line1 ?? '',
-          city: row.city ?? '',
-          state: row.state ?? '',
-          pin: row.pincode ?? '',
-        },
-        update: {
-          siteName: row.address_title ?? row.erpnext_address_id,
-          addressLine1: row.address_line1 ?? '',
-          city: row.city ?? '',
-          state: row.state ?? '',
-          pin: row.pincode ?? '',
-        },
+        create: { erpnextAddressId: row.erpnext_address_id, customerId, ...shared },
+        update: shared,
       });
     }
   }
