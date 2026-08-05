@@ -19,3 +19,13 @@ export const updatePriceList = (id: string, patch: { isDefault?: boolean; isActi
 
 export const deletePriceList = (id: string) =>
   apiFetch<void>(`/admin/price-lists/${id}`, { method: "DELETE" });
+
+export interface ErpPriceListOption {
+  name: string;
+  currency: string;
+}
+
+// Live fetch from ERPNext (client request, 2026-08-05) — Admin picks from
+// this instead of typing the exact price list name. Selling lists only,
+// enabled only, fake demo "Test price" already excluded server-side.
+export const fetchErpPriceListOptions = () => apiFetch<ErpPriceListOption[]>(`/admin/price-lists/erp-options`);

@@ -19,8 +19,12 @@ import {
   createHoliday,
   deleteHoliday,
   downloadHolidayTemplate,
+  ErpFiscalYear,
+  ErpHolidayFetchResult,
+  fetchAndMergeErpHolidays,
   Holiday,
   HolidayUploadResult,
+  listErpFiscalYears,
   listHolidays,
   uploadHolidays,
 } from "@/lib/ticketing/holidays";
@@ -452,6 +456,15 @@ function HolidaysTab() {
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<HolidayUploadResult | null>(null);
 
+  // Fetch from ERP by Fiscal Year (client request, 2026-08-05) — merges
+  // into this same list, existing manual/CSV entries kept.
+  const [fiscalYears, setFiscalYears] = useState<ErpFiscalYear[]>([]);
+  const [selectedFiscalYear, setSelectedFiscalYear] = useState("");
+  const [fetchingFiscalYears, setFetchingFiscalYears] = useState(true);
+  const [erpFetching, setErpFetching] = useState(false);
+  const [erpFetchResult, setErpFetchResult] = useState<ErpHolidayFetchResult | null>(null);
+  const [erpError, setErpError] = useState<string | null>(null);
+
   function load() {
     setLoading(true);
     setError(null);
@@ -465,6 +478,34 @@ function HolidaysTab() {
   }
 
   useEffect(load, []);
+
+  useEffect(() => {
+    setFetchingFiscalYears(true);
+    listErpFiscalYears()
+      .then((years) => {
+        setFiscalYears(years);
+        const active = years.find((y) => !y.disabled);
+        if (active) setSelectedFiscalYear(active.fiscalYear);
+      })
+      .catch(() => setErpError("Could not fetch fiscal years from ERPNext."))
+      .finally(() => setFetchingFiscalYears(false));
+  }, []);
+
+  async function onFetchErpHolidays() {
+    if (!selectedFiscalYear) return;
+    setErpFetching(true);
+    setErpError(null);
+    setErpFetchResult(null);
+    try {
+      const result = await fetchAndMergeErpHolidays(selectedFiscalYear);
+      setErpFetchResult(result);
+      load();
+    } catch {
+      setErpError("Could not fetch holidays from ERPNext.");
+    } finally {
+      setErpFetching(false);
+    }
+  }
 
   async function onAdd() {
     if (!date || !label.trim()) {
@@ -527,6 +568,50 @@ function HolidaysTab() {
       </p>
 
       {error && <p className="mb-4 rounded-md bg-brand-red-bg px-3 py-2 text-xs text-brand-red">{error}</p>}
+
+      <div className="mb-6 rounded-lg border border-line bg-white p-4 text-sm">
+        <p className="mb-2 font-bold text-navy">Fetch from ERP (by Fiscal Year)</p>
+        <p className="mb-3 text-muted">
+          Pulls real public holidays from ERPNext for the selected fiscal year and merges them into the list
+          below — existing entries (manual or CSV) are kept, a date already on file is skipped rather than
+          overwritten. Sundays aren&apos;t included here — already excluded separately as the weekly off-day.
+        </p>
+        {erpError && <p className="mb-3 text-xs text-brand-red">{erpError}</p>}
+        <div className="flex flex-wrap items-center gap-3">
+          {fetchingFiscalYears ? (
+            <p className="text-xs text-muted">Fetching fiscal years…</p>
+          ) : fiscalYears.length === 0 ? (
+            <p className="text-xs text-brand-red">No fiscal years found in ERPNext.</p>
+          ) : (
+            <select
+              value={selectedFiscalYear}
+              onChange={(e) => setSelectedFiscalYear(e.target.value)}
+              className="h-9 rounded-md border border-line px-2 text-sm text-navy"
+            >
+              {fiscalYears.map((y) => (
+                <option key={y.fiscalYear} value={y.fiscalYear} disabled={y.disabled}>
+                  {y.fiscalYear}
+                  {y.disabled ? " (archived)" : ""}
+                </option>
+              ))}
+            </select>
+          )}
+          <button
+            type="button"
+            disabled={!selectedFiscalYear || erpFetching}
+            onClick={onFetchErpHolidays}
+            className="h-9 rounded-md bg-orange px-4 text-xs font-bold text-navy disabled:opacity-50"
+          >
+            {erpFetching ? "Fetching…" : "Fetch & Merge"}
+          </button>
+        </div>
+        {erpFetchResult && (
+          <p className="mt-3 text-xs font-bold text-navy">
+            {erpFetchResult.added} added · {erpFetchResult.skipped} already on file · {erpFetchResult.failed} failed
+            (of {erpFetchResult.total} holidays found for this fiscal year)
+          </p>
+        )}
+      </div>
 
       <div className="mb-6 rounded-lg border border-line bg-white p-4 text-sm">
         <p className="mb-2 font-bold text-navy">Bulk upload (once a year)</p>

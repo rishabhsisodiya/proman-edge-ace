@@ -332,6 +332,32 @@ export default function EquipmentForm({ existing, onSaved }: Props) {
             />
           </div>
 
+          {/* SO No./Date (client request, 2026-08-05) — read-only, ERP
+              sync-sourced only, no manual-entry field; styled to match every
+              other field on this form rather than a separate caption. */}
+          <div>
+            <label className="mb-1.5 block text-xs font-bold text-navy">SO No.</label>
+            <input
+              type="text"
+              value={existing?.salesOrderNo ?? "N/A"}
+              disabled
+              className="h-10 w-full rounded-md border border-line bg-navy-soft px-3 text-sm text-muted"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-bold text-navy">SO Date</label>
+            <input
+              type="text"
+              value={
+                existing?.orderDate
+                  ? new Date(existing.orderDate).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })
+                  : "N/A"
+              }
+              disabled
+              className="h-10 w-full rounded-md border border-line bg-navy-soft px-3 text-sm text-muted"
+            />
+          </div>
+
           <div>
             <label className="mb-1.5 block text-xs font-bold text-navy">Warranty Start Date</label>
             <input

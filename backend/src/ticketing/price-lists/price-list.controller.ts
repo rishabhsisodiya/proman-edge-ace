@@ -17,6 +17,16 @@ export class PriceListController {
     return this.priceLists.list();
   }
 
+  // Static route — must stay above nothing here (no `:id` GET exists), but
+  // kept as its own clearly-named endpoint regardless for the same reason
+  // other admin screens keep ERP-sourced lookups separate from the local
+  // CRUD list.
+  @Roles('ADMIN')
+  @Get('erp-options')
+  fetchErpOptions() {
+    return this.priceLists.fetchErpSellingPriceLists();
+  }
+
   @Roles('ADMIN')
   @Post()
   create(@Body() dto: CreatePriceListDto) {

@@ -39,6 +39,10 @@ export interface EquipmentRecord {
   gpsLong: number | null;
   installationDate: string;
   deliveryDate: string | null;
+  // ERP Sales Order reference (client request, 2026-08-05) — read-only,
+  // sync-sourced only; no manual-entry form field for these.
+  salesOrderNo: string | null;
+  orderDate: string | null;
   warrantyStartDate: string;
   warrantyEndDate: string;
   warrantyPeriodMonths: number;

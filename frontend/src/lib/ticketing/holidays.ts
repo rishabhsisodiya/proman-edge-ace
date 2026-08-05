@@ -23,6 +23,31 @@ export const createHoliday = (date: string, label: string) =>
 
 export const deleteHoliday = (id: string) => apiFetch<void>(`/admin/holidays/${id}`, { method: "DELETE" });
 
+export interface ErpFiscalYear {
+  fiscalYear: string;
+  yearStart: string;
+  yearEnd: string;
+  disabled: boolean;
+}
+
+export interface ErpHolidayFetchResult {
+  total: number;
+  added: number;
+  skipped: number;
+  failed: number;
+  results: { date: string; label: string; skipped?: boolean; error?: string }[];
+}
+
+// ERP fiscal-year holiday fetch (client request, 2026-08-05) — Admin picks a
+// fiscal year, fetches its real public holidays from ERPNext, merges them
+// into this same Holiday list (existing manual/CSV entries kept, a date
+// already on file is skipped not overwritten). Sundays are never included —
+// already excluded separately via the business-hours weekly-off logic.
+export const listErpFiscalYears = () => apiFetch<ErpFiscalYear[]>(`/admin/holidays/erp-fiscal-years`);
+
+export const fetchAndMergeErpHolidays = (fiscalYear: string) =>
+  apiFetch<ErpHolidayFetchResult>(`/admin/holidays/erp-fetch`, { method: "POST", body: JSON.stringify({ fiscalYear }) });
+
 export function downloadHolidayTemplate() {
   window.open(`${API_URL}/admin/holidays/template`, "_blank");
 }

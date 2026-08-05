@@ -602,6 +602,13 @@ model Equipment {
   gpsLong              Float?
   installationDate     DateTime
   deliveryDate         DateTime?
+  /// Sales Order reference (client request, 2026-08-05 — "Add SO no and SO
+  /// date field" on the Equipment page, and on AMC's covered-equipment
+  /// list). `sales_order` was already read by the Equipment Tracking sync
+  /// but previously discarded; `order_date` (the SO's own transaction_date)
+  /// is new per Shivam's handoff §C, live + backfilled on the ERP side.
+  salesOrderNo         String?
+  orderDate            DateTime?
   warrantyStartDate    DateTime
   warrantyEndDate      DateTime
   warrantyPeriodMonths Int

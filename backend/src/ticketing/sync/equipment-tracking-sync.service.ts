@@ -8,12 +8,24 @@ import { PrismaService } from '../../prisma/prisma.service';
 // CustomerSite.erpnextAddressId (§5.1.1). ERPNext computes this itself
 // (the SO's shipping address, else billing) — ACE just reads it, no
 // fallback logic needed on this side.
+// order_date (2026-08-05, client request: show SO No. + SO Date on the
+// Equipment page and AMC's covered-equipment list) — the SO's own
+// transaction_date (order/booking date), separate from delivery_date.
+// Shivam's handoff §C describes a new `order_date` column being added
+// directly to `tabEquipment Tracking`, but that column doesn't exist yet on
+// this instance (confirmed live, 2026-08-05 — `Unknown column 'order_date'`)
+// — sourced via a join to `tabSales Order` instead, using `sales_order`
+// (already selected, previously discarded in syncOne()) as the join key.
+// Same end value either way; swap this back to the plain column once
+// Shivam confirms it's actually deployed on this environment.
 const EQUIPMENT_TRACKING_SELECT = `
   SELECT
-      serial_id, sales_order, customer, site_address, item_code, item_name, qty,
-      warranty_start_date, warranty_end_date, warranty_period_days,
-      delivery_date, equipment_category, model_number, status, modified
-  FROM \`tabEquipment Tracking\`
+      et.serial_id, et.sales_order, et.customer, et.site_address, et.item_code, et.item_name, et.qty,
+      et.warranty_start_date, et.warranty_end_date, et.warranty_period_days,
+      et.delivery_date, et.equipment_category, et.model_number, et.status, et.modified,
+      so.transaction_date AS order_date
+  FROM \`tabEquipment Tracking\` et
+  LEFT JOIN \`tabSales Order\` so ON so.name = et.sales_order
 `;
 
 interface ErpEquipmentTrackingRow {
@@ -33,6 +45,7 @@ interface ErpEquipmentTrackingRow {
   model_number: string | null;
   status: string;
   modified: Date;
+  order_date: Date | null;
 }
 
 // Best-effort mapping from ERPNext's free-text Item Group onto our fixed
@@ -88,7 +101,7 @@ export class EquipmentTrackingSyncService {
     try {
       const watermark = await this.getWatermark();
       const rows = await this.erpDb.query<ErpEquipmentTrackingRow>(
-        `${EQUIPMENT_TRACKING_SELECT} WHERE modified >= ? ORDER BY modified ASC`,
+        `${EQUIPMENT_TRACKING_SELECT} WHERE et.modified >= ? ORDER BY et.modified ASC`,
         [watermark.toISOString().slice(0, 19).replace('T', ' ')],
       );
 
@@ -225,6 +238,8 @@ export class EquipmentTrackingSyncService {
         // direct source for (client-confirmed acceptable, 2026-07-30).
         installationDate: row.delivery_date ?? warrantyStart,
         deliveryDate: row.delivery_date,
+        salesOrderNo: row.sales_order,
+        orderDate: row.order_date,
         warrantyStartDate: warrantyStart,
         warrantyEndDate: warrantyEnd,
         warrantyPeriodMonths: warrantyMonths,
@@ -243,6 +258,8 @@ export class EquipmentTrackingSyncService {
         modelNumber: row.model_number,
         customerId: customer.id,
         deliveryDate: row.delivery_date,
+        salesOrderNo: row.sales_order,
+        orderDate: row.order_date,
         warrantyStartDate: warrantyStart,
         warrantyEndDate: warrantyEnd,
         warrantyPeriodMonths: warrantyMonths,
@@ -265,7 +282,7 @@ export class EquipmentTrackingSyncService {
 
   /** Admin-triggered manual resync of one customer's equipment (Customer Detail page, 2026-08-04) — bypasses the delta watermark for this one customer name. */
   async manualRetryForCustomer(customerName: string): Promise<void> {
-    const rows = await this.erpDb.query<ErpEquipmentTrackingRow>(`${EQUIPMENT_TRACKING_SELECT} WHERE customer = ?`, [customerName]);
+    const rows = await this.erpDb.query<ErpEquipmentTrackingRow>(`${EQUIPMENT_TRACKING_SELECT} WHERE et.customer = ?`, [customerName]);
     for (const row of rows) {
       await this.syncOne(row);
     }
@@ -286,7 +303,7 @@ export class EquipmentTrackingSyncService {
 
     const placeholders = skipped.map(() => '?').join(',');
     const rows = await this.erpDb.query<ErpEquipmentTrackingRow>(
-      `${EQUIPMENT_TRACKING_SELECT} WHERE serial_id IN (${placeholders})`,
+      `${EQUIPMENT_TRACKING_SELECT} WHERE et.serial_id IN (${placeholders})`,
       skipped.map((s) => s.erpSerialId),
     );
     for (const row of rows) {

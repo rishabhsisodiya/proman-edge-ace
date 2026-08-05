@@ -35,6 +35,19 @@ export class HolidayController {
     res.send(this.holidays.downloadTemplate());
   }
 
+  // Static routes — must stay above any future `:id`-style GET (none exists
+  // yet, kept here regardless per this codebase's established convention).
+  @Get('erp-fiscal-years')
+  fetchErpFiscalYears() {
+    return this.holidays.fetchErpFiscalYears();
+  }
+
+  @Post('erp-fetch')
+  fetchAndMergeErpHolidays(@Body('fiscalYear') fiscalYear: string) {
+    if (!fiscalYear) throw new BadRequestException('fiscalYear is required');
+    return this.holidays.fetchAndMergeErpHolidays(fiscalYear);
+  }
+
   @Post('upload')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
   upload(@UploadedFile() file: Express.Multer.File) {

@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
 import {
+  ErpPriceListOption,
   PriceList,
   createPriceList,
   deletePriceList,
+  fetchErpPriceListOptions,
   listPriceLists,
   updatePriceList,
 } from "@/lib/ticketing/price-lists";
@@ -23,6 +25,24 @@ export default function PriceListsPage() {
 
   const [newName, setNewName] = useState("");
   const [adding, setAdding] = useState(false);
+
+  // Live ERP fetch (client request, 2026-08-05) — Admin picks from the real
+  // ERPNext selling price lists instead of typing the exact name. Fetched
+  // fresh each time this page loads, not synced/cached locally.
+  const [erpOptions, setErpOptions] = useState<ErpPriceListOption[]>([]);
+  const [erpLoading, setErpLoading] = useState(true);
+  const [erpError, setErpError] = useState<string | null>(null);
+
+  function loadErpOptions() {
+    setErpLoading(true);
+    setErpError(null);
+    fetchErpPriceListOptions()
+      .then(setErpOptions)
+      .catch(() => setErpError("Could not fetch price lists from ERPNext."))
+      .finally(() => setErpLoading(false));
+  }
+
+  useEffect(loadErpOptions, []);
 
   function load() {
     setLoading(true);
@@ -107,13 +127,28 @@ export default function PriceListsPage() {
       <form onSubmit={onAdd} className="mb-6 flex flex-wrap items-end gap-2 rounded-lg border border-line bg-white p-4">
         <div>
           <label className="mb-1 block text-xs font-bold text-navy">Price List Name</label>
-          <input
-            type="text"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder="e.g. Test price"
-            className="h-9 w-56 rounded-md border border-line px-2 text-sm text-navy placeholder:text-text-disabled"
-          />
+          {erpLoading ? (
+            <p className="h-9 w-64 text-xs text-muted">Fetching from ERPNext…</p>
+          ) : erpOptions.length === 0 ? (
+            <p className="h-9 w-64 text-xs text-brand-red">
+              {erpError ?? "No selling price lists found in ERPNext."}
+            </p>
+          ) : (
+            <select
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              className="h-9 w-64 rounded-md border border-line px-2 text-sm text-navy"
+            >
+              <option value="">Select a price list…</option>
+              {erpOptions
+                .filter((o) => !priceLists.some((p) => p.name === o.name))
+                .map((o) => (
+                  <option key={o.name} value={o.name}>
+                    {o.name} ({o.currency})
+                  </option>
+                ))}
+            </select>
+          )}
         </div>
         <button
           type="submit"

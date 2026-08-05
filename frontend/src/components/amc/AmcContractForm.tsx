@@ -480,6 +480,13 @@ export default function AmcContractForm({ existing, prefillFrom, renewFromId, fi
                   onChange={() => toggleEquipment(eq.id)}
                 />
                 {eq.serialNo} — {eq.itemName}
+                {/* SO No/Date (client request, 2026-08-05) — read-only, sync-sourced only. */}
+                {(eq.salesOrderNo || eq.orderDate) && (
+                  <span className="text-xs text-muted">
+                    ({eq.salesOrderNo ?? "N/A"}
+                    {eq.orderDate ? ` · ${new Date(eq.orderDate).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}` : ""})
+                  </span>
+                )}
               </label>
             ))}
           </div>

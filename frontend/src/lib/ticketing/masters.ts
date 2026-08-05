@@ -17,6 +17,9 @@ export interface EquipmentListItem {
   status: string;
   warrantyStatus: string;
   warrantyEndDate: string;
+  // ERP Sales Order reference (client request, 2026-08-05) — read-only, sync-sourced only.
+  salesOrderNo?: string | null;
+  orderDate?: string | null;
 }
 
 export const listCustomers = (search?: string) =>
