@@ -168,7 +168,22 @@ export class ErpWritebackService {
    * api_call=1 is passed on the submit call so the PISPL
    * prevent_so_creation_for_acepl hook allows the one restricted customer.
    */
-  async salesOrderFromQuotation(erpnextQuotationName: string, deliveryDate?: string): Promise<string> {
+  /**
+   * po_no/po_date (client request, 2026-08-05 — chargeable Sales Orders need
+   * the real Customer PO; the non-chargeable warranty/AMC path already
+   * auto-generates a placeholder one via salesOrderDirect() above, no
+   * change needed there). po_date must already be ISO 'YYYY-MM-DD' —
+   * convert before calling.
+   *
+   * ⚠️ Duplicate-PO guard: the client `proman` app's `check_duplicate_so_creation`
+   * hook (before_insert, global) throws "Sales Order is already created for
+   * the same PO number {po_no}" if ANY Sales Order already has this po_no —
+   * only triggers now that we set it. Callers must catch this and treat it
+   * as idempotent (see QuotationService.createSalesOrder), not a hard
+   * failure — a reused PO or a double-click on "Create Sales Order" would
+   * otherwise surface a scary error for what's actually a no-op.
+   */
+  async salesOrderFromQuotation(erpnextQuotationName: string, deliveryDate?: string, poNo?: string, poDate?: string): Promise<string> {
     const dd = deliveryDate ?? new Date().toISOString().slice(0, 10);
     const so = await this.frappe.post<Record<string, any>>('erpnext.selling.doctype.quotation.quotation.make_sales_order', {
       source_name: erpnextQuotationName,
@@ -176,12 +191,50 @@ export class ErpWritebackService {
     so.delivery_date = dd;
     for (const it of so.items ?? []) it.delivery_date = dd;
     so.sales_team = [{ sales_person: this.salesPerson(), allocated_percentage: 100 }];
+    if (poNo) so.po_no = poNo;
+    if (poDate) so.po_date = poDate;
     this.logger.log(`Submitting Sales Order from Quotation ${erpnextQuotationName}`);
     const result = await this.frappe.post<{ name: string }>('frappe.client.submit', {
       doc: JSON.stringify(so),
       api_call: 1,
     });
     return result.name;
+  }
+
+  /**
+   * Duplicate-PO-guard recovery (see salesOrderFromQuotation above) — after
+   * catching the "already created for the same PO number" error, look up
+   * which Sales Order actually has this po_no so the quotation can still be
+   * linked to it (idempotent, per Shivam's spec — not just swallowing the
+   * error and leaving the quotation unlinked).
+   */
+  async findSalesOrderByPoNo(poNo: string): Promise<string | null> {
+    const rows = await this.frappe.getResource<{ name: string }[]>('Sales Order', {
+      filters: JSON.stringify([['po_no', '=', poNo]]),
+      fields: JSON.stringify(['name']),
+      limit_page_length: '1',
+    });
+    return rows[0]?.name ?? null;
+  }
+
+  /**
+   * Appends the Customer PO block to an already-created ERPNext Quotation's
+   * remarks (client request, 2026-08-05) — Quotation has no native po_no/
+   * po_date field, so this is the only place it's visible on that doc.
+   * Rebuilds remarks from scratch rather than a blind string-append, so the
+   * 'ACE Ticket: {id}' first line the submit webhook filters on is always
+   * present exactly once, never duplicated across repeated calls.
+   */
+  async updateQuotationRemarks(erpnextQuotationName: string, ticketId: string, poNo?: string, poDate?: string): Promise<void> {
+    const parts = [this.remarks(ticketId)];
+    if (poNo) parts.push(`Customer PO No: ${poNo}`);
+    if (poDate) parts.push(`PO Date: ${poDate}`);
+    await this.frappe.post('frappe.client.set_value', {
+      doctype: 'Quotation',
+      name: erpnextQuotationName,
+      fieldname: 'remarks',
+      value: parts.join('\n'),
+    });
   }
 
   /**

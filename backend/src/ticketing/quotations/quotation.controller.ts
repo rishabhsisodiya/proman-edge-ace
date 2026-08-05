@@ -152,11 +152,17 @@ export class QuotationController {
     return this.quotations.updateDelivery(id, dto);
   }
 
-  /** Manual button — replaces the removed 5-minute polling cron (2026-07-25). */
+  /**
+   * Manual button — replaces the removed 5-minute polling cron (2026-07-25).
+   * poNumber/poDate (2026-08-05) — the frontend prompts for these here if
+   * they weren't already captured via the Customer PO section; both are
+   * optional in the request since an already-saved PO doesn't need
+   * resupplying, but the service throws if neither is present at all.
+   */
   @Roles('CALL_CENTER', 'ASM', 'MANAGER', 'ENGINEER')
   @Post('quotations/:id/create-sales-order')
-  createSalesOrder(@Param('id') id: string) {
-    return this.quotations.createSalesOrder(id);
+  createSalesOrder(@Param('id') id: string, @Body('poNumber') poNumber?: string, @Body('poDate') poDate?: string) {
+    return this.quotations.createSalesOrder(id, poNumber, poDate);
   }
 
   /** Manual button — replaces the removed 5-minute polling cron (2026-07-25). */

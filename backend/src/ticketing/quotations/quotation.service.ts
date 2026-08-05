@@ -367,11 +367,20 @@ export class QuotationService {
     }
     if (quotation.erpnextSalesOrderId) return; // already handled — idempotency guard
 
-    const erpnextSalesOrderId = await this.erpWriteback.salesOrderFromQuotation(erpnextQuotationId);
-    await this.prisma.quotation.update({
-      where: { id: quotation.id },
-      data: { status: 'CONVERTED_TO_SALES_ORDER', erpnextSalesOrderId },
-    });
+    // Client request (2026-08-05) — a chargeable Sales Order needs the real
+    // Customer PO. This webhook fires automatically the moment the client
+    // submits the Quotation in ERPNext, which can happen before anyone's
+    // entered a PO in ACE at all — silently creating an SO without one here
+    // would bypass the "ask for PO" requirement entirely (the manual
+    // "Create Sales Order" button is the only place that prompts for it).
+    // So: skip for now if the PO isn't known yet; the manual button remains
+    // available (erpnextSalesOrderId is still null) once it's entered.
+    if (!quotation.customerPoNumber || !quotation.customerPoDate) {
+      this.logger.log(`Quotation ${erpnextQuotationId} submitted but no Customer PO on file yet — Sales Order creation deferred to the manual button`);
+      return;
+    }
+
+    await this.createSalesOrderForQuotation(quotation);
   }
 
   /**
@@ -405,21 +414,86 @@ export class QuotationService {
    * path above still handles the common case automatically and immediately.
    * Same idempotency guard as the webhook handler.
    */
-  async createSalesOrder(id: string) {
-    const quotation = await this.prisma.quotation.findUniqueOrThrow({ where: { id } });
+  async createSalesOrder(id: string, poNumber?: string, poDate?: string) {
+    let quotation = await this.prisma.quotation.findUniqueOrThrow({ where: { id } });
     if (!quotation.erpnextQuotationId) {
       throw new BadRequestException('This quotation has not been pushed to ERPNext yet');
     }
     if (quotation.erpnextSalesOrderId) {
       throw new BadRequestException('A Sales Order already exists for this quotation');
     }
-    const status = await this.erpWriteback.getDocStatus('Quotation', quotation.erpnextQuotationId);
+
+    // Client request (2026-08-05) — a chargeable Sales Order needs the real
+    // Customer PO. If it wasn't captured earlier via the Customer PO
+    // section, this call must supply it now (frontend prompts for it right
+    // here) rather than silently proceeding without one. Checked before the
+    // live ERPNext status call below — no reason to spend a round-trip
+    // confirming the Quotation's submitted when this would fail locally anyway.
+    if (poNumber || poDate) {
+      quotation = await this.prisma.quotation.update({
+        where: { id },
+        data: {
+          ...(poNumber ? { customerPoNumber: poNumber } : {}),
+          ...(poDate ? { customerPoDate: new Date(poDate) } : {}),
+        },
+      });
+    }
+    if (!quotation.customerPoNumber || !quotation.customerPoDate) {
+      throw new BadRequestException('Customer PO Number and PO Date are required before creating a Sales Order.');
+    }
+
+    const status = await this.erpWriteback.getDocStatus('Quotation', quotation.erpnextQuotationId!);
     if (status.docstatus !== 1) {
       throw new BadRequestException('Quotation is not yet submitted in ERPNext — ask the client to submit it there first');
     }
-    const erpnextSalesOrderId = await this.erpWriteback.salesOrderFromQuotation(quotation.erpnextQuotationId);
+
+    return this.createSalesOrderForQuotation(quotation);
+  }
+
+  /**
+   * Shared by createSalesOrder() (manual button) and handleQuotationSubmitted()
+   * (webhook) — both already confirmed the Customer PO is present before
+   * calling this. Converts po_date to ISO (the DB stores a real DateTime;
+   * the ERPNext call needs 'YYYY-MM-DD'), forwards po_no/po_date onto the
+   * Sales Order's native fields, and handles the client `proman` app's
+   * duplicate-PO-number guard idempotently — per Shivam's spec, a reused PO
+   * (or a double-fire of this same action) must NOT surface as a hard
+   * failure; instead look up whichever Sales Order actually has this po_no
+   * and link the quotation to it, exactly as if this call had created it.
+   */
+  private async createSalesOrderForQuotation(quotation: {
+    id: string;
+    ticketId: string;
+    erpnextQuotationId: string | null;
+    customerPoNumber: string | null;
+    customerPoDate: Date | null;
+  }) {
+    const poNo = quotation.customerPoNumber!;
+    const poDate = quotation.customerPoDate!.toISOString().slice(0, 10);
+
+    let erpnextSalesOrderId: string;
+    try {
+      erpnextSalesOrderId = await this.erpWriteback.salesOrderFromQuotation(quotation.erpnextQuotationId!, undefined, poNo, poDate);
+    } catch (err: any) {
+      const message = err?.message ?? String(err);
+      if (!message.includes('already created for the same PO number')) throw err;
+      this.logger.warn(`Sales Order already exists for PO ${poNo} — looking it up to link idempotently instead of failing`, message);
+      const existing = await this.erpWriteback.findSalesOrderByPoNo(poNo);
+      if (!existing) throw err; // genuinely can't resolve it — surface the original error
+      erpnextSalesOrderId = existing;
+    }
+
+    // Best-effort — Quotation has no native po_no/po_date field, this is the
+    // only place it's visible on that ERPNext doc. Never blocks the Sales
+    // Order creation above, which is the load-bearing part.
+    try {
+      await this.erpWriteback.updateQuotationRemarks(quotation.erpnextQuotationId!, quotation.ticketId, poNo, poDate);
+    } catch (err: any) {
+      this.logger.warn(`Could not update Quotation ${quotation.erpnextQuotationId} remarks with Customer PO`, err?.message ?? err);
+    }
+
     return this.prisma.quotation.update({
-      where: { id },
+      where: { id: quotation.id },
       data: { status: 'CONVERTED_TO_SALES_ORDER', erpnextSalesOrderId },
     });
   }

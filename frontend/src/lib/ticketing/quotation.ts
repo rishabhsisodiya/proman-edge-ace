@@ -174,8 +174,13 @@ export const removeQuotationItem = (id: string, itemId: string) =>
 /** Creates the DRAFT Quotation in ERPNext — negotiation happens there from this point on, not in ACE. */
 export const pushQuotationToErpNext = (id: string) => post<Quotation>(`/quotations/${id}/push-to-erpnext`);
 
-/** Manual buttons replacing the removed 5-minute polling cron (2026-07-25) — live ERPNext status check on click. */
-export const createSalesOrderFromQuotation = (id: string) => post<Quotation>(`/quotations/${id}/create-sales-order`);
+/**
+ * Manual buttons replacing the removed 5-minute polling cron (2026-07-25) — live ERPNext status check on click.
+ * poNumber/poDate (2026-08-05) — only needed if the Customer PO wasn't already captured via the Customer PO
+ * section; the caller prompts for them inline in that case and passes them through here.
+ */
+export const createSalesOrderFromQuotation = (id: string, poNumber?: string, poDate?: string) =>
+  post<Quotation>(`/quotations/${id}/create-sales-order`, poNumber || poDate ? { poNumber, poDate } : undefined);
 export const createInvoiceFromQuotation = (id: string) => post<Quotation>(`/quotations/${id}/create-invoice`);
 export const checkDeliveryNoteForQuotation = (id: string) => post<Quotation>(`/quotations/${id}/check-delivery-note`);
 

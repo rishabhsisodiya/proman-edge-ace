@@ -44,6 +44,13 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [resultModal, setResultModal] = useState<{ title: string; message: string; success: boolean } | null>(null);
+  // Client request (2026-08-05) — chargeable Sales Orders need the real
+  // Customer PO. If it wasn't already captured via the Customer PO section
+  // above, "Create Sales Order" prompts for it right here instead of
+  // silently proceeding without one (the backend rejects it either way —
+  // this just avoids a round-trip failure for the common case).
+  const [poPromptNumber, setPoPromptNumber] = useState("");
+  const [poPromptDate, setPoPromptDate] = useState("");
 
   function extractErrorMessage(err: unknown): string {
     if (err instanceof ApiError) {
@@ -196,9 +203,22 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
             {!quotation.erpnextSalesOrderId && (
               <button
                 onClick={async () => {
+                  const needsPoPrompt = !quotation.customerPoNumber || !quotation.customerPoDate;
+                  if (needsPoPrompt && (!poPromptNumber.trim() || !poPromptDate)) {
+                    setResultModal({
+                      title: "Customer PO required",
+                      message: "Enter the Customer PO Number and PO Date below before creating the Sales Order.",
+                      success: false,
+                    });
+                    return;
+                  }
                   setBusy(true);
                   try {
-                    await createSalesOrderFromQuotation(quotation.id);
+                    await createSalesOrderFromQuotation(
+                      quotation.id,
+                      needsPoPrompt ? poPromptNumber.trim() : undefined,
+                      needsPoPrompt ? poPromptDate : undefined,
+                    );
                     load();
                     setResultModal({ title: "Sales Order created", message: "Submitted in ERPNext.", success: true });
                   } catch (err) {
@@ -214,6 +234,31 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
               </button>
             )}
           </div>
+          {!quotation.erpnextSalesOrderId && (!quotation.customerPoNumber || !quotation.customerPoDate) && (
+            <div className="flex flex-wrap items-end gap-2 rounded-md border border-brand-amber bg-brand-amber-bg p-3">
+              <p className="w-full text-xs font-bold text-brand-amber">
+                Customer PO required before creating the Sales Order:
+              </p>
+              <div>
+                <label className="mb-1 block text-[10px] font-bold text-navy">PO Number</label>
+                <input
+                  type="text"
+                  value={poPromptNumber}
+                  onChange={(e) => setPoPromptNumber(e.target.value)}
+                  className="h-8 w-40 rounded-md border border-line px-2 text-xs text-navy"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[10px] font-bold text-navy">PO Date</label>
+                <input
+                  type="date"
+                  value={poPromptDate}
+                  onChange={(e) => setPoPromptDate(e.target.value)}
+                  className="h-8 rounded-md border border-line px-2 text-xs text-navy"
+                />
+              </div>
+            </div>
+          )}
           <div className="flex items-center justify-between">
             <StatusRow className="flex-1" label="Delivery Note" value={quotation.erpnextDeliveryNoteId} pending="Awaiting manual Delivery Note in ERPNext" />
             {quotation.erpnextSalesOrderId && !quotation.erpnextDeliveryNoteId && (
