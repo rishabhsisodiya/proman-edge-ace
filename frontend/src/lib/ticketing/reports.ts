@@ -20,9 +20,12 @@ export interface ReportListItem {
   pdfSupported: boolean;
 }
 
+export type ReportLinkType = "ticket" | "customer" | "equipment" | "amc" | "item";
+
 export interface ReportColumn {
   key: string;
   label: string;
+  link?: ReportLinkType;
 }
 
 export interface ReportResult {

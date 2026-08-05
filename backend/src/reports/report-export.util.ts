@@ -3,9 +3,18 @@
 import * as XLSX from 'xlsx';
 import * as PDFDocument from 'pdfkit';
 
+// `link`/`linkId` (2026-08-05, client request — "every ID in a report
+// should be clickable") — when set, the frontend renders this column's
+// cells as a link to that entity's detail page, reading the actual target
+// id from `row[\`${key}__linkId\`]` (a hidden field alongside the display
+// value, since most display values here are ticketNo/serialNo/contractRef,
+// not the DB id the detail route actually needs).
+export type ReportLinkType = 'ticket' | 'customer' | 'equipment' | 'amc' | 'item';
+
 export interface ReportColumn {
   key: string;
   label: string;
+  link?: ReportLinkType;
 }
 
 /** Shared Excel export — every report uses the same {columns, rows} shape. */
@@ -48,15 +57,27 @@ export function toPdfBuffer(title: string, columns: ReportColumn[], rows: Record
   doc.font('Helvetica');
 
   for (const row of rows) {
-    if (y > doc.page.height - 40) {
+    // Bug fix (2026-08-05, client-reported — long Subject/Customer/Equipment
+    // text made rows overlap into unreadable garbage) — row height was a
+    // fixed 14pt regardless of how many lines a cell actually wrapped to.
+    // PDFKit wraps long text within the given `width` automatically but
+    // never reports that back on its own, so the fixed advance ran the next
+    // row straight through the current one's still-unfinished lines.
+    // Measure each cell's real wrapped height first, advance by the tallest.
+    const cellTexts = columns.map((col) => {
+      const value = row[col.key];
+      return value == null ? '' : String(value);
+    });
+    const rowHeight = Math.max(14, ...cellTexts.map((text) => doc.heightOfString(text, { width: colWidth - 4 })));
+
+    if (y + rowHeight > doc.page.height - 40) {
       doc.addPage({ size: 'A4', layout: columns.length > 6 ? 'landscape' : 'portrait', margin: 30 });
       y = 30;
     }
-    columns.forEach((col, i) => {
-      const value = row[col.key];
-      doc.text(value == null ? '' : String(value), 30 + i * colWidth, y, { width: colWidth - 4 });
+    columns.forEach((_col, i) => {
+      doc.text(cellTexts[i], 30 + i * colWidth, y, { width: colWidth - 4 });
     });
-    y += 14;
+    y += rowHeight + 4;
   }
 
   doc.end();

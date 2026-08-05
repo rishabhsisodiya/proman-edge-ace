@@ -99,9 +99,12 @@ export class ReportsService {
     const now = Date.now();
     const rows = tickets.map((t) => ({
       ticket_id: t.ticketNo,
+      ticket_id__linkId: t.id,
       subject: t.subject,
       customer: t.customer.customerName,
+      customer__linkId: t.customer.id,
       equipment_model: t.equipment?.itemName ?? 'N/A',
+      equipment_model__linkId: t.equipment?.id,
       service_type: t.serviceType ?? 'Not yet determined',
       priority: t.priority,
       status: t.status,
@@ -112,10 +115,10 @@ export class ReportsService {
     }));
     return {
       columns: [
-        { key: 'ticket_id', label: 'Ticket ID' },
+        { key: 'ticket_id', label: 'Ticket ID', link: 'ticket' },
         { key: 'subject', label: 'Subject' },
-        { key: 'customer', label: 'Customer' },
-        { key: 'equipment_model', label: 'Equipment' },
+        { key: 'customer', label: 'Customer', link: 'customer' },
+        { key: 'equipment_model', label: 'Equipment', link: 'equipment' },
         { key: 'service_type', label: 'Service Type' },
         { key: 'priority', label: 'Priority' },
         { key: 'status', label: 'Status' },
@@ -292,8 +295,10 @@ export class ReportsService {
       return {
         month: monthKey(q.quotationDate),
         customer: q.customer.customerName,
+        customer__linkId: q.customer.id,
         service_type: q.ticket.serviceType ?? 'N/A',
         ticket_id: q.ticket.ticketNo,
+        ticket_id__linkId: q.ticket.id,
         invoice_value_parts: partsValue.toFixed(2),
         invoice_value_labour: labourValue.toFixed(2),
         total: total.toFixed(2),
@@ -303,9 +308,9 @@ export class ReportsService {
     return {
       columns: [
         { key: 'month', label: 'Month' },
-        { key: 'customer', label: 'Customer' },
+        { key: 'customer', label: 'Customer', link: 'customer' },
         { key: 'service_type', label: 'Service Type' },
-        { key: 'ticket_id', label: 'Ticket ID' },
+        { key: 'ticket_id', label: 'Ticket ID', link: 'ticket' },
         { key: 'invoice_value_parts', label: 'Parts Value (quoted)' },
         { key: 'invoice_value_labour', label: 'Labour Value (quoted)' },
         { key: 'total', label: 'Total (real ERPNext invoice if available, else quoted)' },
@@ -390,8 +395,10 @@ export class ReportsService {
         const lastBreakdown = eq.tickets.reduce((latest, t) => (t.createdAt > latest ? t.createdAt : latest), eq.tickets[0].createdAt);
         return {
           serial_no: eq.serialNo,
+          serial_no__linkId: eq.id,
           equipment_model: eq.itemName,
           customer: eq.customer.customerName,
+          customer__linkId: eq.customer.id,
           site: eq.site?.siteName ?? 'N/A',
           breakdown_count: eq.tickets.length,
           last_breakdown_date: lastBreakdown.toISOString().slice(0, 10),
@@ -401,9 +408,9 @@ export class ReportsService {
       .sort((a, b) => b.breakdown_count - a.breakdown_count);
     return {
       columns: [
-        { key: 'serial_no', label: 'Serial No.' },
+        { key: 'serial_no', label: 'Serial No.', link: 'equipment' },
         { key: 'equipment_model', label: 'Equipment' },
-        { key: 'customer', label: 'Customer' },
+        { key: 'customer', label: 'Customer', link: 'customer' },
         { key: 'site', label: 'Site' },
         { key: 'breakdown_count', label: 'Breakdowns (6mo)' },
         { key: 'last_breakdown_date', label: 'Last Breakdown' },
@@ -433,6 +440,7 @@ export class ReportsService {
         const reorder = minStock != null && currentStock < minStock;
         return {
           item_code: item.itemCode,
+          item_code__linkId: item.itemCode,
           item_name: item.itemName,
           qty_consumed_3m: qtyConsumed,
           current_stock: currentStock,
@@ -444,7 +452,7 @@ export class ReportsService {
       .filter((r) => r.qty_consumed_3m > 0 || r.reorder_flag === 'Yes');
     return {
       columns: [
-        { key: 'item_code', label: 'Item Code' },
+        { key: 'item_code', label: 'Item Code', link: 'item' },
         { key: 'item_name', label: 'Item Name' },
         { key: 'qty_consumed_3m', label: 'Qty Consumed (3mo)' },
         { key: 'current_stock', label: 'Current Stock' },
@@ -469,7 +477,9 @@ export class ReportsService {
     });
     const rows = contracts.map((c) => ({
       contract_id: c.contractReferenceNo,
+      contract_id__linkId: c.id,
       customer: c.customer.customerName,
+      customer__linkId: c.customer.id,
       equipment_count: c.coveredEquipment.length,
       start_date: c.startDate.toISOString().slice(0, 10),
       end_date: c.endDate.toISOString().slice(0, 10),
@@ -480,8 +490,8 @@ export class ReportsService {
     }));
     return {
       columns: [
-        { key: 'contract_id', label: 'Contract ID' },
-        { key: 'customer', label: 'Customer' },
+        { key: 'contract_id', label: 'Contract ID', link: 'amc' },
+        { key: 'customer', label: 'Customer', link: 'customer' },
         { key: 'equipment_count', label: 'Equipment Count' },
         { key: 'start_date', label: 'Start Date' },
         { key: 'end_date', label: 'End Date' },
@@ -513,21 +523,24 @@ export class ReportsService {
       alert_date: t.createdAt.toISOString().slice(0, 10),
       rule_type: ruleType(t.description),
       equipment_serial: t.equipment?.serialNo ?? 'N/A',
+      equipment_serial__linkId: t.equipment?.id,
       customer: t.customer.customerName,
+      customer__linkId: t.customer.id,
       alert_description: t.description,
       ticket_created: 'Y',
       ticket_id: t.ticketNo,
+      ticket_id__linkId: t.id,
     }));
     if (f.ruleType) rows = rows.filter((r) => r.rule_type === f.ruleType);
     return {
       columns: [
         { key: 'alert_date', label: 'Alert Date' },
         { key: 'rule_type', label: 'Rule Type' },
-        { key: 'equipment_serial', label: 'Equipment Serial' },
-        { key: 'customer', label: 'Customer' },
+        { key: 'equipment_serial', label: 'Equipment Serial', link: 'equipment' },
+        { key: 'customer', label: 'Customer', link: 'customer' },
         { key: 'alert_description', label: 'Description' },
         { key: 'ticket_created', label: 'Ticket Created?' },
-        { key: 'ticket_id', label: 'Ticket ID' },
+        { key: 'ticket_id', label: 'Ticket ID', link: 'ticket' },
       ],
       rows,
     };
@@ -598,7 +611,9 @@ export class ReportsService {
     const contracts = await this.prisma.amcContract.findMany({ where, include: { customer: true, owningAsm: true } });
     let rows = contracts.map((c) => ({
       contract_id: c.contractReferenceNo,
+      contract_id__linkId: c.id,
       customer: c.customer.customerName,
+      customer__linkId: c.customer.id,
       end_date: c.endDate.toISOString().slice(0, 10),
       days_remaining: Math.ceil((c.endDate.getTime() - Date.now()) / 86400000),
       renewal_status: c.renewalStatus,
@@ -607,8 +622,8 @@ export class ReportsService {
     if (f.month) rows = rows.filter((r) => r.end_date.startsWith(f.month!));
     return {
       columns: [
-        { key: 'contract_id', label: 'Contract ID' },
-        { key: 'customer', label: 'Customer' },
+        { key: 'contract_id', label: 'Contract ID', link: 'amc' },
+        { key: 'customer', label: 'Customer', link: 'customer' },
         { key: 'end_date', label: 'Expiry Date' },
         { key: 'days_remaining', label: 'Days Remaining' },
         { key: 'renewal_status', label: 'Renewal Status' },
@@ -645,9 +660,12 @@ export class ReportsService {
       const partsCost = t.visits.flatMap((v) => v.parts).reduce((s, p) => s + Number(p.qty) * Number(p.sellingRate), 0);
       return {
         ticket_id: t.ticketNo,
+        ticket_id__linkId: t.id,
         subject: t.subject,
         customer: t.customer.customerName,
+        customer__linkId: t.customer.id,
         equipment_model: t.equipment?.itemName ?? 'N/A',
+        equipment_model__linkId: t.equipment?.id,
         classification: t.customerCategory ?? 'N/A',
         closed_at: t.closedAt?.toISOString().slice(0, 10) ?? 'N/A',
         parts_cost: partsCost.toFixed(2),
@@ -657,10 +675,10 @@ export class ReportsService {
     });
     return {
       columns: [
-        { key: 'ticket_id', label: 'Ticket ID' },
+        { key: 'ticket_id', label: 'Ticket ID', link: 'ticket' },
         { key: 'subject', label: 'Subject' },
-        { key: 'customer', label: 'Customer' },
-        { key: 'equipment_model', label: 'Equipment' },
+        { key: 'customer', label: 'Customer', link: 'customer' },
+        { key: 'equipment_model', label: 'Equipment', link: 'equipment' },
         { key: 'classification', label: 'Classification' },
         { key: 'closed_at', label: 'Closed Date' },
         { key: 'parts_cost', label: 'Parts Cost (Internal, ₹)' },
