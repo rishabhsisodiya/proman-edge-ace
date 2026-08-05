@@ -120,13 +120,26 @@ export class EquipmentTrackingSyncService {
     this.logger.log(`Equipment Tracking sync complete — ok: ${recordsOk}, failed: ${recordsFailed}`);
   }
 
-  /** Modified-since watermark — last successful/partial run's start time, or epoch for a first run. */
+  // Safety-margin re-check window (2026-08-05) — a real record was found
+  // missing in production despite falling inside what should have been a
+  // covered delta window; root cause wasn't conclusively provable after the
+  // fact (no reliable server-side trace of that specific run), but a
+  // no-buffer watermark is a structurally real gap regardless: back-to-back
+  // or unevenly-timed runs can leave a ERPNext-modified-timestamp sliver
+  // that no run's `modified >= watermark` window ever covers. Re-checking
+  // the last N minutes on every run closes that gap — safe because
+  // syncOne() is an upsert, so re-processing an already-synced row is a
+  // harmless no-op, not a duplicate.
+  private static readonly WATERMARK_LOOKBACK_MINUTES = 30;
+
+  /** Modified-since watermark — last successful/partial run's start time minus a lookback buffer, or epoch for a first run. */
   private async getWatermark(): Promise<Date> {
     const lastRun = await this.prisma.syncLog.findFirst({
       where: { entity: 'EquipmentTracking', status: { in: ['SUCCESS', 'PARTIAL'] } },
       orderBy: { startedAt: 'desc' },
     });
-    return lastRun?.startedAt ?? new Date(0);
+    if (!lastRun) return new Date(0);
+    return new Date(lastRun.startedAt.getTime() - EquipmentTrackingSyncService.WATERMARK_LOOKBACK_MINUTES * 60 * 1000);
   }
 
   private async syncOne(row: ErpEquipmentTrackingRow): Promise<boolean> {

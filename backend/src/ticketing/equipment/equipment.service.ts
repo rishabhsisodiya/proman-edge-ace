@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma, WarrantyStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateEquipmentDto, UpdateEquipmentDto } from './dto/equipment.dto';
+import { RequestUser } from '../tickets/tickets.service';
 
 export const EXPIRING_SOON_DAYS = 45;
 
@@ -148,8 +149,17 @@ export class EquipmentService {
    * one — safe because a newly-synced row can't have accumulated any
    * Ticket/AmcContract references yet. "Dismiss" just clears the flag,
    * confirming they're genuinely different physical units.
+   *
+   * AuditLog entries added 2026-08-05 — this action previously left zero
+   * trace, which turned "why did serial no. X disappear?" into an
+   * unanswerable question the one time it actually came up. MERGE deletes
+   * the `id` row entirely, so its AuditLog entry (entityId = the deleted
+   * id, entityId has no FK constraint back to Equipment) becomes the only
+   * surviving record that it ever existed — logged inside the same
+   * transaction as the update+delete so it can't end up missing if the
+   * write half succeeds and the log half doesn't, or vice versa.
    */
-  async resolveDuplicate(id: string, action: 'MERGE' | 'DISMISS') {
+  async resolveDuplicate(id: string, action: 'MERGE' | 'DISMISS', actor: RequestUser) {
     const equipment = await this.prisma.equipment.findUniqueOrThrow({
       where: { id },
       include: { possibleDuplicateOf: true },
@@ -178,10 +188,46 @@ export class EquipmentService {
           },
         }),
         this.prisma.equipment.delete({ where: { id } }),
+        this.prisma.auditLog.create({
+          data: {
+            entityType: 'EQUIPMENT',
+            entityId: id,
+            fieldName: 'duplicateResolution',
+            oldValue: equipment.serialNo,
+            newValue: `MERGED into ${original.serialNo} (id ${original.id}) — this record deleted`,
+            changedByUserId: actor.userId,
+            changeSource: 'WEB_UI',
+          },
+        }),
+        this.prisma.auditLog.create({
+          data: {
+            entityType: 'EQUIPMENT',
+            entityId: original.id,
+            fieldName: 'duplicateResolution',
+            oldValue: null,
+            newValue: `Received merge from ${equipment.serialNo} (deleted)`,
+            changedByUserId: actor.userId,
+            changeSource: 'WEB_UI',
+          },
+        }),
       ]);
       return this.prisma.equipment.findUniqueOrThrow({ where: { id: original.id } });
     }
 
-    return this.prisma.equipment.update({ where: { id }, data: { duplicateFlagResolved: true } });
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.equipment.update({ where: { id }, data: { duplicateFlagResolved: true } });
+      await tx.auditLog.create({
+        data: {
+          entityType: 'EQUIPMENT',
+          entityId: id,
+          fieldName: 'duplicateResolution',
+          oldValue: null,
+          newValue: `Dismissed — confirmed not a duplicate of ${equipment.possibleDuplicateOf!.serialNo}`,
+          changedByUserId: actor.userId,
+          changeSource: 'WEB_UI',
+        },
+      });
+      return updated;
+    });
   }
 }

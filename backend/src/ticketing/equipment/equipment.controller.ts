@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { RolesGuard } from '../../auth/roles.guard';
 import { Roles } from '../../auth/roles.decorator';
@@ -37,7 +37,7 @@ export class EquipmentController {
   @UseGuards(RolesGuard)
   @Roles('ADMIN', 'MANAGER')
   @Post(':id/resolve-duplicate')
-  resolveDuplicate(@Param('id') id: string, @Body('action') action: 'MERGE' | 'DISMISS') {
-    return this.equipment.resolveDuplicate(id, action);
+  resolveDuplicate(@Param('id') id: string, @Body('action') action: 'MERGE' | 'DISMISS', @Req() req: any) {
+    return this.equipment.resolveDuplicate(id, action, { userId: req.user.userId, role: req.user.role });
   }
 }
