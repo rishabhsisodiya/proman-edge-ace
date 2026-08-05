@@ -173,6 +173,9 @@ export default function NewTicketPage() {
 
   return (
     <div className="w-full px-6 py-8">
+      <a href="/dashboard/service" className="mb-4 inline-block text-xs font-medium text-muted hover:text-navy">
+        ← Tickets
+      </a>
       <h1 className="mb-1 text-xl font-bold text-navy">Ticket Form</h1>
       <p className="mb-6 text-sm text-muted">Manual ticket creation.</p>
 

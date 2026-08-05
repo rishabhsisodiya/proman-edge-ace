@@ -268,9 +268,9 @@ export default function TicketsListPage() {
         </button>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-line bg-white shadow-[0_1px_4px_rgba(42,47,105,.06)]">
+      <div className="max-h-[70vh] overflow-auto rounded-lg border border-line bg-white shadow-[0_1px_4px_rgba(42,47,105,.06)]">
         <table className="w-full text-sm">
-          <thead>
+          <thead className="sticky top-0 z-10">
             <tr className="h-10 bg-navy text-left text-[10px] uppercase tracking-wider text-white">
               <SortableTh label="Ticket" sortKey="ticketNo" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
               <SortableTh label="Customer / Site" sortKey="customerName" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />

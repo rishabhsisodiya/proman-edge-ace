@@ -18,6 +18,7 @@ import {
   retryDirectSalesOrderErpSync,
 } from "@/lib/ticketing/quotation";
 import { AuthUser, getCurrentUser } from "@/lib/auth";
+import { listSkillTags, SkillTagRow } from "@/lib/ticketing/skill-tags";
 import {
   CUSTOMER_CATEGORY_LABEL,
   SOURCE_LABEL,
@@ -167,6 +168,9 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-6 py-8">
+      <a href="/dashboard/service" className="inline-block text-xs font-medium text-muted hover:text-navy">
+        ← Tickets
+      </a>
       <div className="relative flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="absolute right-0 top-0 sm:hidden">
           <DotMenu items={menuItems} />
@@ -786,13 +790,21 @@ function AssignEngineerCard({
 }) {
   const [engineerId, setEngineerId] = useState("");
   const [candidates, setCandidates] = useState<EngineerCandidate[]>([]);
+  const [skillTags, setSkillTags] = useState<SkillTagRow[]>([]);
+  const [skillFilter, setSkillFilter] = useState("");
+
+  useEffect(() => {
+    listSkillTags().then(setSkillTags).catch(() => setSkillTags([]));
+  }, []);
 
   useEffect(() => {
     if ((role === "ASM" || role === "MANAGER") && (ticket.status === "OPEN" || ticket.status === "ASSIGNED")) {
-      engineerCandidates(ticket.customer.region ?? undefined).then(setCandidates).catch(() => setCandidates([]));
+      engineerCandidates(ticket.customer.region ?? undefined, skillFilter || undefined)
+        .then(setCandidates)
+        .catch(() => setCandidates([]));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [role, ticket.status, ticket.customer.region]);
+  }, [role, ticket.status, ticket.customer.region, skillFilter]);
 
   if (ticket.assignedEngineer) {
     return <p className="text-navy">{ticket.assignedEngineer.fullName}</p>;
@@ -804,6 +816,24 @@ function AssignEngineerCard({
 
   return (
     <div className="space-y-2">
+      {/* Client feedback (2026-08-05) — Skill Tags existed on engineer
+          profiles but were never usable when picking one for a ticket.
+          This filters the candidate list itself (server-side, via
+          EngineerCandidate.skillMatch) rather than just decorating it. */}
+      {skillTags.length > 0 && (
+        <select
+          value={skillFilter}
+          onChange={(e) => setSkillFilter(e.target.value)}
+          className="w-full rounded-md border border-line px-3 py-2 text-xs text-navy"
+        >
+          <option value="">Filter by skill (optional)</option>
+          {skillTags.map((t) => (
+            <option key={t.id} value={t.label}>
+              {t.label}
+            </option>
+          ))}
+        </select>
+      )}
       <select
         value={engineerId}
         onChange={(e) => setEngineerId(e.target.value)}
@@ -813,6 +843,7 @@ function AssignEngineerCard({
         {candidates.map((c) => (
           <option key={c.id} value={c.id}>
             {c.fullName} — {c.openLoad} open{c.territoryMatch ? " · territory match" : ""}
+            {c.skillTags.length > 0 ? ` · skills: ${c.skillTags.join(", ")}` : ""}
           </option>
         ))}
       </select>
@@ -1469,16 +1500,22 @@ function TicketActions({
   const [rejectResolutionReason, setRejectResolutionReason] = useState("");
   const [rejectResolutionEngineerId, setRejectResolutionEngineerId] = useState("");
   const [rejectCandidates, setRejectCandidates] = useState<EngineerCandidate[]>([]);
+  const [rejectSkillTags, setRejectSkillTags] = useState<SkillTagRow[]>([]);
+  const [rejectSkillFilter, setRejectSkillFilter] = useState("");
+
+  useEffect(() => {
+    listSkillTags().then(setRejectSkillTags).catch(() => setRejectSkillTags([]));
+  }, []);
 
   useEffect(() => {
     if ((role === "ASM" || role === "MANAGER") && ticket.status === "ENGINEER_RESOLVED") {
-      engineerCandidates(ticket.customer.region ?? undefined)
+      engineerCandidates(ticket.customer.region ?? undefined, rejectSkillFilter || undefined)
         .then(setRejectCandidates)
         .catch(() => setRejectCandidates([]));
       setRejectResolutionEngineerId(ticket.assignedEngineer?.id ?? "");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [role, ticket.status, ticket.customer.region, ticket.assignedEngineer?.id]);
+  }, [role, ticket.status, ticket.customer.region, ticket.assignedEngineer?.id, rejectSkillFilter]);
 
   const buttons: React.ReactNode[] = [];
 
@@ -1520,6 +1557,20 @@ function TicketActions({
             placeholder="Reason for rejection (required)"
             className="h-16 w-full rounded-md border border-line p-2 text-sm text-navy"
           />
+          {rejectSkillTags.length > 0 && (
+            <select
+              value={rejectSkillFilter}
+              onChange={(e) => setRejectSkillFilter(e.target.value)}
+              className="w-full rounded-md border border-line px-3 py-2 text-xs text-navy"
+            >
+              <option value="">Filter by skill (optional)</option>
+              {rejectSkillTags.map((t) => (
+                <option key={t.id} value={t.label}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          )}
           <select
             value={rejectResolutionEngineerId}
             onChange={(e) => setRejectResolutionEngineerId(e.target.value)}
@@ -1534,6 +1585,7 @@ function TicketActions({
               .map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.fullName} — {c.openLoad} open{c.territoryMatch ? " · territory match" : ""}
+                  {c.skillTags.length > 0 ? ` · skills: ${c.skillTags.join(", ")}` : ""}
                 </option>
               ))}
           </select>

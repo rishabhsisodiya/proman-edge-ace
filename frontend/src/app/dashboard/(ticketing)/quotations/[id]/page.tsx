@@ -90,6 +90,9 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-6 py-8">
+      <a href={`/dashboard/tickets/${quotation.ticketId}`} className="inline-block text-xs font-medium text-muted hover:text-navy">
+        ← Back to Ticket
+      </a>
       <div className="flex items-start justify-between">
         <div>
           <p className="font-mono text-xs text-muted">{quotation.quotationNo}</p>

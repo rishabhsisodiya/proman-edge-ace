@@ -165,6 +165,9 @@ export default function FsvDetailPage({ params }: { params: Promise<{ id: string
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 px-6 py-8">
+      <a href={`/dashboard/tickets/${fsv.ticketId}`} className="inline-block text-xs font-medium text-muted hover:text-navy">
+        ← Back to Ticket
+      </a>
       {!online && (
         <div className="rounded-md bg-brand-amber-bg px-3 py-2 text-xs font-bold text-brand-amber">
           You&apos;re offline — photos, signature, parts, and submit will be queued locally and synced automatically once you&apos;re back online.

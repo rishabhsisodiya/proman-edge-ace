@@ -49,6 +49,9 @@ export default function BulkImportPage() {
 
   return (
     <div className="w-full space-y-6 px-6 py-10">
+      <a href="/dashboard/admin" className="inline-block text-xs font-medium text-muted hover:text-navy">
+        ← Admin Console
+      </a>
       <div>
         <h1 className="text-xl font-bold text-navy">Bulk Ticket Import</h1>
         <p className="mt-1 text-sm text-muted">

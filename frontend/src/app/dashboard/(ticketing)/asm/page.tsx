@@ -332,9 +332,9 @@ function TicketTable({
   onSort: (key: string) => void;
 }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-line bg-white">
+    <div className="max-h-[70vh] overflow-auto rounded-lg border border-line bg-white">
       <table className="w-full text-sm">
-        <thead>
+        <thead className="sticky top-0 z-10">
           <tr className="h-10 bg-navy text-left text-[10px] uppercase tracking-wider text-white">
             <SortableTh label="Ticket" sortKey="ticketNo" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />
             <SortableTh label="Customer" sortKey="customerName" currentSort={sortBy} currentDir={sortDir} onSort={onSort} />

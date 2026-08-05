@@ -100,8 +100,13 @@ export const assignTicket = (id: string, engineerId: string) =>
 
 export const retryAutoRouting = (id: string) => post<Ticket>(`/tickets/${id}/retry-routing`);
 
-export const engineerCandidates = (region?: string) =>
-  apiFetch<EngineerCandidate[]>(`/users/engineer-candidates${region ? `?region=${region}` : ""}`);
+export const engineerCandidates = (region?: string, skillTag?: string) => {
+  const params = new URLSearchParams();
+  if (region) params.set("region", region);
+  if (skillTag) params.set("skillTag", skillTag);
+  const qs = params.toString();
+  return apiFetch<EngineerCandidate[]>(`/users/engineer-candidates${qs ? `?${qs}` : ""}`);
+};
 
 export interface TicketAuditEntry {
   id: string;
