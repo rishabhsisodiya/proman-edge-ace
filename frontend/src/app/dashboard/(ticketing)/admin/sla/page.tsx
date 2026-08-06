@@ -46,8 +46,13 @@ const STATUSES: TicketStatus[] = Object.keys(STATUS_LABEL) as TicketStatus[];
 // dashboard-only roles (Sales Head, Manufacturing Head, etc.), which have
 // nothing to do with ticket SLAs. Matches backend SlaNotificationRuleService.
 const NOTIFICATION_ROLES: Role[] = ["CALL_CENTER", "ASM", "ENGINEER", "MANAGER", "ADMIN", "CS_SUPPORT", "MD"];
-const BREACH_TYPES: SlaBreachType[] = ["RESPONSE", "RESOLUTION"];
-const BREACH_TYPE_LABEL: Record<SlaBreachType, string> = { RESPONSE: "Response Breach", RESOLUTION: "Resolution Breach" };
+const BREACH_TYPES: SlaBreachType[] = ["RESPONSE", "RESOLUTION", "LEVEL2", "LEVEL3"];
+const BREACH_TYPE_LABEL: Record<SlaBreachType, string> = {
+  RESPONSE: "Response Breach",
+  RESOLUTION: "Resolution Breach",
+  LEVEL2: "Escalation Level 2",
+  LEVEL3: "Escalation Level 3",
+};
 
 // Merged (2026-07-30, client request — "all related to SLA only") — was 3
 // separate Admin Console entries (SLA Policies, SLA Pause States, Holidays),
@@ -113,7 +118,9 @@ function PoliciesTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
-  const [drafts, setDrafts] = useState<Record<string, { responseHours: string; resolutionHours: string }>>({});
+  const [drafts, setDrafts] = useState<
+    Record<string, { responseHours: string; resolutionHours: string; level2DelayHours: string; level3DelayHours: string }>
+  >({});
   const [openServiceType, setOpenServiceType] = useState<ServiceType | null>(null);
 
   function load() {
@@ -122,11 +129,13 @@ function PoliciesTab() {
     listSlaPolicies()
       .then((data) => {
         setPolicies(data);
-        const d: Record<string, { responseHours: string; resolutionHours: string }> = {};
+        const d: typeof drafts = {};
         for (const p of data)
           d[key(p.serviceType, p.priority)] = {
             responseHours: p.responseHours != null ? String(p.responseHours) : "",
             resolutionHours: p.resolutionHours != null ? String(p.resolutionHours) : "",
+            level2DelayHours: p.level2DelayHours != null ? String(p.level2DelayHours) : "",
+            level3DelayHours: p.level3DelayHours != null ? String(p.level3DelayHours) : "",
           };
         setDrafts(d);
       })
@@ -168,12 +177,23 @@ function PoliciesTab() {
       setError("Response/resolution hours must be positive numbers.");
       return;
     }
+    // Level 2/3 (2026-08-06 escalation ladder) are optional — a policy row
+    // can keep working with just Response/Resolution, escalation is opt-in.
+    // But if either is filled in, it must be a positive number too.
+    const level2Raw = draft?.level2DelayHours?.trim();
+    const level3Raw = draft?.level3DelayHours?.trim();
+    const level2DelayHours = level2Raw ? Number(level2Raw) : undefined;
+    const level3DelayHours = level3Raw ? Number(level3Raw) : undefined;
+    if ((level2Raw && (!level2DelayHours || level2DelayHours < 1)) || (level3Raw && (!level3DelayHours || level3DelayHours < 1))) {
+      setError("Level 2/3 delay hours must be positive numbers if set.");
+      return;
+    }
     setBusyKey(k);
     setError(null);
     try {
       const found = existing(serviceType, priority);
-      if (found) await updateSlaPolicy(found.id, responseHours, resolutionHours);
-      else await createSlaPolicy(serviceType, priority, responseHours, resolutionHours);
+      if (found) await updateSlaPolicy(found.id, responseHours, resolutionHours, level2DelayHours, level3DelayHours);
+      else await createSlaPolicy(serviceType, priority, responseHours, resolutionHours, level2DelayHours, level3DelayHours);
       load();
     } catch {
       setError("Could not save this SLA policy.");
@@ -238,6 +258,8 @@ function PoliciesTab() {
                           <th className="py-2">Priority</th>
                           <th className="py-2">Response (hrs)</th>
                           <th className="py-2">Resolution (hrs)</th>
+                          <th className="py-2">Level 2 (hrs)</th>
+                          <th className="py-2">Level 3 (hrs)</th>
                           <th className="py-2" />
                         </tr>
                       </thead>
@@ -245,7 +267,7 @@ function PoliciesTab() {
                         {PRIORITIES.map((p) => {
                           const k = key(st, p);
                           const found = existing(st, p);
-                          const draft = drafts[k] ?? { responseHours: "", resolutionHours: "" };
+                          const draft = drafts[k] ?? { responseHours: "", resolutionHours: "", level2DelayHours: "", level3DelayHours: "" };
                           const busy = busyKey === k;
                           return (
                             <tr key={k} className="border-b border-line last:border-0">
@@ -259,7 +281,7 @@ function PoliciesTab() {
                                   onChange={(e) =>
                                     setDrafts((d) => ({
                                       ...d,
-                                      [k]: { responseHours: e.target.value, resolutionHours: d[k]?.resolutionHours ?? "" },
+                                      [k]: { ...draft, responseHours: e.target.value },
                                     }))
                                   }
                                   className="h-8 w-20 rounded-md border border-line bg-white px-2 text-xs text-navy disabled:opacity-50"
@@ -275,11 +297,43 @@ function PoliciesTab() {
                                   onChange={(e) =>
                                     setDrafts((d) => ({
                                       ...d,
-                                      [k]: { responseHours: d[k]?.responseHours ?? "", resolutionHours: e.target.value },
+                                      [k]: { ...draft, resolutionHours: e.target.value },
                                     }))
                                   }
                                   className="h-8 w-20 rounded-md border border-line bg-white px-2 text-xs text-navy disabled:opacity-50"
                                   placeholder="—"
+                                />
+                              </td>
+                              <td className="py-2">
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={draft.level2DelayHours}
+                                  disabled={busy}
+                                  onChange={(e) =>
+                                    setDrafts((d) => ({
+                                      ...d,
+                                      [k]: { ...draft, level2DelayHours: e.target.value },
+                                    }))
+                                  }
+                                  className="h-8 w-20 rounded-md border border-line bg-white px-2 text-xs text-navy disabled:opacity-50"
+                                  placeholder="optional"
+                                />
+                              </td>
+                              <td className="py-2">
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={draft.level3DelayHours}
+                                  disabled={busy}
+                                  onChange={(e) =>
+                                    setDrafts((d) => ({
+                                      ...d,
+                                      [k]: { ...draft, level3DelayHours: e.target.value },
+                                    }))
+                                  }
+                                  className="h-8 w-20 rounded-md border border-line bg-white px-2 text-xs text-navy disabled:opacity-50"
+                                  placeholder="optional"
                                 />
                               </td>
                               <td className="py-2 text-right">
@@ -791,11 +845,19 @@ function NotificationRulesTab() {
   return (
     <div>
       <p className="mb-6 text-sm text-muted">
-        Which roles get notified when a ticket&apos;s SLA is breached — response breach and resolution breach are
+        Which roles get notified when a ticket&apos;s SLA is breached — Response Breach and Resolution Breach are
         configured separately. Checking <b>ASM</b> or <b>Engineer</b> notifies only whoever is assigned to that
         specific ticket, not every ASM/Engineer. Checking <b>Manager</b> notifies only the Manager(s) covering the
         ticket&apos;s own region, not every Manager. Every other role (Call Center, Admin, CS Support, MD) is
         notified organization-wide, regardless of the ticket.
+      </p>
+      <p className="mb-6 text-sm text-muted">
+        <b>Escalation Level 2/3</b> are the 3-level escalation ladder — if a ticket is still breached
+        Response/Resolution&apos;s own delay hours later (set on the Policies tab), Level 2 fires; further
+        delay hours after that, Level 3 fires. These two columns are shared between the Response and Resolution
+        ladders (the same roles get notified regardless of which clock escalated) and fire once per level, never
+        repeating. There&apos;s no separate &quot;keep earlier levels notified&quot; setting — check the same
+        role under both Level 2 and Level 3 if you want them to stay in the loop as it escalates further.
       </p>
 
       {error && <p className="mb-4 rounded-md bg-brand-red-bg px-3 py-2 text-xs text-brand-red">{error}</p>}

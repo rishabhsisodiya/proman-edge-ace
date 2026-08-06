@@ -727,6 +727,17 @@ model Ticket {
   /// recomputing from slaResponseDue/slaResolutionDue on every read.
   slaResponseStatus        SlaClockStatus      @default(ON_TRACK)
   slaResolutionStatus      SlaClockStatus      @default(ON_TRACK)
+  /// 3-level escalation ladder (2026-08-05) — the moment each clock actually
+  /// breaches (independent of slaResponseDue/slaResolutionDue, which are
+  /// fixed targets, not when the breach itself occurred) — needed so the
+  /// cron can compute cumulative Level 2/3 thresholds from it.
+  /// slaResponse/ResolutionEscalationLevel tracks how far each clock has
+  /// already escalated (0 = not breached, 1 = tier-1 breach fired, 2/3 =
+  /// that level already fired) so "fire once per level" never re-fires.
+  slaResponseBreachedAt      DateTime?
+  slaResolutionBreachedAt    DateTime?
+  slaResponseEscalationLevel Int                @default(0)
+  slaResolutionEscalationLevel Int              @default(0)
   /// FSD §14.1 rule 21 — set by WorkflowService.applyTransition() when the
   /// ticket enters a status on the admin-configured SlaPauseState list;
   /// cleared (and slaPausedMinutes/due-dates adjusted) when it leaves one.
@@ -808,6 +819,15 @@ model SlaPolicy {
   // Admin to fill in later, rather than being absent (silently untracked).
   responseHours   Int?
   resolutionHours Int?
+  /// 3-level SLA breach escalation ladder (client request, 2026-08-05) —
+  /// cumulative delays: Level 2 fires `level2DelayHours` after the
+  /// Response/Resolution breach itself; Level 3 fires `level3DelayHours`
+  /// after THAT (i.e. level2DelayHours + level3DelayHours total from the
+  /// original breach). Same two columns drive both the Response ladder and
+  /// the Resolution ladder independently — Level 2/3 are shared escalation
+  /// tiers, not separately configured per clock (client confirmed).
+  level2DelayHours Int?
+  level3DelayHours Int?
   tickets         Ticket[]
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
@@ -1152,6 +1172,12 @@ enum SlaClockStatus {
 enum SlaBreachType {
   RESPONSE
   RESOLUTION
+  /// 3-level escalation ladder (2026-08-05) — LEVEL2/LEVEL3 recipients are
+  /// shared between the Response and Resolution ladders (client confirmed:
+  /// same tiers apply regardless of which clock breached), not a separate
+  /// set of roles per clock.
+  LEVEL2
+  LEVEL3
 }
 
 model SlaNotificationRule {

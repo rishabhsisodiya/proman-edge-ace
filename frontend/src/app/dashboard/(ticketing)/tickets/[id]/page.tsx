@@ -1096,14 +1096,7 @@ function TicketHistoryTabs({
 }) {
   const [tab, setTab] = useState<"timeline" | "fsv" | "commercial">("timeline");
 
-  // TEMP (2026-07-30): hide notification-failure entries from the Timeline —
-  // client hasn't been told the Notification Module exists yet, and these
-  // rows leak that it's live (real SMTP/WhatsApp/Push attempts, currently
-  // failing only because .env credentials aren't filled in yet). Backend
-  // still logs everything (NotificationLog + this same TicketAuditLog row) —
-  // this is a display-only filter. UN-HIDE by deleting this filter once the
-  // client has been informed — see ACE-Ticket-Engine-Build-Plan.md.
-  const visibleTimeline = timeline.filter((e) => e.fieldName !== "notification_failed");
+  const visibleTimeline = timeline;
 
   return (
     <div>

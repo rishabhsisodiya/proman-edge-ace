@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma, Role, Priority, Source, PendingReason, TicketStatus, CustomerCategory, NotifChannel, Region } from '@prisma/client';
 import { parse } from 'csv-parse/sync';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -97,6 +97,8 @@ export interface RequestUser {
 
 @Injectable()
 export class TicketsService {
+  private readonly logger = new Logger(TicketsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly workflow: WorkflowService,
@@ -508,7 +510,14 @@ export class TicketsService {
       return ticket.id;
     });
 
-    await this.fireTicketCreatedNotifications(ticketId);
+    // Fire-and-forget (2026-08-06) — notification sends (real SMTP/WhatsApp/
+    // Push network calls) were blocking the ticket-creation response itself;
+    // a slow/failing SMTP handshake alone could add several seconds. Failures
+    // still get logged exactly the same way (NotificationLog + AuditLog),
+    // this only stops them from holding up the HTTP response.
+    this.fireTicketCreatedNotifications(ticketId).catch((err) =>
+      this.logger.warn(`fireTicketCreatedNotifications failed for ticket ${ticketId}: ${err}`),
+    );
 
     // Traceability for the blacklist/inactive override (2026-08-03) — same
     // spirit as Rule 14's warranty-override logging (userId, timestamp,

@@ -18,14 +18,32 @@ export class SlaPolicyService {
     return this.prisma.slaPolicy.findMany({ orderBy: [{ serviceType: 'asc' }, { priority: 'asc' }] });
   }
 
-  async create(serviceType: ServiceType, priority: Priority, responseHours: number | null, resolutionHours: number | null) {
+  async create(
+    serviceType: ServiceType,
+    priority: Priority,
+    responseHours: number | null,
+    resolutionHours: number | null,
+    level2DelayHours?: number | null,
+    level3DelayHours?: number | null,
+  ) {
     const existing = await this.prisma.slaPolicy.findUnique({ where: { serviceType_priority: { serviceType, priority } } });
     if (existing) throw new ConflictException('A policy for this service type + priority already exists');
-    return this.prisma.slaPolicy.create({ data: { serviceType, priority, responseHours, resolutionHours } });
+    return this.prisma.slaPolicy.create({
+      data: { serviceType, priority, responseHours, resolutionHours, level2DelayHours, level3DelayHours },
+    });
   }
 
-  update(id: string, responseHours: number | null, resolutionHours: number | null) {
-    return this.prisma.slaPolicy.update({ where: { id }, data: { responseHours, resolutionHours } });
+  update(
+    id: string,
+    responseHours: number | null,
+    resolutionHours: number | null,
+    level2DelayHours?: number | null,
+    level3DelayHours?: number | null,
+  ) {
+    return this.prisma.slaPolicy.update({
+      where: { id },
+      data: { responseHours, resolutionHours, level2DelayHours, level3DelayHours },
+    });
   }
 
   remove(id: string) {

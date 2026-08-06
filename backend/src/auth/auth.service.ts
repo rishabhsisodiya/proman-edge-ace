@@ -51,7 +51,13 @@ export class AuthService {
 
   async login(email: string, password: string) {
     const user = await this.prisma.user.findUnique({ where: { email } });
-    if (!user || !user.isActive) throw new UnauthorizedException('Invalid credentials');
+    // Client request (2026-08-06) — no account for this email (or a
+    // deactivated one) gets a distinct business message instead of the
+    // generic "Invalid credentials", which is reserved for a real,
+    // active account with the wrong password (see below).
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException('You have not been assigned access to any of the modules here, please contact your IT Admin.');
+    }
 
     if (user.lockedUntil && user.lockedUntil > new Date()) {
       throw new UnauthorizedException(

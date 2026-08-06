@@ -1,7 +1,10 @@
 import { apiFetch } from "@/lib/api";
 import { Role } from "@/lib/auth";
 
-export type SlaBreachType = "RESPONSE" | "RESOLUTION";
+// LEVEL2/LEVEL3 (2026-08-06) — 3-level SLA breach escalation ladder, shared
+// between the Response and Resolution ladders (same tiers regardless of
+// which clock breached).
+export type SlaBreachType = "RESPONSE" | "RESOLUTION" | "LEVEL2" | "LEVEL3";
 
 export interface SlaNotificationRule {
   id: string;

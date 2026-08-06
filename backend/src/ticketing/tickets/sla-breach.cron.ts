@@ -50,7 +50,7 @@ export class SlaBreachCron {
           { slaResolutionMet: false, slaResolutionDue: { not: null } },
         ],
       },
-      include: { customer: true, assignedAsm: true, assignedEngineer: true },
+      include: { customer: true, assignedAsm: true, assignedEngineer: true, slaPolicy: true },
     });
 
     let checked = 0;
@@ -59,7 +59,7 @@ export class SlaBreachCron {
 
     for (const t of tickets) {
       checked++;
-      const data: Record<string, SlaClockStatus> = {};
+      const data: Record<string, unknown> = {};
       const auditEntries: { fieldName: string; oldValue: string; newValue: string }[] = [];
 
       if (!t.slaResponseMet && t.slaResponseDue) {
@@ -70,6 +70,12 @@ export class SlaBreachCron {
           auditEntries.push({ fieldName: 'slaResponseStatus', oldValue: t.slaResponseStatus, newValue: next });
           if (next === 'BREACHED') {
             await this.fireResponseBreach(t);
+            // 3-level escalation ladder (2026-08-06) — records the exact
+            // breach moment (distinct from slaResponseDue, a fixed target)
+            // so the ladder below can compute cumulative Level 2/3
+            // thresholds from it, and marks tier 1 as fired.
+            data.slaResponseBreachedAt = now;
+            data.slaResponseEscalationLevel = 1;
           }
         }
       }
@@ -84,8 +90,37 @@ export class SlaBreachCron {
             await this.fireResolutionWarning(t);
           } else if (next === 'BREACHED') {
             await this.fireResolutionBreach(t);
+            data.slaResolutionBreachedAt = now;
+            data.slaResolutionEscalationLevel = 1;
           }
         }
+      }
+
+      // Escalation advancement — independent of the status-transition checks
+      // above (those only fire once, on the ON_TRACK/WARNING_90/BREACHED
+      // transition itself), since a ticket already at Level 1 needs to keep
+      // being re-checked on every subsequent run to see if enough time has
+      // now passed for Level 2/3, without its slaResponse/ResolutionStatus
+      // changing again. Effective level after this run's tier-1 detection
+      // above (data.slaResponseEscalationLevel ?? t.slaResponseEscalationLevel)
+      // — so a ticket that JUST breached this exact run is also eligible to
+      // jump straight to Level 2 in the same run if its delay is 0.
+      const effectiveResponseLevel = (data.slaResponseEscalationLevel as number | undefined) ?? t.slaResponseEscalationLevel;
+      const responseBreachedAt = (data.slaResponseBreachedAt as Date | undefined) ?? t.slaResponseBreachedAt;
+      const nextResponseLevel = this.nextEscalationLevel(effectiveResponseLevel, responseBreachedAt, now, t.slaPolicy);
+      if (nextResponseLevel) {
+        await this.fireEscalationLevel(t, 'RESPONSE', nextResponseLevel);
+        data.slaResponseEscalationLevel = nextResponseLevel;
+        auditEntries.push({ fieldName: 'slaResponseEscalationLevel', oldValue: String(effectiveResponseLevel), newValue: String(nextResponseLevel) });
+      }
+
+      const effectiveResolutionLevel = (data.slaResolutionEscalationLevel as number | undefined) ?? t.slaResolutionEscalationLevel;
+      const resolutionBreachedAt = (data.slaResolutionBreachedAt as Date | undefined) ?? t.slaResolutionBreachedAt;
+      const nextResolutionLevel = this.nextEscalationLevel(effectiveResolutionLevel, resolutionBreachedAt, now, t.slaPolicy);
+      if (nextResolutionLevel) {
+        await this.fireEscalationLevel(t, 'RESOLUTION', nextResolutionLevel);
+        data.slaResolutionEscalationLevel = nextResolutionLevel;
+        auditEntries.push({ fieldName: 'slaResolutionEscalationLevel', oldValue: String(effectiveResolutionLevel), newValue: String(nextResolutionLevel) });
       }
 
       if (Object.keys(data).length > 0) {
@@ -109,6 +144,63 @@ export class SlaBreachCron {
     }
 
     this.logger.log(`SLA breach cron complete — ${checked} ticket(s) checked, ${changed} status change(s)`);
+  }
+
+  /**
+   * 3-level escalation ladder (client request, 2026-08-06) — cumulative
+   * delays: Level 2 fires `level2DelayHours` after the breach itself;
+   * Level 3 fires `level2DelayHours + level3DelayHours` after the breach
+   * (i.e. level3DelayHours after Level 2, not after the original breach
+   * directly). Returns the level to escalate TO if its threshold has been
+   * crossed and it hasn't already fired, else null. Fires at most one level
+   * per call — if a ticket somehow skipped straight past Level 2's window
+   * (e.g. the cron missed a run), it advances one level at a time on
+   * successive runs rather than jumping straight to Level 3, so Level 2's
+   * notification is never silently skipped.
+   */
+  private nextEscalationLevel(
+    currentLevel: number,
+    breachedAt: Date | null,
+    now: Date,
+    policy: { level2DelayHours: number | null; level3DelayHours: number | null } | null,
+  ): 2 | 3 | null {
+    if (!policy || !breachedAt || currentLevel < 1 || currentLevel >= 3) return null;
+    const hoursSinceBreach = (now.getTime() - breachedAt.getTime()) / (1000 * 60 * 60);
+    if (currentLevel === 1) {
+      if (policy.level2DelayHours != null && hoursSinceBreach >= policy.level2DelayHours) return 2;
+      return null;
+    }
+    // currentLevel === 2
+    if (policy.level2DelayHours != null && policy.level3DelayHours != null && hoursSinceBreach >= policy.level2DelayHours + policy.level3DelayHours) {
+      return 3;
+    }
+    return null;
+  }
+
+  /**
+   * Fires the Level 2/3 escalation notification — recipients are shared
+   * between the Response and Resolution ladders (client confirmed: same
+   * tiers regardless of which clock breached), resolved the same way as
+   * Response/Resolution breach recipients. Not one of the FSD's 23 numbered
+   * triggers — same pattern as KPI-BREACH earlier this session (a real
+   * alert, just not pre-numbered in the spec).
+   */
+  private async fireEscalationLevel(
+    t: {
+      id: string;
+      ticketNo: string;
+      assignedAsm: { id: string; email: string } | null;
+      assignedEngineer: { id: string; email: string } | null;
+      customer: { region: Region | null };
+    },
+    clock: 'RESPONSE' | 'RESOLUTION',
+    level: 2 | 3,
+  ) {
+    const triggerCode = level === 2 ? 'SLA-ESCALATION-L2' : 'SLA-ESCALATION-L3';
+    const vars = { ticket_no: t.ticketNo, clock_type: clock === 'RESPONSE' ? 'Response' : 'Resolution' };
+    const roles = await this.notificationRules.getEnabledRoles(level === 2 ? 'LEVEL2' : 'LEVEL3');
+    const recipients = await this.recipientsForRoles(roles, t);
+    await this.sendToAll(triggerCode, recipients, vars, t.id);
   }
 
   // Region-scoped Manager lookup (client decision, 2026-08-02, reconfirmed
@@ -141,24 +233,28 @@ export class SlaBreachCron {
       customer: { region: Region | null };
     },
   ): Promise<{ email: string; userId: string }[]> {
-    const recipients: { email: string; userId: string }[] = [];
+    // Deduped by userId — a person can legitimately match more than one
+    // enabled role for the same rule (e.g. assigned ASM who is also the
+    // region's Manager), and without this they'd receive the same
+    // notification once per matching role.
+    const recipients = new Map<string, { email: string; userId: string }>();
     for (const role of roles) {
       switch (role) {
         case 'ASM':
-          if (t.assignedAsm) recipients.push({ email: t.assignedAsm.email, userId: t.assignedAsm.id });
+          if (t.assignedAsm) recipients.set(t.assignedAsm.id, { email: t.assignedAsm.email, userId: t.assignedAsm.id });
           break;
         case 'ENGINEER':
-          if (t.assignedEngineer) recipients.push({ email: t.assignedEngineer.email, userId: t.assignedEngineer.id });
+          if (t.assignedEngineer) recipients.set(t.assignedEngineer.id, { email: t.assignedEngineer.email, userId: t.assignedEngineer.id });
           break;
         case 'MANAGER':
-          recipients.push(...(await this.managersForRegion(t.customer.region)).map((u) => ({ email: u.email, userId: u.id })));
+          for (const u of await this.managersForRegion(t.customer.region)) recipients.set(u.id, { email: u.email, userId: u.id });
           break;
         default:
           // CALL_CENTER, ADMIN, CS_SUPPORT, MD — org-wide, no region concept.
-          recipients.push(...(await this.usersByRole(role)).map((u) => ({ email: u.email, userId: u.id })));
+          for (const u of await this.usersByRole(role)) recipients.set(u.id, { email: u.email, userId: u.id });
       }
     }
-    return recipients;
+    return [...recipients.values()];
   }
 
   /** N-15 — SLA response breach: recipients Admin-configured per role, Email + Push. */

@@ -5,10 +5,19 @@ import { PrismaService } from '../../prisma/prisma.service';
 /** Roles relevant to SLA breach notifications — excludes the Proman Edge dashboard-only roles (Sales Head, Manufacturing Head, etc.), which have nothing to do with ticket SLAs. */
 const RELEVANT_ROLES: Role[] = ['CALL_CENTER', 'ASM', 'ENGINEER', 'MANAGER', 'ADMIN', 'CS_SUPPORT', 'MD'];
 
-/** Seeded defaults — matches what was previously hardcoded in SlaBreachCron, plus MD (client request, 2026-08-04). */
+/**
+ * Seeded defaults — matches what was previously hardcoded in SlaBreachCron,
+ * plus MD (client request, 2026-08-04). LEVEL2/LEVEL3 (2026-08-06, 3-level
+ * escalation ladder) default to progressively wider audiences — Level 2
+ * adds Admin on top of Resolution's own default, Level 3 keeps the same set
+ * (client didn't ask for a wider Level 3 default; Admin can widen either
+ * via the Notification Rules screen regardless).
+ */
 const DEFAULT_ENABLED: Record<SlaBreachType, Role[]> = {
   RESPONSE: ['ASM', 'CALL_CENTER', 'MANAGER', 'MD'],
   RESOLUTION: ['ASM', 'MANAGER', 'MD'],
+  LEVEL2: ['ASM', 'MANAGER', 'MD', 'ADMIN'],
+  LEVEL3: ['ASM', 'MANAGER', 'MD', 'ADMIN'],
 };
 
 @Injectable()
@@ -20,7 +29,7 @@ export class SlaNotificationRuleService {
     const existing = await this.prisma.slaNotificationRule.findMany();
     const existingKeys = new Set(existing.map((r) => `${r.breachType}__${r.role}`));
     const missing: { breachType: SlaBreachType; role: Role; enabled: boolean }[] = [];
-    for (const breachType of ['RESPONSE', 'RESOLUTION'] as SlaBreachType[]) {
+    for (const breachType of ['RESPONSE', 'RESOLUTION', 'LEVEL2', 'LEVEL3'] as SlaBreachType[]) {
       for (const role of RELEVANT_ROLES) {
         if (!existingKeys.has(`${breachType}__${role}`)) {
           missing.push({ breachType, role, enabled: DEFAULT_ENABLED[breachType].includes(role) });
