@@ -28,7 +28,11 @@ redis-cli ping || (sudo apt install -y redis-server && sudo systemctl enable --n
 ## Prod database setup
 
 Use a **separate DB and role from dev** — a bad migration or seed run in dev should never be able
-to touch prod data.
+to touch prod data. Same reasoning applies to Redis — dev already uses Redis (default DB `/0`, via
+`erp-cache.service.ts` for ERPNext dashboard caching), so prod must use a **different logical DB
+index** on the same instance (or a separate instance) to stay isolated — sharing DB `/0` risks a
+dev test polluting/colliding with prod cache keys, and matters even more once BullMQ (queued
+notifications) lands on either side.
 
 ```bash
 sudo -u postgres psql -c "CREATE USER proman_edge_prod WITH PASSWORD '<generate a strong password>';"
@@ -43,64 +47,68 @@ PGPASSWORD='<password>' psql -h 127.0.0.1 -U proman_edge_prod -d proman_ace_prod
 
 ---
 
-## Clone and configure
+## Clone and configure (Doppler — no `.env` files on the prod server)
 
 ```bash
 git clone <proman-edge-repo-url> /root/proman-edge-ace-prod
-cd /root/proman-edge-ace-prod/backend
-cp .env.example .env
 ```
 
-Edit `backend/.env`:
+### Doppler project setup (one-time)
+
+Create a **new Doppler project** for this app (e.g. `proman-edge`) — separate from PROMAN's own
+`proman` Doppler project — with a `prd` config. Populate it with everything both the backend and
+frontend need (`NEXT_PUBLIC_*` values included, since the frontend build must run under `doppler
+run` too):
 
 ```
-DATABASE_URL="postgresql://proman_edge_prod:<password>@localhost:5432/proman_ace_prod?schema=public"
+DATABASE_URL=postgresql://proman_edge_prod:<password>@localhost:5432/proman_ace_prod?schema=public
 JWT_SECRET=<generate a separate long random string — do not reuse dev's>
 PORT=4001
 FRONTEND_URL=https://<prod-domain>          # must exactly match the origin the browser uses, incl. scheme
-REDIS_URL=redis://localhost:6379
-ERP_DB_HOST=<HOST HERE>
-ERP_DB_PORT=<PORT>
-ERP_DB_NAME=<DB_NAME>
-ERP_DB_USER=<DB_USER>
-ERP_DB_PASSWORD=<from PROMAN's backend/.env, or prod ERPNext creds once issued>
+REDIS_URL=redis://localhost:6379/1          # index 1, NOT the default /0 dev already uses
+ERP_DB_HOST=<prod PISPL MariaDB host>
+ERP_DB_PORT=<port>
+ERP_DB_NAME=<db name>
+ERP_DB_USER=<db user>
+ERP_DB_PASSWORD=<prod ERPNext creds — see "Open items" below, test creds only exist today>
 ERP_DB_SSL=false
-FRAPPE_BASE_URL=http://187.127.182.29:8000
-```
-
-Then:
-
-```bash
-npm install
-npx prisma migrate deploy
-npx prisma db seed        # only if you want seed/demo users in prod — usually skip this
-npm run build
-ls dist/src/main.js       # confirm build output lands here, not dist/main.js
-```
-
-Frontend:
-
-```bash
-cd /root/proman-edge-ace-prod/frontend
-```
-
-Edit `.env.local`:
-
-```
+FRAPPE_BASE_URL=<prod ERPNext instance URL>
 NEXT_PUBLIC_API_URL=https://<prod-domain>/api/v1
 NEXT_PUBLIC_BACKEND_URL=https://<prod-domain>
 ```
 
+Generate a **service token** for the `prd` config (Doppler dashboard → Project → Config → Access →
+Service Tokens), then store it on the server, outside any git repo:
+
 ```bash
-npm install
-npm run build
+mkdir -p /root/.proman-edge-secrets
+cat > /root/.proman-edge-secrets/doppler.env <<'EOF'
+DOPPLER_TOKEN_PROD=dp.st.prd.xxxxxxxxxxxx
+EOF
+chmod 600 /root/.proman-edge-secrets/doppler.env
 ```
+
+### First build
+
+```bash
+chmod +x /root/proman-edge-ace-prod/scripts/proman-edge-prod.sh
+cd /root/proman-edge-ace-prod
+./scripts/proman-edge-prod.sh check     # verify Doppler secrets are reachable
+./scripts/proman-edge-prod.sh deploy    # git pull (no-op on first run) + npm install + doppler-wrapped build for both apps
+ls backend/dist/src/main.js             # confirm build output lands here, not dist/main.js
+```
+
+`npx prisma db seed` — only run this manually and deliberately if you want seed/demo users in prod;
+usually skip it.
 
 ---
 
 ## PM2
 
-Repo root already has `ecosystem.prod.config.js`:
+Repo root's `ecosystem.prod.config.js` now runs both processes through `doppler run` rather than a
+static `env` block — the `DOPPLER_TOKEN` env var (sourced from `/root/.proman-edge-secrets/doppler.env`)
+is what lets pm2's own process pick up secrets at runtime, separate from the build-time `doppler run`
+wrapping done in the deploy step above:
 
 ```js
 module.exports = {
@@ -108,30 +116,48 @@ module.exports = {
     {
       name: 'proman-prod-backend',
       cwd: '/root/proman-edge-ace-prod/backend',
-      script: 'dist/src/main.js',
-      env: { NODE_ENV: 'production', PORT: '4001' }
+      script: 'doppler',
+      args: 'run -- node dist/src/main.js',
+      env: { NODE_ENV: 'production', PORT: '4001', DOPPLER_TOKEN: process.env.DOPPLER_TOKEN }
     },
     {
       name: 'proman-prod-frontend',
       cwd: '/root/proman-edge-ace-prod/frontend',
-      script: 'npm',
-      args: 'run start -- -p 3001',
-      env: { NODE_ENV: 'production', PORT: '3001' }
+      script: 'doppler',
+      args: 'run -- npm run start -- -p 3001',
+      env: { NODE_ENV: 'production', PORT: '3001', DOPPLER_TOKEN: process.env.DOPPLER_TOKEN }
     }
   ]
 }
 ```
 
 Before starting: confirm PROMAN's old `proman-prod-backend`/`proman-prod-frontend` PM2 processes
-are stopped, since they hold ports 4001/3001 today.
+are stopped, since they hold ports 4001/3001 today — `proman-edge` prod fully replaces PROMAN prod
+on these same pm2 names/ports, it isn't running alongside it.
 
 ```bash
-pm2 stop proman-prod-backend proman-prod-frontend
-pm2 delete proman-prod-backend proman-prod-frontend
+source /root/.proman-edge-secrets/doppler.env
+export DOPPLER_TOKEN=$DOPPLER_TOKEN_PROD
 
+./scripts/proman-edge-prod.sh delete    # stops/removes any proman-prod-backend/frontend already registered (old PROMAN or a prior attempt)
+./scripts/proman-edge-prod.sh start
+```
+
+### Everyday redeploy (after `git push`)
+
+```bash
 cd /root/proman-edge-ace-prod
-pm2 start ecosystem.prod.config.js
-pm2 save
+./scripts/proman-edge-prod.sh deploy
+```
+
+### If you ever edit `ecosystem.prod.config.js` itself (script/args/env)
+
+A `deploy`/`reload` will NOT pick up ecosystem file changes — pm2 only re-reads `script`/`args`/`env`
+on fresh registration:
+
+```bash
+./scripts/proman-edge-prod.sh delete
+./scripts/proman-edge-prod.sh start
 ```
 
 ---
@@ -154,9 +180,8 @@ Starting prod over plain HTTP will reproduce the same silent-login-failure bug d
 
 ```bash
 curl -i https://<prod-domain>/api/v1/auth/login   # or via nginx path, once TLS is live
-pm2 status
-pm2 logs proman-prod-backend --lines 50
-pm2 logs proman-prod-frontend --lines 50
+./scripts/proman-edge-prod.sh status
+./scripts/proman-edge-prod.sh logs
 ```
 
 ---
@@ -166,7 +191,11 @@ pm2 logs proman-prod-frontend --lines 50
 - nginx/TLS termination for `<prod-domain>` → ports 3001 (frontend) / 4001 (backend, or proxied
   under `/api`)
 - Decommission PROMAN's old prod PM2 processes (ports 4001/3001 currently in use)
+- Create the `proman-edge` Doppler project + `prd` config, populate secrets, generate the service
+  token, store it at `/root/.proman-edge-secrets/doppler.env` (see "Clone and configure" above) —
+  not done yet
 - Real ERPNext production API credentials (`ERPNEXT_API_KEY`/`ERPNEXT_API_SECRET`,
   `ERPNEXT_WEBHOOK_SECRET`) — test-server credentials only exist today, per the main README's
   "Known open items"
 - Decide whether to seed prod with demo/seed users at all, or start with a clean admin-only DB
+- Redis: confirm prod uses DB index `/1` (or a separate instance), not dev's default `/0`
