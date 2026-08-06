@@ -9,23 +9,20 @@ import { PrismaService } from '../../prisma/prisma.service';
 // (the SO's shipping address, else billing) — ACE just reads it, no
 // fallback logic needed on this side.
 // order_date (2026-08-05, client request: show SO No. + SO Date on the
-// Equipment page and AMC's covered-equipment list) — the SO's own
-// transaction_date (order/booking date), separate from delivery_date.
-// Shivam's handoff §C describes a new `order_date` column being added
-// directly to `tabEquipment Tracking`, but that column doesn't exist yet on
-// this instance (confirmed live, 2026-08-05 — `Unknown column 'order_date'`)
-// — sourced via a join to `tabSales Order` instead, using `sales_order`
-// (already selected, previously discarded in syncOne()) as the join key.
-// Same end value either way; swap this back to the plain column once
-// Shivam confirms it's actually deployed on this environment.
+// Equipment page and AMC's covered-equipment list) — Shivam confirmed
+// "order_date" in his handoff doc was just a wording/alias mistake, not a
+// literal new column name: the real column is `transaction_date`, and it
+// already lives directly on `tabEquipment Tracking` itself (verified live,
+// 2026-08-05) — no join to `tabSales Order` needed at all (an earlier fix
+// worked around the doc's wrong column name with exactly that join; this
+// removes it now that the correct column name is confirmed).
 const EQUIPMENT_TRACKING_SELECT = `
   SELECT
-      et.serial_id, et.sales_order, et.customer, et.site_address, et.item_code, et.item_name, et.qty,
-      et.warranty_start_date, et.warranty_end_date, et.warranty_period_days,
-      et.delivery_date, et.equipment_category, et.model_number, et.status, et.modified,
-      so.transaction_date AS order_date
-  FROM \`tabEquipment Tracking\` et
-  LEFT JOIN \`tabSales Order\` so ON so.name = et.sales_order
+      serial_id, sales_order, customer, site_address, item_code, item_name, qty,
+      warranty_start_date, warranty_end_date, warranty_period_days,
+      delivery_date, equipment_category, model_number, status, modified,
+      transaction_date AS order_date
+  FROM \`tabEquipment Tracking\`
 `;
 
 interface ErpEquipmentTrackingRow {
@@ -101,7 +98,7 @@ export class EquipmentTrackingSyncService {
     try {
       const watermark = await this.getWatermark();
       const rows = await this.erpDb.query<ErpEquipmentTrackingRow>(
-        `${EQUIPMENT_TRACKING_SELECT} WHERE et.modified >= ? ORDER BY et.modified ASC`,
+        `${EQUIPMENT_TRACKING_SELECT} WHERE modified >= ? ORDER BY modified ASC`,
         [watermark.toISOString().slice(0, 19).replace('T', ' ')],
       );
 
@@ -282,7 +279,7 @@ export class EquipmentTrackingSyncService {
 
   /** Admin-triggered manual resync of one customer's equipment (Customer Detail page, 2026-08-04) — bypasses the delta watermark for this one customer name. */
   async manualRetryForCustomer(customerName: string): Promise<void> {
-    const rows = await this.erpDb.query<ErpEquipmentTrackingRow>(`${EQUIPMENT_TRACKING_SELECT} WHERE et.customer = ?`, [customerName]);
+    const rows = await this.erpDb.query<ErpEquipmentTrackingRow>(`${EQUIPMENT_TRACKING_SELECT} WHERE customer = ?`, [customerName]);
     for (const row of rows) {
       await this.syncOne(row);
     }
@@ -303,7 +300,7 @@ export class EquipmentTrackingSyncService {
 
     const placeholders = skipped.map(() => '?').join(',');
     const rows = await this.erpDb.query<ErpEquipmentTrackingRow>(
-      `${EQUIPMENT_TRACKING_SELECT} WHERE et.serial_id IN (${placeholders})`,
+      `${EQUIPMENT_TRACKING_SELECT} WHERE serial_id IN (${placeholders})`,
       skipped.map((s) => s.erpSerialId),
     );
     for (const row of rows) {
