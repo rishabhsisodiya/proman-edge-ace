@@ -55,8 +55,9 @@ git clone <proman-edge-repo-url> /root/proman-edge-ace-prod
 
 ### Doppler project setup (one-time)
 
-Create a **new Doppler project** for this app (e.g. `proman-edge`) — separate from PROMAN's own
-`proman` Doppler project — with a `prd` config. Populate it with everything both the backend and
+Uses the **same Doppler project as PROMAN** (`proman`), in a separate config named `prd_ace` for
+`proman-edge`'s production secrets. The deploy script (`scripts/proman-edge-prod.sh`) points at
+`--project proman --config prd_ace` to match. Populate it with everything both the backend and
 frontend need (`NEXT_PUBLIC_*` values included, since the frontend build must run under `doppler
 run` too):
 
@@ -77,13 +78,13 @@ NEXT_PUBLIC_API_URL=https://<prod-domain>/api/v1
 NEXT_PUBLIC_BACKEND_URL=https://<prod-domain>
 ```
 
-Generate a **service token** for the `prd` config (Doppler dashboard → Project → Config → Access →
-Service Tokens), then store it on the server, outside any git repo:
+Generate a **service token** for the `prd_ace` config (Doppler dashboard → Project `proman` →
+Config `prd_ace` → Access → Service Tokens), then store it on the server, outside any git repo:
 
 ```bash
 mkdir -p /root/.proman-edge-secrets
 cat > /root/.proman-edge-secrets/doppler.env <<'EOF'
-DOPPLER_TOKEN_PROD=dp.st.prd.xxxxxxxxxxxx
+DOPPLER_TOKEN_PROD=dp.st.prd_ace.xxxxxxxxxxxx
 EOF
 chmod 600 /root/.proman-edge-secrets/doppler.env
 ```
@@ -191,9 +192,9 @@ curl -i https://<prod-domain>/api/v1/auth/login   # or via nginx path, once TLS 
 - nginx/TLS termination for `<prod-domain>` → ports 3001 (frontend) / 4001 (backend, or proxied
   under `/api`)
 - Decommission PROMAN's old prod PM2 processes (ports 4001/3001 currently in use)
-- Create the `proman-edge` Doppler project + `prd` config, populate secrets, generate the service
-  token, store it at `/root/.proman-edge-secrets/doppler.env` (see "Clone and configure" above) —
-  not done yet
+- Populate the `proman` Doppler project's `prd_ace` config with the full secret list, generate the
+  service token, store it at `/root/.proman-edge-secrets/doppler.env` (see "Clone and configure"
+  above) — not done yet
 - Real ERPNext production API credentials (`ERPNEXT_API_KEY`/`ERPNEXT_API_SECRET`,
   `ERPNEXT_WEBHOOK_SECRET`) — test-server credentials only exist today, per the main README's
   "Known open items"

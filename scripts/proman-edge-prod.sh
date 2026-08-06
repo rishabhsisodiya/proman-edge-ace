@@ -18,8 +18,10 @@ fi
 
 ROOT=/root/proman-edge-ace-prod
 ECOSYSTEM=/root/proman-edge-ace-prod/ecosystem.prod.config.js
-DOPPLER_PROJECT=proman-edge
-DOPPLER_CONFIG=prd
+# Same Doppler project as PROMAN ("proman"), separate config ("prd_ace")
+# holding proman-edge's PROD secrets.
+DOPPLER_PROJECT=proman
+DOPPLER_CONFIG=prd_ace
 DOPPLER_TOKEN=${DOPPLER_TOKEN_PROD:?DOPPLER_TOKEN_PROD not set in /root/.proman-edge-secrets/doppler.env}
 BACKEND=proman-prod-backend
 FRONTEND=proman-prod-frontend
