@@ -71,7 +71,7 @@ const SECTIONS = [
   },
   {
     label: "Notification Templates",
-    description: "Per-trigger, per-channel message content (13 of 23 triggers wired so far)",
+    description: "Per-trigger, per-channel message content (all 23 FSD triggers wired, plus 4 custom alerts)",
     href: "/dashboard/admin/notification-templates",
   },
   {
