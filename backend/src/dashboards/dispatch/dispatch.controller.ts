@@ -1,12 +1,12 @@
 import { Controller, Get, NotFoundException, Param, Query, UseGuards, BadRequestException } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
-import { RolesGuard } from '../../auth/roles.guard';
-import { Roles } from '../../auth/roles.decorator';
+import { DashboardAccessGuard } from '../../auth/dashboard-access.guard';
+import { DashboardKeyMeta } from '../../auth/dashboard-key.decorator';
 import { DispatchService } from './dispatch.service';
 
 // Mirrors PROMAN/backend/src/routes/dispatch.ts
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('DISPATCH_HEAD')
+@UseGuards(JwtAuthGuard, DashboardAccessGuard)
+@DashboardKeyMeta('DISPATCH')
 @Controller('dashboards/dispatch')
 export class DispatchController {
   constructor(private readonly dispatch: DispatchService) {}

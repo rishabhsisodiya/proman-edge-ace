@@ -1,13 +1,13 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Query, UseGuards, BadRequestException } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
-import { RolesGuard } from '../../auth/roles.guard';
-import { Roles } from '../../auth/roles.decorator';
+import { DashboardAccessGuard } from '../../auth/dashboard-access.guard';
+import { DashboardKeyMeta } from '../../auth/dashboard-key.decorator';
 import { FinanceService } from './finance.service';
 import { FinanceSettingsStore } from './finance-settings.store';
 
 // Mirrors PROMAN/backend/src/routes/finance.ts
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('FINANCE_HEAD')
+@UseGuards(JwtAuthGuard, DashboardAccessGuard)
+@DashboardKeyMeta('FINANCE')
 @Controller('dashboards/finance')
 export class FinanceController {
   constructor(

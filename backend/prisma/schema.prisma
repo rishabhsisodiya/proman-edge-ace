@@ -1190,6 +1190,20 @@ model SlaNotificationRule {
   @@unique([breachType, role])
 }
 
+/// Admin-configurable business-dashboard access per role (2026-08-07). Default
+/// is role gets no access; dashboardKey is a plain string (not an enum) keyed
+/// against DASHBOARD_REGISTRY in code — deliberately avoids a schema
+/// migration every time a new dashboard ships (client expects more coming).
+model DashboardAccessRule {
+  id           String   @id @default(uuid())
+  role         Role
+  dashboardKey String
+  enabled      Boolean  @default(false)
+  updatedAt    DateTime @updatedAt
+
+  @@unique([role, dashboardKey])
+}
+
 enum VisitStatus {
   SCHEDULED_PENDING
   /// Nightly AMC cron (2026-07-27) auto-created a real Ticket for this visit.

@@ -59,6 +59,27 @@ export function DashboardError({ status, onRetry }: { status?: number; onRetry?:
         </p>
 
         <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+          {isForbidden && (
+            // A user without access to THIS dashboard still has one they can
+            // use (that's how they got here — via the dashboard switcher) —
+            // sending them to /login would force a pointless re-auth. Going
+            // back in history returns them to the dashboard they came from.
+            <button
+              onClick={() => window.history.back()}
+              style={{
+                fontSize: 12.5,
+                fontWeight: 600,
+                padding: "8px 16px",
+                borderRadius: 8,
+                border: "none",
+                background: colors.navy,
+                color: "#fff",
+                cursor: "pointer",
+              }}
+            >
+              Go back
+            </button>
+          )}
           <a
             href="/login"
             style={{

@@ -1,15 +1,15 @@
 import { BadRequestException, Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
-import { RolesGuard } from '../../auth/roles.guard';
-import { Roles } from '../../auth/roles.decorator';
+import { DashboardAccessGuard } from '../../auth/dashboard-access.guard';
+import { DashboardKeyMeta } from '../../auth/dashboard-key.decorator';
 import { SalesService } from './sales.service';
 
 // Mirrors PROMAN/backend/src/routes/sales.ts. The original product had a
 // single "Sales Head" role; our schema splits this into two successor roles
 // (Aggregate / IM-BMH) per BUILD-Role-based Homepages.html — both granted
 // access here pending a decision on whether they need separate dashboards.
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('SALES_HEAD_AGGREGATE', 'SALES_HEAD_IM_BMH')
+@UseGuards(JwtAuthGuard, DashboardAccessGuard)
+@DashboardKeyMeta('SALES')
 @Controller('dashboards/sales')
 export class SalesController {
   constructor(private readonly sales: SalesService) {}

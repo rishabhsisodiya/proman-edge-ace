@@ -1,13 +1,13 @@
 import { Controller, Get, NotFoundException, Param, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
-import { RolesGuard } from '../../auth/roles.guard';
-import { Roles } from '../../auth/roles.decorator';
+import { DashboardAccessGuard } from '../../auth/dashboard-access.guard';
+import { DashboardKeyMeta } from '../../auth/dashboard-key.decorator';
 import { ManufacturingService } from './manufacturing.service';
 
 // Mirrors PROMAN/backend/src/routes/manufacturing.ts's endpoints — same
 // paths, same response shape ({ success, data } / { success, error }).
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('MANUFACTURING_HEAD') // Admin bypasses this automatically (see RolesGuard)
+@UseGuards(JwtAuthGuard, DashboardAccessGuard)
+@DashboardKeyMeta('MANUFACTURING') // Admin bypasses this automatically (see DashboardAccessGuard)
 @Controller('dashboards/manufacturing')
 export class ManufacturingController {
   constructor(private readonly manufacturing: ManufacturingService) {}

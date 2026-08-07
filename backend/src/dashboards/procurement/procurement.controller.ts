@@ -1,12 +1,12 @@
 import { Body, Controller, Get, NotFoundException, Param, Post, Query, UseGuards, BadRequestException } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
-import { RolesGuard } from '../../auth/roles.guard';
-import { Roles } from '../../auth/roles.decorator';
+import { DashboardAccessGuard } from '../../auth/dashboard-access.guard';
+import { DashboardKeyMeta } from '../../auth/dashboard-key.decorator';
 import { ProcurementService } from './procurement.service';
 
 // Mirrors PROMAN/backend/src/routes/procurement.ts
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('PROCUREMENT_HEAD')
+@UseGuards(JwtAuthGuard, DashboardAccessGuard)
+@DashboardKeyMeta('PROCUREMENT')
 @Controller('dashboards/procurement')
 export class ProcurementController {
   constructor(private readonly procurement: ProcurementService) {}

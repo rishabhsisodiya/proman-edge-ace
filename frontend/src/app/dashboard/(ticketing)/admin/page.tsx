@@ -90,6 +90,11 @@ const SECTIONS = [
     href: "/dashboard/admin/price-lists",
   },
   {
+    label: "Dashboard Access",
+    description: "Which roles can see which business dashboard (Sales, Dispatch, Stores, Manufacturing, Procurement, Finance)",
+    href: "/dashboard/admin/dashboard-access",
+  },
+  {
     label: "Predictive Rules",
     description: "Per-category thresholds for time-since-service, operating hours, and breakdown frequency",
     href: "/dashboard/admin/predictive-rules",

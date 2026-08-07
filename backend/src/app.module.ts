@@ -39,6 +39,7 @@ import { FinanceModule } from './dashboards/finance/finance.module';
 import { ProcurementModule } from './dashboards/procurement/procurement.module';
 import { StoresModule } from './dashboards/stores/stores.module';
 import { DispatchModule } from './dashboards/dispatch/dispatch.module';
+import { DashboardAccessModule } from './dashboards/dashboard-access/dashboard-access.module';
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { DispatchModule } from './dashboards/dispatch/dispatch.module';
     SlaPolicyModule,
     SlaPauseStateModule,
     SlaNotificationRuleModule,
+    DashboardAccessModule,
     HolidayModule,
     CsatModule,
     PredictiveRuleModule,

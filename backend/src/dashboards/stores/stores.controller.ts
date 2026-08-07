@@ -1,12 +1,12 @@
 import { Body, Controller, Get, Post, Param, Query, UseGuards, BadRequestException } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
-import { RolesGuard } from '../../auth/roles.guard';
-import { Roles } from '../../auth/roles.decorator';
+import { DashboardAccessGuard } from '../../auth/dashboard-access.guard';
+import { DashboardKeyMeta } from '../../auth/dashboard-key.decorator';
 import { StoresService } from './stores.service';
 
 // Mirrors PROMAN/backend/src/routes/stores.ts
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('STORES_HEAD')
+@UseGuards(JwtAuthGuard, DashboardAccessGuard)
+@DashboardKeyMeta('STORES')
 @Controller('dashboards/stores')
 export class StoresController {
   constructor(private readonly stores: StoresService) {}
